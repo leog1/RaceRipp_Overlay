@@ -1,0 +1,1077 @@
+diff --git a/src-tauri/capabilities/default.json b/src-tauri/capabilities/default.json
+index 71ef6ac..ac35e64 100644
+--- a/src-tauri/capabilities/default.json
++++ b/src-tauri/capabilities/default.json
+@@ -8,6 +8,7 @@
+     "core:event:default",
+     "core:window:allow-start-dragging",
+     "core:window:allow-set-ignore-cursor-events",
++    "core:window:allow-set-always-on-top",
+     "global-shortcut:default",
+     "dialog:default",
+     "updater:default"
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index 97b8928..5f42025 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -17,17 +17,29 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
+ // ── Registret (kompileras in; katalog över overlays) ────────────────────────
+ const REGISTRY_JSON: &str = include_str!("../../src/overlays/registry.json");
+ 
++#[derive(Deserialize, Serialize, Clone)]
++struct OverlayOption {
++    id: String,
++    label: String,
++    #[serde(default)]
++    default: bool,
++}
++
+ #[derive(Deserialize, Clone)]
+ #[serde(rename_all = "camelCase")]
+ struct OverlayDef {
+     id: String,
+     title: String,
++    #[serde(default)]
++    desc: String,
+     url: String,
+     base_width: f64,
+     base_height: f64,
+     default_x: i32,
+     default_y: i32,
+     default_scale: f64,
++    #[serde(default)]
++    options: Vec<OverlayOption>,
+ }
+ 
+ #[derive(Deserialize)]
+@@ -48,6 +60,10 @@ fn def_of(id: &str) -> Option<&'static OverlayDef> {
+ }
+ 
+ // ── Inställningar (runtime; sparas i app-config-mappen) ─────────────────────
++fn default_true() -> bool {
++    true
++}
++
+ #[derive(Serialize, Deserialize, Clone)]
+ struct OverlayState {
+     enabled: bool,
+@@ -55,7 +71,29 @@ struct OverlayState {
+     y: i32,
+     scale: f64,
+     opacity: f64,
++    #[serde(default = "default_true")]
++    always_on_top: bool,
++    #[serde(default)]
++    options: HashMap<String, bool>,
++}
++
++// Färskt standardläge för en overlay (position/skala/alternativ ur registret).
++fn default_state_for(d: &OverlayDef) -> OverlayState {
++    let mut options = HashMap::new();
++    for o in &d.options {
++        options.insert(o.id.clone(), o.default);
++    }
++    OverlayState {
++        enabled: true,
++        x: d.default_x,
++        y: d.default_y,
++        scale: d.default_scale,
++        opacity: 1.0,
++        always_on_top: true,
++        options,
++    }
+ }
++
+ #[derive(Serialize, Deserialize, Default)]
+ struct Settings {
+     overlays: HashMap<String, OverlayState>,
+@@ -65,10 +103,7 @@ struct Settings {
+ fn default_settings() -> Settings {
+     let mut s = Settings::default();
+     for d in registry() {
+-        s.overlays.insert(
+-            d.id.clone(),
+-            OverlayState { enabled: true, x: d.default_x, y: d.default_y, scale: d.default_scale, opacity: 1.0 },
+-        );
++        s.overlays.insert(d.id.clone(), default_state_for(d));
+     }
+     s
+ }
+@@ -82,9 +117,7 @@ fn load_settings(app: &AppHandle) -> Settings {
+         Ok(txt) => {
+             let mut s: Settings = serde_json::from_str(&txt).unwrap_or_else(|_| default_settings());
+             for d in registry() {
+-                s.overlays.entry(d.id.clone()).or_insert(OverlayState {
+-                    enabled: true, x: d.default_x, y: d.default_y, scale: d.default_scale, opacity: 1.0,
+-                });
++                s.overlays.entry(d.id.clone()).or_insert_with(|| default_state_for(d));
+             }
+             s
+         }
+@@ -114,7 +147,7 @@ fn create_overlay(app: &AppHandle, def: &OverlayDef, st: &OverlayState) -> tauri
+         .position(st.x as f64, st.y as f64)
+         .decorations(false)
+         .transparent(true)
+-        .always_on_top(true)
++        .always_on_top(st.always_on_top)
+         .skip_taskbar(true)
+         .resizable(false)
+         .shadow(false)
+@@ -133,27 +166,86 @@ fn apply_size(app: &AppHandle, id: &str, scale: f64) {
+ 
+ // ── Kommandon som kontrollpanelen anropar ───────────────────────────────────
+ #[derive(Serialize)]
+-struct OverlayInfo { id: String, title: String, enabled: bool, scale: f64, opacity: f64 }
++struct OverlayInfo {
++    id: String,
++    title: String,
++    desc: String,
++    url: String,
++    base_width: f64,
++    base_height: f64,
++    enabled: bool,
++    scale: f64,
++    opacity: f64,
++    always_on_top: bool,
++    options: HashMap<String, bool>,
++    option_defs: Vec<OverlayOption>,
++}
+ 
+ #[tauri::command]
+ fn get_overlays(state: State<Mutex<Settings>>) -> Vec<OverlayInfo> {
+     let s = state.lock().unwrap();
+-    registry().iter().map(|d| {
+-        let st = s.overlays.get(&d.id).unwrap();
+-        OverlayInfo { id: d.id.clone(), title: d.title.clone(), enabled: st.enabled, scale: st.scale, opacity: st.opacity }
+-    }).collect()
++    registry()
++        .iter()
++        .map(|d| {
++            let st = s.overlays.get(&d.id).cloned().unwrap_or_else(|| default_state_for(d));
++            let mut options = st.options.clone();
++            for o in &d.options {
++                options.entry(o.id.clone()).or_insert(o.default);
++            }
++            OverlayInfo {
++                id: d.id.clone(),
++                title: d.title.clone(),
++                desc: d.desc.clone(),
++                url: d.url.clone(),
++                base_width: d.base_width,
++                base_height: d.base_height,
++                enabled: st.enabled,
++                scale: st.scale,
++                opacity: st.opacity,
++                always_on_top: st.always_on_top,
++                options,
++                option_defs: d.options.clone(),
++            }
++        })
++        .collect()
+ }
+ 
+ #[derive(Serialize, Clone)]
+-struct ConfigPayload { id: String, scale: f64, opacity: f64 }
++struct ConfigPayload {
++    id: String,
++    scale: f64,
++    opacity: f64,
++}
++
++#[derive(Serialize, Clone)]
++struct OptionPayload {
++    id: String,
++    option: String,
++    value: bool,
++}
++
++#[derive(Serialize)]
++struct ConfigInit {
++    scale: f64,
++    opacity: f64,
++    options: HashMap<String, bool>,
++}
+ 
+ // Overlayn hämtar sin config vid start (undviker race mot event-lyssnaren).
+ #[tauri::command]
+-fn get_config(id: String, state: State<Mutex<Settings>>) -> ConfigPayload {
++fn get_config(id: String, state: State<Mutex<Settings>>) -> ConfigInit {
+     let s = state.lock().unwrap();
+-    let st = s.overlays.get(&id).cloned()
+-        .unwrap_or(OverlayState { enabled: true, x: 0, y: 0, scale: 1.0, opacity: 1.0 });
+-    ConfigPayload { id, scale: st.scale, opacity: st.opacity }
++    let (scale, opacity, mut options) = s
++        .overlays
++        .get(&id)
++        .map(|st| (st.scale, st.opacity, st.options.clone()))
++        .unwrap_or((1.0, 1.0, HashMap::new()));
++    if let Some(d) = def_of(&id) {
++        for o in &d.options {
++            options.entry(o.id.clone()).or_insert(o.default);
++        }
++    }
++    ConfigInit { scale, opacity, options }
+ }
+ 
+ #[tauri::command]
+@@ -196,6 +288,67 @@ fn set_opacity(app: AppHandle, state: State<Mutex<Settings>>, id: String, opacit
+     let _ = app.emit_to(id.as_str(), "config", ConfigPayload { id: id.clone(), scale, opacity });
+ }
+ 
++// Per-overlay always-on-top (era overlays skapas redan överst; detta togglar det).
++#[tauri::command]
++fn set_always_on_top(app: AppHandle, state: State<Mutex<Settings>>, id: String, value: bool) {
++    {
++        let mut s = state.lock().unwrap();
++        if let Some(st) = s.overlays.get_mut(&id) { st.always_on_top = value; }
++        save_settings(&app, &s);
++    }
++    if let Some(win) = app.get_webview_window(&id) { let _ = win.set_always_on_top(value); }
++}
++
++// Per-overlay alternativ (visa/dölj delelement). Overlayn läser detta via wireShell.
++#[tauri::command]
++fn set_option(app: AppHandle, state: State<Mutex<Settings>>, id: String, option: String, value: bool) {
++    {
++        let mut s = state.lock().unwrap();
++        if let Some(st) = s.overlays.get_mut(&id) { st.options.insert(option.clone(), value); }
++        save_settings(&app, &s);
++    }
++    let _ = app.emit_to(id.as_str(), "option", OptionPayload { id: id.clone(), option, value });
++}
++
++// Nollställ läge/utseende/alternativ till registrets standard (behåller på/av).
++#[tauri::command]
++fn reset_overlay(app: AppHandle, state: State<Mutex<Settings>>, id: String) {
++    let def = match def_of(&id) { Some(d) => d, None => return };
++    let (scale, opacity, options) = {
++        let mut s = state.lock().unwrap();
++        if let Some(cur) = s.overlays.get_mut(&id) {
++            let enabled = cur.enabled;
++            *cur = OverlayState { enabled, ..default_state_for(def) };
++        }
++        save_settings(&app, &s);
++        let st = s.overlays.get(&id).cloned().unwrap_or_else(|| default_state_for(def));
++        (st.scale, st.opacity, st.options.clone())
++    };
++    if let Some(win) = app.get_webview_window(&id) {
++        let _ = win.set_size(tauri::LogicalSize::new(def.base_width * scale, def.base_height * scale));
++        let _ = win.set_position(tauri::LogicalPosition::new(def.default_x as f64, def.default_y as f64));
++        let _ = win.set_always_on_top(true);
++    }
++    let _ = app.emit_to(id.as_str(), "config", ConfigPayload { id: id.clone(), scale, opacity });
++    for (opt, val) in options {
++        let _ = app.emit_to(id.as_str(), "option", OptionPayload { id: id.clone(), option: opt, value: val });
++    }
++}
++
++// Slå på/av edit-läge från panelen (samma effekt som hotkey Ctrl+Alt+Space).
++// I edit-läge blir overlay-fönstren interaktiva så de kan dras på plats.
++#[tauri::command]
++fn set_edit_mode(app: AppHandle, edit: bool) {
++    let click_through = !edit;
++    CLICK_THROUGH.store(click_through, Ordering::Relaxed);
++    for id in overlay_ids() {
++        if let Some(w) = app.get_webview_window(id) {
++            let _ = w.set_ignore_cursor_events(click_through);
++        }
++    }
++    let _ = app.emit("edit-mode", edit);
++}
++
+ // Skriv referens-path till motorns config-fil (motorn pollar den och laddar .ld).
+ #[tauri::command]
+ fn set_reference(app: AppHandle, state: State<Mutex<Settings>>, path: String) {
+@@ -238,7 +391,16 @@ pub fn run() {
+                 .build(),
+         )
+         .invoke_handler(tauri::generate_handler![
+-            get_overlays, get_config, set_enabled, set_scale, set_opacity, set_reference
++            get_overlays,
++            get_config,
++            set_enabled,
++            set_scale,
++            set_opacity,
++            set_always_on_top,
++            set_option,
++            reset_overlay,
++            set_edit_mode,
++            set_reference
+         ])
+         .setup(move |app| {
+             let handle = app.handle().clone();
+@@ -247,9 +409,11 @@ pub fn run() {
+             start_engine(&handle);
+ 
+             for def in registry() {
+-                let st = settings.overlays.get(&def.id).cloned().unwrap_or(OverlayState {
+-                    enabled: true, x: def.default_x, y: def.default_y, scale: def.default_scale, opacity: 1.0,
+-                });
++                let st = settings
++                    .overlays
++                    .get(&def.id)
++                    .cloned()
++                    .unwrap_or_else(|| default_state_for(def));
+                 if let Err(e) = create_overlay(&handle, def, &st) {
+                     eprintln!("[shell] kunde ej skapa overlay {}: {e}", def.id);
+                 }
+diff --git a/src-tauri/tauri.conf.json b/src-tauri/tauri.conf.json
+index a83e29c..400b621 100644
+--- a/src-tauri/tauri.conf.json
++++ b/src-tauri/tauri.conf.json
+@@ -13,10 +13,10 @@
+         "label": "control",
+         "url": "control-panel/index.html",
+         "title": "ACC Overlay \u2014 Control",
+-        "width": 440,
+-        "height": 680,
+-        "minWidth": 380,
+-        "minHeight": 520,
++        "width": 1180,
++        "height": 720,
++        "minWidth": 900,
++        "minHeight": 560,
+         "resizable": true,
+         "decorations": true,
+         "transparent": false,
+diff --git a/src/control-panel/index.html b/src/control-panel/index.html
+index 826d55d..3d22cfd 100644
+--- a/src/control-panel/index.html
++++ b/src/control-panel/index.html
+@@ -11,186 +11,447 @@
+ <style>
+ *{box-sizing:border-box;margin:0;padding:0;}
+ html,body{height:100%;}
+-body{font-family:var(--font);background:#0c0e0d;color:var(--ink);-webkit-font-smoothing:antialiased;
+-  display:flex;flex-direction:column;}
+-.rail{height:4px;background:var(--rail);flex:0 0 auto;}
+-header{padding:18px 20px 14px;display:flex;align-items:baseline;justify-content:space-between;}
+-header h1{font-size:15px;font-weight:700;letter-spacing:2px;text-transform:uppercase;}
+-header .ver{font-size:11px;font-weight:600;color:var(--dim);font-variant-numeric:tabular-nums;}
+-.status{margin:0 20px 8px;display:flex;align-items:center;gap:9px;font-size:12px;font-weight:600;
+-  color:var(--dim);letter-spacing:.5px;}
+-.dot{width:9px;height:9px;border-radius:50%;background:var(--faint);box-shadow:0 0 0 0 transparent;}
+-.dot.live{background:var(--green);} .dot.mock{background:var(--amber);} .dot.off{background:var(--red);}
+-
+-main{flex:1 1 auto;overflow-y:auto;padding:8px 16px 16px;}
+-.card{background:var(--panel);border:1px solid var(--divider);border-radius:14px;
+-  padding:14px 16px;margin-bottom:12px;box-shadow:var(--depth);}
+-.card h2{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--amber);
+-  margin-bottom:12px;}
+-.row{display:flex;align-items:center;gap:12px;padding:9px 0;}
++body{font-family:var(--font);background:var(--app-bg);color:var(--ink);
++  -webkit-font-smoothing:antialiased;display:flex;flex-direction:column;overflow:hidden;}
++
++/* varumärkes-rail överst */
++.brandbar{height:3px;background:var(--rail);flex:0 0 auto;}
++
++/* trepanelslayout */
++.app{flex:1 1 auto;display:flex;min-height:0;}
++
++/* ── vänster ikonrad ── */
++.rail{flex:0 0 74px;background:var(--rail-bg);border-right:1px solid var(--divider);
++  display:flex;flex-direction:column;align-items:stretch;padding:14px 0 12px;}
++.brand{display:flex;align-items:center;justify-content:center;height:34px;margin-bottom:14px;color:var(--rail);}
++.brand svg{width:22px;height:22px;}
++.nav{appearance:none;background:none;border:0;color:var(--dim);font:inherit;cursor:pointer;
++  display:flex;flex-direction:column;align-items:center;gap:5px;padding:11px 4px;
++  border-left:3px solid transparent;transition:color .15s ease,background .15s ease;}
++.nav svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.7;
++  stroke-linecap:round;stroke-linejoin:round;}
++.nav span{font-size:10px;font-weight:600;letter-spacing:.6px;}
++.nav:hover{color:var(--ink);background:var(--hover);}
++.nav[aria-selected="true"]{color:var(--ink);border-left-color:var(--rail);background:var(--sel);}
++.rail-spacer{flex:1 1 auto;}
++.motor{display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 4px 2px;text-align:center;}
++.motor .dot{width:9px;height:9px;border-radius:50%;background:var(--faint);}
++.motor .dot.live{background:var(--green);} .motor .dot.mock{background:var(--amber);} .motor .dot.off{background:var(--red);}
++.motor span:last-child{font-size:9.5px;font-weight:600;letter-spacing:.4px;color:var(--dim);line-height:1.25;}
++
++/* ── mittkolumn: overlay-lista ── */
++.list{flex:0 0 262px;border-right:1px solid var(--divider);display:flex;flex-direction:column;min-height:0;}
++.list-head{padding:16px 18px 10px;font-size:11px;font-weight:700;letter-spacing:2px;
++  text-transform:uppercase;color:var(--amber);}
++#list{flex:1 1 auto;overflow-y:auto;padding:0 8px 12px;}
++.lrow{width:100%;appearance:none;background:none;border:0;color:var(--ink);font:inherit;cursor:pointer;
++  display:flex;align-items:center;gap:10px;padding:11px 12px 11px 9px;border-radius:9px;
++  border-left:3px solid transparent;text-align:left;transition:background .12s ease;}
++.lrow:hover{background:var(--hover);}
++.lrow.sel{background:var(--sel);}
++.lrow.on{border-left-color:var(--green);}
++.lrow .ltitle{flex:1 1 auto;font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
++.lrow .lstate{font-size:10.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--faint);}
++.lrow.on .lstate{color:var(--green);}
++.empty{padding:16px 18px;font-size:12px;color:var(--dim);line-height:1.5;}
++
++/* ── höger detaljpanel ── */
++.detail{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;overflow:hidden;}
++.pane{display:none;flex:1 1 auto;min-height:0;overflow-y:auto;}
++.app[data-section="overlays"] #pane-overlays{display:flex;flex-direction:column;}
++.app[data-section="referens"] #pane-referens{display:flex;flex-direction:column;}
++.app[data-section="om"] #pane-om{display:flex;flex-direction:column;}
++.app:not([data-section="overlays"]) .list{display:none;}
++
++/* preview */
++#previewBox{position:relative;flex:0 0 40%;min-height:190px;margin:16px 18px 0;border-radius:12px;
++  background:
++    radial-gradient(120% 120% at 50% 0%, rgba(255,255,255,0.02), transparent 60%),
++    var(--plot);
++  border:1px solid var(--edge);overflow:hidden;box-shadow:var(--sheen);}
++#pv{position:absolute;top:50%;left:50%;border:0;transform-origin:center center;
++  transform:translate(-50%,-50%);background:transparent;pointer-events:none;}
++.pv-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
++  font-size:11.5px;color:var(--faint);letter-spacing:.4px;pointer-events:none;}
++
++/* titel + beskrivning (centrerad, röd understrykning) */
++.titleband{padding:20px 22px 6px;text-align:center;}
++.titleband h2{font-size:22px;font-weight:700;letter-spacing:.4px;}
++.titleband h2::after{content:"";display:block;width:46px;height:2.5px;background:var(--rail);
++  margin:8px auto 0;border-radius:2px;}
++.titleband p{max-width:560px;margin:11px auto 0;font-size:12.5px;font-weight:500;line-height:1.55;color:var(--dim);}
++
++/* kontroller: kontrollremsa + kort */
++.controls{display:flex;gap:16px;padding:16px 22px 22px;align-items:flex-start;}
++.strip{flex:0 0 auto;display:flex;flex-direction:column;gap:8px;padding-top:26px;}
++.sbtn{width:46px;height:46px;display:flex;align-items:center;justify-content:center;
++  background:var(--ctrl);border:1px solid var(--divider);border-radius:11px;color:var(--dim);
++  cursor:pointer;transition:background .15s ease,color .15s ease,border-color .15s ease;}
++.sbtn svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;}
++.sbtn:hover{background:var(--ctrl-hi);color:var(--ink);}
++.sbtn.active{color:var(--amber);border-color:rgba(251,191,36,0.5);background:rgba(251,191,36,0.10);}
++.strip .lbl{font-size:9px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--faint);text-align:center;}
++
++.cards{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:12px;}
++.cards.single{max-width:560px;}
++.card{background:var(--panel);border:1px solid var(--divider);border-radius:13px;padding:6px 16px 10px;box-shadow:var(--depth);}
++.card > h3{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--amber);
++  padding:12px 0 4px;}
++.row{display:flex;align-items:center;gap:12px;padding:11px 0;}
+ .row + .row{border-top:1px solid var(--divider);}
+-.row .name{flex:1 1 auto;font-size:13.5px;font-weight:600;}
+-.row .sub{font-size:11px;font-weight:500;color:var(--dim);margin-top:2px;}
++.rlabel{flex:1 1 auto;font-size:13px;font-weight:600;}
++.state{font-size:11.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--dim);}
++.row.on .state,.state.on{color:var(--green);}
++
++/* slider-rad */
++.row.slide label{flex:0 0 62px;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--dim);}
++.row.slide input[type=range]{flex:1 1 auto;accent-color:var(--green);height:4px;}
++.row.slide .val{flex:0 0 48px;text-align:right;font-size:12.5px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;}
+ 
+ /* toggle */
+ .sw{position:relative;width:42px;height:24px;flex:0 0 auto;cursor:pointer;}
+ .sw input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer;}
+ .sw .track{position:absolute;inset:0;border-radius:999px;background:var(--track);
+-  border:1px solid var(--slot-edge);transition:background .18s ease;}
++  border:1px solid var(--slot-edge);transition:background .18s ease,border-color .18s ease;}
+ .sw .knob{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;
+   background:var(--dim);transition:transform .18s ease,background .18s ease;}
+ .sw input:checked ~ .track{background:rgba(13,230,34,0.22);border-color:rgba(13,230,34,0.5);}
+ .sw input:checked ~ .knob{transform:translateX(18px);background:var(--green);}
+ 
+-/* sliders */
+-.ctl{display:flex;flex-direction:column;gap:9px;margin-top:6px;}
+-.ctl.hidden{display:none;}
+-.slide{display:flex;align-items:center;gap:10px;}
+-.slide label{width:58px;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--dim);}
+-.slide input[type=range]{flex:1 1 auto;accent-color:var(--green);height:4px;}
+-.slide .val{width:44px;text-align:right;font-size:12px;font-weight:600;color:var(--ink);
+-  font-variant-numeric:tabular-nums;}
+-
+-button.act{width:100%;font:inherit;font-size:12.5px;font-weight:600;letter-spacing:.5px;color:var(--ink);
+-  background:rgba(255,255,255,0.06);border:1px solid var(--divider);border-radius:10px;
+-  padding:11px;cursor:pointer;transition:background .15s ease;}
+-button.act:hover{background:rgba(255,255,255,0.11);}
+-button.act:active{transform:translateY(1px);}
+-.refpath{font-size:11px;font-weight:500;color:var(--dim);margin-top:9px;word-break:break-all;
+-  font-variant-numeric:tabular-nums;}
+-.hint{font-size:11px;color:var(--faint);padding:2px 4px 10px;line-height:1.5;}
+-footer{flex:0 0 auto;padding:12px 16px;border-top:1px solid var(--divider);display:flex;gap:10px;align-items:center;}
+-footer .msg{flex:1 1 auto;font-size:11px;color:var(--dim);}
+-footer button{font:inherit;font-size:11.5px;font-weight:600;color:var(--dim);background:none;
+-  border:1px solid var(--divider);border-radius:8px;padding:8px 12px;cursor:pointer;}
+-footer button:hover{color:var(--ink);border-color:var(--dim);}
++/* knappar + text i Referens/Om */
++button.act{width:100%;font:inherit;font-size:12.5px;font-weight:600;letter-spacing:.4px;color:var(--ink);
++  background:var(--ctrl);border:1px solid var(--divider);border-radius:10px;padding:12px;cursor:pointer;
++  transition:background .15s ease;margin:6px 0 4px;}
++button.act:hover{background:var(--ctrl-hi);}
++.refpath{font-size:11px;font-weight:500;color:var(--dim);margin:8px 0 6px;word-break:break-all;
++  font-variant-numeric:tabular-nums;line-height:1.5;}
++.hint{font-size:11px;color:var(--faint);line-height:1.55;padding:2px 0 8px;}
++.kv{display:flex;justify-content:space-between;gap:16px;padding:9px 0;font-size:12.5px;}
++.kv + .kv{border-top:1px solid var(--divider);}
++.kv span:first-child{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;}
++.kv span:last-child{color:var(--dim);}
++
++/* toast */
++#toast{position:fixed;right:16px;bottom:14px;max-width:340px;padding:9px 13px;border-radius:9px;
++  background:var(--bar);border:1px solid var(--divider);color:var(--ink);font-size:11.5px;font-weight:600;
++  opacity:0;transform:translateY(6px);transition:opacity .2s ease,transform .2s ease;pointer-events:none;z-index:99;}
++#toast.show{opacity:1;transform:none;}
+ </style>
+ </head>
+ <body>
+-  <div class="rail"></div>
+-  <header>
+-    <h1>ACC Overlay</h1>
+-    <span class="ver" id="ver">v0.1.0</span>
+-  </header>
+-  <div class="status"><span class="dot off" id="dot"></span><span id="statusText">Motor offline</span></div>
+-
+-  <main>
+-    <div class="card">
+-      <h2>Overlays</h2>
+-      <div id="list"></div>
+-    </div>
+-
+-    <div class="card">
+-      <h2>Referensvarv (delta)</h2>
+-      <button class="act" id="loadRef">Ladda MoTeC .ld …</button>
+-      <div class="refpath" id="refpath">Ingen referens laddad — delta visas som platshållare.</div>
+-    </div>
+-
+-    <div class="hint">Ctrl+Alt+Space växlar race/edit. I edit-läge kan du dra varje overlay på plats; positionen sparas när panelen stängs.</div>
+-  </main>
+-
+-  <footer>
+-    <span class="msg" id="updmsg"></span>
+-    <button id="checkUpd">Sök uppdatering</button>
+-  </footer>
++  <div class="brandbar"></div>
++  <div class="app" id="app" data-section="overlays">
++
++    <!-- ── vänster ikonrad ── -->
++    <nav class="rail">
++      <div class="brand" title="ACC Overlay">
++        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0Z"/><path d="M12 7v5l3 2"/></svg>
++      </div>
++      <button class="nav" data-sec="overlays" aria-selected="true">
++        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/></svg>
++        <span>Overlays</span>
++      </button>
++      <button class="nav" data-sec="referens" aria-selected="false">
++        <svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 13V9M9 2h6"/></svg>
++        <span>Referens</span>
++      </button>
++      <button class="nav" data-sec="om" aria-selected="false">
++        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
++        <span>Om</span>
++      </button>
++      <div class="rail-spacer"></div>
++      <div class="motor"><span class="dot off" id="dot"></span><span id="statusText">Motor offline</span></div>
++    </nav>
++
++    <!-- ── mittkolumn: overlay-lista ── -->
++    <section class="list">
++      <div class="list-head">Overlays</div>
++      <div id="list"><div class="empty">Laddar …</div></div>
++    </section>
++
++    <!-- ── höger detaljpanel ── -->
++    <section class="detail">
++
++      <!-- OVERLAYS -->
++      <div class="pane" id="pane-overlays">
++        <div id="previewBox">
++          <div class="pv-hint" id="pvHint">Förhandsvisning kräver att motorn kör</div>
++          <iframe id="pv" title="Förhandsvisning"></iframe>
++        </div>
++        <div class="titleband">
++          <h2 id="ovTitle">—</h2>
++          <p id="ovDesc"></p>
++        </div>
++        <div class="controls">
++          <div class="strip">
++            <button class="sbtn" id="btnMove" title="Flytta — slår på edit-läge">
++              <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3 9 6M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>
++            </button>
++            <button class="sbtn" id="btnEye" title="Visa / dölj overlay" aria-pressed="true">
++              <svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="2.7"/></svg>
++            </button>
++            <button class="sbtn" id="btnReset" title="Nollställ läge och utseende">
++              <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg>
++            </button>
++          </div>
++          <div class="cards">
++            <div class="card" id="cardOptions">
++              <h3>Alternativ</h3>
++              <div id="optRows"></div>
++            </div>
++            <div class="card">
++              <h3>Utseende &amp; fönster</h3>
++              <div class="row slide"><label>Skala</label>
++                <input type="range" id="scale" min="0.6" max="1.6" step="0.05" value="1">
++                <span class="val" id="scaleVal">1.00×</span></div>
++              <div class="row slide"><label>Opacitet</label>
++                <input type="range" id="opacity" min="0.2" max="1" step="0.05" value="1">
++                <span class="val" id="opacityVal">100%</span></div>
++              <div class="row"><span class="rlabel">Alltid överst</span>
++                <span class="state" id="aotState">På</span>
++                <label class="sw" id="aotSwitch"><input type="checkbox" checked><span class="track"></span><span class="knob"></span></label></div>
++            </div>
++          </div>
++        </div>
++      </div>
++
++      <!-- REFERENS -->
++      <div class="pane" id="pane-referens">
++        <div class="titleband">
++          <h2>Referensvarv</h2>
++          <p>Ladda ett MoTeC-varv (.ld) så visar delta-overlayn din tidsvinst mot det, alltid jämfört i distans. Motorn väljer automatiskt det snabbaste hela varvet ur filen.</p>
++        </div>
++        <div class="controls">
++          <div class="cards single">
++            <div class="card">
++              <h3>MoTeC-referens</h3>
++              <button class="act" id="loadRef">Ladda MoTeC .ld …</button>
++              <div class="refpath" id="refpath">Ingen referens laddad — delta visas som platshållare.</div>
++            </div>
++          </div>
++        </div>
++      </div>
++
++      <!-- OM -->
++      <div class="pane" id="pane-om">
++        <div class="titleband">
++          <h2>ACC Overlay</h2>
++          <p id="omVer">v0.1.0</p>
++        </div>
++        <div class="controls">
++          <div class="cards single">
++            <div class="card">
++              <h3>Uppdatering</h3>
++              <button class="act" id="checkUpd">Sök uppdatering</button>
++              <div class="refpath" id="updmsg">Hämtar nya versioner från GitHub-releaser när det är konfigurerat.</div>
++            </div>
++            <div class="card">
++              <h3>Kortkommandon</h3>
++              <div class="kv"><span>Ctrl + Alt + Space</span><span>Växla race / edit</span></div>
++              <p class="hint">I edit-läge drar du varje overlay på plats. Positionen sparas när du stänger panelen.</p>
++            </div>
++          </div>
++        </div>
++      </div>
++
++    </section>
++  </div>
++  <div id="toast"></div>
+ 
+ <script>
+ const T = window.__TAURI__;
+-const invoke = T?.core?.invoke ?? (async()=>{ throw new Error('Tauri saknas'); });
++const invoke = T?.core?.invoke ?? (async () => { throw new Error('Tauri saknas'); });
+ const $ = id => document.getElementById(id);
+-function status(msg, isErr){ const m=$('updmsg'); m.textContent=msg; m.style.color = isErr ? 'var(--red)' : 'var(--dim)'; }
++const errMsg = e => (e && e.message) ? e.message : String(e);
++
++let overlays = [];
++let selectedId = null;
++let editMode = false;
++
++let toastT = null;
++function toast(msg, isErr){
++  const t = $('toast'); t.textContent = msg; t.style.color = isErr ? 'var(--red)' : 'var(--ink)';
++  t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2200);
++}
+ 
+-/* ── Overlay-lista ─────────────────────────────────────────────────────── */
+-async function renderList(){
++/* ── sektionsflikar ── */
++document.querySelectorAll('.nav').forEach(btn => {
++  btn.addEventListener('click', () => {
++    document.querySelectorAll('.nav').forEach(b => b.setAttribute('aria-selected', String(b === btn)));
++    $('app').dataset.section = btn.dataset.sec;
++    if (btn.dataset.sec === 'overlays') requestAnimationFrame(fitPreview);
++  });
++});
++
++/* ── overlay-lista ── */
++async function loadOverlays(){
+   let items = null, lastErr = 'okänt fel';
+-  // Retry: kontrollpanelen kan ladda innan Rust hunnit registrera sitt state.
+-  for(let i = 0; i < 25; i++){
++  for (let i = 0; i < 25; i++){
+     try { items = await invoke('get_overlays'); break; }
+-    catch(e){ lastErr = (e && e.message) ? e.message : String(e); await new Promise(r=>setTimeout(r, 200)); }
+-  }
+-  if(!items){
+-    $('list').innerHTML = `<div class="sub">Kunde ej nå appen efter flera försök.<br>Fel: <b>${lastErr}</b></div>`;
+-    return;
++    catch(e){ lastErr = errMsg(e); await new Promise(r => setTimeout(r, 200)); }
+   }
++  if (!items){ $('list').innerHTML = `<div class="empty">Når inte appen efter flera försök.<br>Fel: <b>${lastErr}</b></div>`; return; }
++  overlays = items;
++  renderList();
++  const keep = selectedId && overlays.some(o => o.id === selectedId);
++  select(keep ? selectedId : (overlays[0] && overlays[0].id));
++}
++
++function ov(id){ return overlays.find(o => o.id === id); }
++
++function renderList(){
+   const list = $('list'); list.innerHTML = '';
+-  for(const o of items){
+-    const row = document.createElement('div'); row.className = 'row';
+-    row.style.flexDirection = 'column'; row.style.alignItems = 'stretch';
+-    const top = document.createElement('div'); top.style.display='flex'; top.style.alignItems='center'; top.style.gap='12px';
+-    top.innerHTML = `<div class="name">${o.title}</div>`;
+-    const sw = document.createElement('label'); sw.className='sw';
+-    sw.innerHTML = `<input type="checkbox" ${o.enabled?'checked':''}><span class="track"></span><span class="knob"></span>`;
+-    top.appendChild(sw); row.appendChild(top);
+-
+-    const ctl = document.createElement('div'); ctl.className='ctl'+(o.enabled?'':' hidden');
+-    ctl.innerHTML = `
+-      <div class="slide"><label>Opacitet</label>
+-        <input type="range" min="0.2" max="1" step="0.05" value="${o.opacity}" data-k="opacity">
+-        <span class="val">${Math.round(o.opacity*100)}%</span></div>
+-      <div class="slide"><label>Skala</label>
+-        <input type="range" min="0.6" max="1.6" step="0.05" value="${o.scale}" data-k="scale">
+-        <span class="val">${o.scale.toFixed(2)}×</span></div>`;
+-    row.appendChild(ctl);
++  for (const o of overlays){
++    const row = document.createElement('button');
++    row.className = 'lrow' + (o.enabled ? ' on' : '') + (o.id === selectedId ? ' sel' : '');
++    row.innerHTML = `<span class="ltitle"></span><span class="lstate">${o.enabled ? 'på' : 'av'}</span>`;
++    row.querySelector('.ltitle').textContent = o.title;
++    row.addEventListener('click', () => select(o.id));
+     list.appendChild(row);
++  }
++}
+ 
+-    sw.querySelector('input').addEventListener('change', async e=>{
+-      const on = e.target.checked; ctl.classList.toggle('hidden', !on);
+-      try { await invoke('set_enabled', { id:o.id, enabled:on }); status(`${o.title}: ${on?'på':'av'} ✓`); }
+-      catch(err){ status(`FEL set_enabled: ${err&&err.message?err.message:err}`, true); }
+-    });
+-    ctl.querySelectorAll('input[type=range]').forEach(r=>{
+-      const valEl = r.nextElementSibling, k = r.dataset.k;
+-      r.addEventListener('input', async ()=>{
+-        const v = parseFloat(r.value);
+-        valEl.textContent = k==='opacity' ? Math.round(v*100)+'%' : v.toFixed(2)+'×';
+-        try { await invoke(k==='opacity'?'set_opacity':'set_scale', { id:o.id, [k]:v }); status(`${o.title} ${k}=${valEl.textContent} ✓`); }
+-        catch(err){ status(`FEL set_${k}: ${err&&err.message?err.message:err}`, true); }
+-      });
++function select(id){
++  if (!id) return;
++  selectedId = id; renderList();
++  const o = ov(id); if (!o) return;
++  $('ovTitle').textContent = o.title;
++  $('ovDesc').textContent = o.desc || '';
++  $('scale').value = o.scale; $('scaleVal').textContent = o.scale.toFixed(2) + '×';
++  $('opacity').value = o.opacity; $('opacityVal').textContent = Math.round(o.opacity * 100) + '%';
++  $('aotSwitch').querySelector('input').checked = o.always_on_top;
++  $('aotState').textContent = o.always_on_top ? 'På' : 'Av';
++  $('btnEye').classList.toggle('active', o.enabled);
++  $('btnEye').setAttribute('aria-pressed', String(o.enabled));
++  renderOptions(o);
++  setPreview(o);
++}
++
++function renderOptions(o){
++  const wrap = $('optRows'), card = $('cardOptions');
++  wrap.innerHTML = '';
++  const defs = o.option_defs || [];
++  card.style.display = defs.length ? '' : 'none';
++  for (const d of defs){
++    const val = (o.options && d.id in o.options) ? o.options[d.id] : d.default;
++    const row = document.createElement('div'); row.className = 'row';
++    row.innerHTML = `<span class="rlabel"></span><span class="state">${val ? 'På' : 'Av'}</span>`;
++    row.querySelector('.rlabel').textContent = d.label;
++    const sw = document.createElement('label'); sw.className = 'sw';
++    sw.innerHTML = `<input type="checkbox" ${val ? 'checked' : ''}><span class="track"></span><span class="knob"></span>`;
++    sw.querySelector('input').addEventListener('change', async e => {
++      const on = e.target.checked; row.querySelector('.state').textContent = on ? 'På' : 'Av';
++      const cur = ov(o.id); if (cur){ cur.options = cur.options || {}; cur.options[d.id] = on; }
++      try { await invoke('set_option', { id: o.id, option: d.id, value: on }); }
++      catch(err){ toast('Kunde inte spara alternativ: ' + errMsg(err), true); }
+     });
++    row.appendChild(sw); wrap.appendChild(row);
+   }
+ }
+ 
+-/* ── MoTeC-referens ────────────────────────────────────────────────────── */
+-$('loadRef').addEventListener('click', async ()=>{
+-  try{
+-    const path = await T.dialog.open({ multiple:false, filters:[{ name:'MoTeC', extensions:['ld'] }] });
+-    if(!path) return;
++/* ── live-preview (overlayn laddas app-relativt, samma bundle) ── */
++function setPreview(o){
++  const pv = $('pv');
++  const src = '../' + o.url;                 // src/control-panel → src/overlays/…
++  if (pv.dataset.src !== src){ pv.dataset.src = src; pv.src = src; }
++  fitPreview();
++}
++function fitPreview(){
++  const o = ov(selectedId); if (!o) return;
++  const box = $('previewBox'), pv = $('pv');
++  const bw = box.clientWidth - 30, bh = box.clientHeight - 30;
++  if (bw <= 0 || bh <= 0) return;
++  const s = Math.min(bw / o.base_width, bh / o.base_height, 1);
++  pv.style.width = o.base_width + 'px';
++  pv.style.height = o.base_height + 'px';
++  pv.style.transform = `translate(-50%,-50%) scale(${s})`;
++}
++addEventListener('resize', () => { if (selectedId) fitPreview(); });
++
++/* ── kontrollremsa ── */
++$('btnMove').addEventListener('click', async () => {
++  editMode = !editMode; $('btnMove').classList.toggle('active', editMode);
++  try { await invoke('set_edit_mode', { edit: editMode }); }
++  catch(e){ toast('Kunde inte växla edit-läge: ' + errMsg(e), true); }
++});
++$('btnEye').addEventListener('click', async () => {
++  const o = ov(selectedId); if (!o) return;
++  const on = !o.enabled; o.enabled = on;
++  $('btnEye').classList.toggle('active', on); renderList();
++  try { await invoke('set_enabled', { id: o.id, enabled: on }); }
++  catch(e){ toast('Kunde inte visa/dölja: ' + errMsg(e), true); }
++});
++$('btnReset').addEventListener('click', async () => {
++  if (!selectedId) return;
++  try { await invoke('reset_overlay', { id: selectedId }); await loadOverlays(); toast('Nollställd.'); }
++  catch(e){ toast('Kunde inte nollställa: ' + errMsg(e), true); }
++});
++
++/* ── skala / opacitet / alltid överst ── */
++$('scale').addEventListener('input', async () => {
++  const v = parseFloat($('scale').value); $('scaleVal').textContent = v.toFixed(2) + '×';
++  const o = ov(selectedId); if (o) o.scale = v;
++  try { await invoke('set_scale', { id: selectedId, scale: v }); }
++  catch(e){ toast('set_scale: ' + errMsg(e), true); }
++});
++$('opacity').addEventListener('input', async () => {
++  const v = parseFloat($('opacity').value); $('opacityVal').textContent = Math.round(v * 100) + '%';
++  const o = ov(selectedId); if (o) o.opacity = v;
++  try { await invoke('set_opacity', { id: selectedId, opacity: v }); }
++  catch(e){ toast('set_opacity: ' + errMsg(e), true); }
++});
++$('aotSwitch').querySelector('input').addEventListener('change', async e => {
++  const on = e.target.checked; $('aotState').textContent = on ? 'På' : 'Av';
++  const o = ov(selectedId); if (o) o.always_on_top = on;
++  try { await invoke('set_always_on_top', { id: selectedId, value: on }); }
++  catch(err){ toast('set_always_on_top: ' + errMsg(err), true); }
++});
++
++/* ── referens (MoTeC) ── */
++$('loadRef').addEventListener('click', async () => {
++  try {
++    const path = await T.dialog.open({ multiple: false, filters: [{ name: 'MoTeC', extensions: ['ld'] }] });
++    if (!path) return;
+     await invoke('set_reference', { path });
+     $('refpath').textContent = path;
+-  }catch(err){ $('refpath').textContent = 'Kunde ej öppna fil: '+err; }
++  } catch(err){ $('refpath').textContent = 'Kunde inte öppna filen: ' + errMsg(err); }
+ });
+ 
+-/* ── Motorns status via WS ─────────────────────────────────────────────── */
++/* ── uppdatering ── */
++$('checkUpd').addEventListener('click', async () => {
++  const m = $('updmsg'); m.textContent = 'Söker …';
++  try {
++    if (!T || !T.updater) throw new Error('no-updater');
++    const upd = await Promise.race([
++      T.updater.check(),
++      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
++    ]);
++    if (upd){ m.textContent = `Ny version ${upd.version} — installerar …`; await upd.downloadAndInstall(); m.textContent = 'Klart — starta om appen.'; }
++    else m.textContent = 'Du har senaste versionen.';
++  } catch(err){ m.textContent = 'Uppdateringar är inte konfigurerade än (kräver GitHub-repo + nycklar).'; }
++});
++
++/* ── motorstatus via WS ── */
+ (function statusLoop(){
+-  let ws, seen=false;
+-  const set=(cls,txt)=>{ $('dot').className='dot '+cls; $('statusText').textContent=txt; };
++  let ws;
++  const set = (cls, txt) => { $('dot').className = 'dot ' + cls; $('statusText').textContent = txt; };
+   function connect(){
+-    seen=false; set('off','Motor offline');
+-    try{ ws = new WebSocket('ws://127.0.0.1:8777'); }catch{ return setTimeout(connect,1500); }
+-    ws.onmessage = e=>{ seen=true; try{ const f=JSON.parse(e.data);
+-      if(f.connected) set('live','ACC ansluten'); else set('mock','Mock-data (ACC ej igång)'); }catch{} };
+-    ws.onclose = ()=>{ set('off','Motor offline'); setTimeout(connect,1500); };
+-    ws.onerror = ()=>{ try{ws.close();}catch{} };
++    set('off', 'Motor offline');
++    try { ws = new WebSocket('ws://127.0.0.1:8777'); } catch { return setTimeout(connect, 1500); }
++    ws.onmessage = e => { try { const f = JSON.parse(e.data); set(f.connected ? 'live' : 'mock', f.connected ? 'ACC ansluten' : 'Mock-data'); } catch {} };
++    ws.onclose = () => { set('off', 'Motor offline'); setTimeout(connect, 1500); };
++    ws.onerror = () => { try { ws.close(); } catch {} };
+   }
+   connect();
+ })();
+ 
+-/* ── Uppdatering ───────────────────────────────────────────────────────── */
+-$('checkUpd').addEventListener('click', async ()=>{
+-  status('Söker …');
+-  try{
+-    if(!T || !T.updater) throw new Error('no-updater');
+-    const upd = await Promise.race([
+-      T.updater.check(),
+-      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')), 8000))
+-    ]);
+-    if(upd){ status(`Ny version ${upd.version} — installerar …`);
+-      await upd.downloadAndInstall(); status('Klart — starta om appen.'); }
+-    else status('Senaste versionen.');
+-  }catch(err){ status('Uppdateringar ej konfigurerade ännu (kräver GitHub-repo + nycklar).'); }
+-});
++/* ── sync edit-läge från hotkey ── */
++if (T && T.event) T.event.listen('edit-mode', e => { editMode = !!e.payload; $('btnMove').classList.toggle('active', editMode); });
++
++/* ── version ── */
++try { T?.app?.getVersion?.().then(v => { if (v) $('omVer').textContent = 'v' + v; }).catch(() => {}); } catch {}
+ 
+-renderList();
++document.fonts.ready.then(loadOverlays);
+ </script>
+ </body>
+ </html>
+diff --git a/src/overlays/delta-bar/index.html b/src/overlays/delta-bar/index.html
+index f99220f..8ef8433 100644
+--- a/src/overlays/delta-bar/index.html
++++ b/src/overlays/delta-bar/index.html
+@@ -197,10 +197,12 @@ function frame(now){
+   render();
+ }
+ 
+-/* skal: skala/opacitet från kontrollpanelen, edit-läge/drag */
++/* skal: skala/opacitet från kontrollpanelen, edit-läge/drag, alternativ */
+ wireShell(({scale,opacity})=>{
+   if(typeof scale==='number') document.documentElement.style.setProperty('--ui-scale',scale);
+   if(typeof opacity==='number') document.getElementById('ui').style.opacity=opacity;
++},(opt,val)=>{
++  if(opt==='predicted') el.cellPred.style.display = val ? '' : 'none';
+ });
+ 
+ document.fonts.ready.then(()=>{document.getElementById('ui').classList.add('ready');
+diff --git a/src/overlays/inputs-trace/index.html b/src/overlays/inputs-trace/index.html
+index 6883b0f..f68590c 100644
+--- a/src/overlays/inputs-trace/index.html
++++ b/src/overlays/inputs-trace/index.html
+@@ -67,7 +67,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent
+         <canvas id="trace"></canvas>
+       </div>
+       <div class="bars">
+-        <div class="bar-col"><div class="bar-value" id="v-clutch">0</div><div class="bar-slot"><div class="bar-fill clutch" id="f-clutch"></div></div></div>
++        <div class="bar-col" id="col-clutch"><div class="bar-value" id="v-clutch">0</div><div class="bar-slot"><div class="bar-fill clutch" id="f-clutch"></div></div></div>
+         <div class="bar-col"><div class="bar-value" id="v-brake">0</div><div class="bar-slot"><div class="bar-fill brake" id="f-brake"></div></div></div>
+         <div class="bar-col"><div class="bar-value" id="v-throttle">0</div><div class="bar-slot"><div class="bar-fill throttle" id="f-throttle"></div></div></div>
+       </div>
+@@ -142,6 +142,8 @@ new InputsTrace(bus, document.getElementById('overlay'));
+ wireShell(({scale,opacity})=>{
+   if(typeof scale==='number') document.documentElement.style.setProperty('--H',(150*scale)+'px');
+   if(typeof opacity==='number') document.getElementById('ui').style.opacity=opacity;
++},(opt,val)=>{
++  if(opt==='clutch'){ const c=document.getElementById('col-clutch'); if(c) c.style.display = val ? '' : 'none'; }
+ });
+ document.fonts.ready.then(()=>document.getElementById('overlay').classList.add('ready'));
+ </script>
+diff --git a/src/overlays/registry.json b/src/overlays/registry.json
+index 72ae988..ef23743 100644
+--- a/src/overlays/registry.json
++++ b/src/overlays/registry.json
+@@ -3,6 +3,7 @@
+     {
+       "id": "delta-bar",
+       "title": "Delta + Lap-time Row",
++      "desc": "Delta mot referensvarv med varvtidsrad — session-bästa, förare och predikterad sluttid. Cirkeln fylls grönt när du vinner tid, rött när du tappar.",
+       "url": "overlays/delta-bar/index.html",
+       "baseWidth": 1300,
+       "baseHeight": 460,
+@@ -12,12 +13,17 @@
+       "channels": [
+         "delta",
+         "sessionBestMs",
++        "refTotalMs",
+         "driverName"
++      ],
++      "options": [
++        { "id": "predicted", "label": "Predicted-kolumn", "default": true }
+       ]
+     },
+     {
+       "id": "inputs-trace",
+       "title": "Inputs Trace",
++      "desc": "Rullande gas/broms-trace med pedalstaplar. ABS färgar bromsen gul, TC färgar gasen blå.",
+       "url": "overlays/inputs-trace/index.html",
+       "baseWidth": 600,
+       "baseHeight": 200,
+@@ -30,7 +36,10 @@
+         "clutch",
+         "abs",
+         "tc"
++      ],
++      "options": [
++        { "id": "clutch", "label": "Kopplingsstapel", "default": true }
+       ]
+     }
+   ]
+-}
+\ No newline at end of file
++}
+diff --git a/src/shared/bus.js b/src/shared/bus.js
+index e846d70..581ea4d 100644
+--- a/src/shared/bus.js
++++ b/src/shared/bus.js
+@@ -45,9 +45,10 @@ export class WsBus {
+ }
+ 
+ // ── Skal-integration: lyssna på kontrollpanelens config + edit-läge ──────────
+-// Overlayn skickar in en callback som får {scale, opacity}. Fungerar även utan
+-// Tauri (t.ex. i OBS eller vanlig webbläsare) — då händer bara inget.
+-export function wireShell(applyConfig) {
++// applyConfig får {scale, opacity}. applyOption (valfri) får (id, value) per
++// alternativ som overlayn deklarerat i registry.json. Fungerar även utan Tauri
++// (t.ex. i OBS eller vanlig webbläsare) — då händer bara inget.
++export function wireShell(applyConfig, applyOption) {
+   const T = globalThis.__TAURI__;
+   if (!T || !T.event) return;
+ 
+@@ -55,14 +56,26 @@ export function wireShell(applyConfig) {
+   let label = null;
+   try { label = T.window.getCurrentWindow().label; } catch {}
+ 
+-  // Hämta sparad skala/opacitet direkt vid start (undviker att den ser fel ut först).
+-  try { T.core.invoke('get_config', { id: label }).then(cfg => applyConfig(cfg || {})).catch(() => {}); } catch {}
++  // Hämta sparad skala/opacitet/alternativ direkt vid start (undviker fel look först).
++  try {
++    T.core.invoke('get_config', { id: label }).then(cfg => {
++      applyConfig(cfg || {});
++      if (applyOption && cfg && cfg.options) {
++        for (const [k, v] of Object.entries(cfg.options)) applyOption(k, v);
++      }
++    }).catch(() => {});
++  } catch {}
+ 
+   T.event.listen('config', (e) => {
+     const p = e.payload || {};
+     if (p.id && label && p.id !== label) return;   // ignorera annan overlays config
+     applyConfig(p);
+   });
++  T.event.listen('option', (e) => {
++    const p = e.payload || {};
++    if (p.id && label && p.id !== label) return;   // ignorera annan overlays alternativ
++    if (applyOption) applyOption(p.option, p.value);
++  });
+   T.event.listen('edit-mode', (e) => {
+     document.body.classList.toggle('edit-mode', e.payload === true);
+   });
+diff --git a/src/shared/tokens.css b/src/shared/tokens.css
+index a5edf12..fa306bf 100644
+--- a/src/shared/tokens.css
++++ b/src/shared/tokens.css
+@@ -34,6 +34,14 @@
+   --grid:      rgba(255,255,255,0.05);   /* svaga gridlinjer i grafer             */
+   --wheel:     #AFAFAF;                  /* ratt-indikator (grå)                  */
+ 
++  /* ── UI-chrome (kontrollpanel; ej overlay-innehåll) ── */
++  --app-bg:    #0c0e0d;                  /* panelens basbakgrund                  */
++  --rail-bg:   #090b0a;                  /* vänster ikonrad (aning mörkare)       */
++  --sel:       rgba(255,255,255,0.06);   /* vald/aktiv rad eller flik             */
++  --hover:     rgba(255,255,255,0.04);   /* hover på rad/flik                     */
++  --ctrl:      rgba(255,255,255,0.06);   /* knappyta                              */
++  --ctrl-hi:   rgba(255,255,255,0.11);   /* knapp hover                           */
++
+   /* delta-cirkelns grågröna kupolyta (topp → botten) */
+   --disc-top:  rgb(42,46,43);
+   --disc-mid:  rgb(33,37,34);

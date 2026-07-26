@@ -67,7 +67,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent
         <canvas id="trace"></canvas>
       </div>
       <div class="bars">
-        <div class="bar-col"><div class="bar-value" id="v-clutch">0</div><div class="bar-slot"><div class="bar-fill clutch" id="f-clutch"></div></div></div>
+        <div class="bar-col" id="col-clutch"><div class="bar-value" id="v-clutch">0</div><div class="bar-slot"><div class="bar-fill clutch" id="f-clutch"></div></div></div>
         <div class="bar-col"><div class="bar-value" id="v-brake">0</div><div class="bar-slot"><div class="bar-fill brake" id="f-brake"></div></div></div>
         <div class="bar-col"><div class="bar-value" id="v-throttle">0</div><div class="bar-slot"><div class="bar-fill throttle" id="f-throttle"></div></div></div>
       </div>
@@ -142,6 +142,8 @@ new InputsTrace(bus, document.getElementById('overlay'));
 wireShell(({scale,opacity})=>{
   if(typeof scale==='number') document.documentElement.style.setProperty('--H',(150*scale)+'px');
   if(typeof opacity==='number') document.getElementById('ui').style.opacity=opacity;
+},(opt,val)=>{
+  if(opt==='clutch'){ const c=document.getElementById('col-clutch'); if(c) c.style.display = val ? '' : 'none'; }
 });
 document.fonts.ready.then(()=>document.getElementById('overlay').classList.add('ready'));
 </script>

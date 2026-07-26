@@ -197,10 +197,12 @@ function frame(now){
   render();
 }
 
-/* skal: skala/opacitet från kontrollpanelen, edit-läge/drag */
+/* skal: skala/opacitet från kontrollpanelen, edit-läge/drag, alternativ */
 wireShell(({scale,opacity})=>{
   if(typeof scale==='number') document.documentElement.style.setProperty('--ui-scale',scale);
   if(typeof opacity==='number') document.getElementById('ui').style.opacity=opacity;
+},(opt,val)=>{
+  if(opt==='predicted') el.cellPred.style.display = val ? '' : 'none';
 });
 
 document.fonts.ready.then(()=>{document.getElementById('ui').classList.add('ready');

@@ -3,6 +3,7 @@
     {
       "id": "delta-bar",
       "title": "Delta + Lap-time Row",
+      "desc": "Delta mot referensvarv med varvtidsrad — session-bästa, förare och predikterad sluttid. Cirkeln fylls grönt när du vinner tid, rött när du tappar.",
       "url": "overlays/delta-bar/index.html",
       "baseWidth": 1300,
       "baseHeight": 460,
@@ -12,12 +13,17 @@
       "channels": [
         "delta",
         "sessionBestMs",
+        "refTotalMs",
         "driverName"
+      ],
+      "options": [
+        { "id": "predicted", "label": "Predicted-kolumn", "default": true }
       ]
     },
     {
       "id": "inputs-trace",
       "title": "Inputs Trace",
+      "desc": "Rullande gas/broms-trace med pedalstaplar. ABS färgar bromsen gul, TC färgar gasen blå.",
       "url": "overlays/inputs-trace/index.html",
       "baseWidth": 600,
       "baseHeight": 200,
@@ -30,6 +36,9 @@
         "clutch",
         "abs",
         "tc"
+      ],
+      "options": [
+        { "id": "clutch", "label": "Kopplingsstapel", "default": true }
       ]
     }
   ]

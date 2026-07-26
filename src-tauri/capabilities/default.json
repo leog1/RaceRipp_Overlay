@@ -8,8 +8,15 @@
     "core:event:default",
     "core:window:allow-start-dragging",
     "core:window:allow-set-ignore-cursor-events",
+    "core:window:allow-set-always-on-top",
     "global-shortcut:default",
     "dialog:default",
-    "updater:default"
+    "updater:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        { "name": "binaries/acc-engine", "sidecar": true, "args": true }
+      ]
+    }
   ]
 }

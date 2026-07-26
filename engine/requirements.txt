@@ -2,5 +2,6 @@ websockets>=12.0
 numpy>=1.24
 # ACC delat minne (Windows). Saknas den faller motorn tillbaka på mock.
 pyaccsharedmemory ; sys_platform == "win32"
-# MoTeC .ld-parser (EN fil, ej pip-paket) — hämta ldparser.py från:
-#   https://github.com/gotzl/ldparser  → lägg i engine/
+# MoTeC .ld-parser (GPL-3.0, EN fil, ej pip-paket) — committas EJ i detta MIT-repo.
+# Hämta ldparser.py från https://github.com/gotzl/ldparser och lägg i engine/.
+# Filen är gitignorerad och behövs bara för MoTeC-referens, inte för ACC-data.

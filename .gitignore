@@ -17,6 +17,8 @@ engine/dist/
 engine/*.spec
 .venv/
 venv/
+# MoTeC .ld-parser (GPL-3.0) — hålls lokalt, committas ej i detta MIT-repo
+engine/ldparser.py
 
 # ── OS / editor ──
 .DS_Store

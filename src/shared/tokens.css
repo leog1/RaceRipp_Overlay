@@ -34,6 +34,14 @@
   --grid:      rgba(255,255,255,0.05);   /* svaga gridlinjer i grafer             */
   --wheel:     #AFAFAF;                  /* ratt-indikator (grå)                  */
 
+  /* ── UI-chrome (kontrollpanel; ej overlay-innehåll) ── */
+  --app-bg:    #0c0e0d;                  /* panelens basbakgrund                  */
+  --rail-bg:   #090b0a;                  /* vänster ikonrad (aning mörkare)       */
+  --sel:       rgba(255,255,255,0.06);   /* vald/aktiv rad eller flik             */
+  --hover:     rgba(255,255,255,0.04);   /* hover på rad/flik                     */
+  --ctrl:      rgba(255,255,255,0.06);   /* knappyta                              */
+  --ctrl-hi:   rgba(255,255,255,0.11);   /* knapp hover                           */
+
   /* delta-cirkelns grågröna kupolyta (topp → botten) */
   --disc-top:  rgb(42,46,43);
   --disc-mid:  rgb(33,37,34);

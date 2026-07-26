@@ -32,7 +32,12 @@ export class WsBus {
     if (this._last) fn(this._last);
     return () => this._subs.delete(fn);
   }
-  _emit(f) { this._last = f; for (const fn of this._subs) fn(f); }
+  _emit(f) {
+    this._last = f;
+    _lastConnected = !!(f && f.connected);
+    _applyGate();
+    for (const fn of this._subs) fn(f);
+  }
   _connect() {
     let ws;
     try { ws = new WebSocket(this.url); }
@@ -44,10 +49,21 @@ export class WsBus {
   }
 }
 
+// ── Synk-grind: dölj overlayn tills motorn är ansluten (global inställning) ──
+// Styrs av kontrollpanelens "Endast när ACC kör". Utan Tauri (OBS/webbläsare)
+// är grinden av → overlayn syns alltid.
+let _hideUntilConnected = false;
+let _lastConnected = false;
+function _applyGate() {
+  const hidden = _hideUntilConnected && !_lastConnected;
+  document.documentElement.style.visibility = hidden ? 'hidden' : '';
+}
+
 // ── Skal-integration: lyssna på kontrollpanelens config + edit-läge ──────────
-// Overlayn skickar in en callback som får {scale, opacity}. Fungerar även utan
-// Tauri (t.ex. i OBS eller vanlig webbläsare) — då händer bara inget.
-export function wireShell(applyConfig) {
+// applyConfig får {scale, opacity}. applyOption (valfri) får (id, value) per
+// alternativ som overlayn deklarerat i registry.json. Fungerar även utan Tauri
+// (t.ex. i OBS eller vanlig webbläsare) — då händer bara inget.
+export function wireShell(applyConfig, applyOption) {
   const T = globalThis.__TAURI__;
   if (!T || !T.event) return;
 
@@ -55,13 +71,38 @@ export function wireShell(applyConfig) {
   let label = null;
   try { label = T.window.getCurrentWindow().label; } catch {}
 
-  // Hämta sparad skala/opacitet direkt vid start (undviker att den ser fel ut först).
-  try { T.core.invoke('get_config', { id: label }).then(cfg => applyConfig(cfg || {})).catch(() => {}); } catch {}
+  // Global grind: visa overlays först när ACC är ansluten ("Endast när ACC kör").
+  try {
+    T.core.invoke('get_globals').then(g => {
+      _hideUntilConnected = !!(g && g.hide_until_connected);
+      _applyGate();
+    }).catch(() => {});
+  } catch {}
+  T.event.listen('globals', (e) => {
+    const p = e.payload || {};
+    _hideUntilConnected = !!p.hide_until_connected;
+    _applyGate();
+  });
+
+  // Hämta sparad skala/opacitet/alternativ direkt vid start (undviker fel look först).
+  try {
+    T.core.invoke('get_config', { id: label }).then(cfg => {
+      applyConfig(cfg || {});
+      if (applyOption && cfg && cfg.options) {
+        for (const [k, v] of Object.entries(cfg.options)) applyOption(k, v);
+      }
+    }).catch(() => {});
+  } catch {}
 
   T.event.listen('config', (e) => {
     const p = e.payload || {};
     if (p.id && label && p.id !== label) return;   // ignorera annan overlays config
     applyConfig(p);
+  });
+  T.event.listen('option', (e) => {
+    const p = e.payload || {};
+    if (p.id && label && p.id !== label) return;   // ignorera annan overlays alternativ
+    if (applyOption) applyOption(p.option, p.value);
   });
   T.event.listen('edit-mode', (e) => {
     document.body.classList.toggle('edit-mode', e.payload === true);

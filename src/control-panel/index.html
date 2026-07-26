@@ -11,186 +11,471 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{height:100%;}
-body{font-family:var(--font);background:#0c0e0d;color:var(--ink);-webkit-font-smoothing:antialiased;
-  display:flex;flex-direction:column;}
-.rail{height:4px;background:var(--rail);flex:0 0 auto;}
-header{padding:18px 20px 14px;display:flex;align-items:baseline;justify-content:space-between;}
-header h1{font-size:15px;font-weight:700;letter-spacing:2px;text-transform:uppercase;}
-header .ver{font-size:11px;font-weight:600;color:var(--dim);font-variant-numeric:tabular-nums;}
-.status{margin:0 20px 8px;display:flex;align-items:center;gap:9px;font-size:12px;font-weight:600;
-  color:var(--dim);letter-spacing:.5px;}
-.dot{width:9px;height:9px;border-radius:50%;background:var(--faint);box-shadow:0 0 0 0 transparent;}
-.dot.live{background:var(--green);} .dot.mock{background:var(--amber);} .dot.off{background:var(--red);}
+body{font-family:var(--font);background:var(--app-bg);color:var(--ink);
+  -webkit-font-smoothing:antialiased;display:flex;flex-direction:column;overflow:hidden;}
 
-main{flex:1 1 auto;overflow-y:auto;padding:8px 16px 16px;}
-.card{background:var(--panel);border:1px solid var(--divider);border-radius:14px;
-  padding:14px 16px;margin-bottom:12px;box-shadow:var(--depth);}
-.card h2{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--amber);
-  margin-bottom:12px;}
-.row{display:flex;align-items:center;gap:12px;padding:9px 0;}
+/* varumärkes-rail överst */
+.brandbar{height:3px;background:var(--rail);flex:0 0 auto;}
+
+/* trepanelslayout */
+.app{flex:1 1 auto;display:flex;min-height:0;}
+
+/* ── vänster ikonrad ── */
+.rail{flex:0 0 74px;background:var(--rail-bg);border-right:1px solid var(--divider);
+  display:flex;flex-direction:column;align-items:stretch;padding:14px 0 12px;}
+.brand{display:flex;align-items:center;justify-content:center;height:34px;margin-bottom:14px;color:var(--rail);}
+.brand svg{width:22px;height:22px;}
+.nav{appearance:none;background:none;border:0;color:var(--dim);font:inherit;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:5px;padding:11px 4px;
+  border-left:3px solid transparent;transition:color .15s ease,background .15s ease;}
+.nav svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round;}
+.nav span{font-size:10px;font-weight:600;letter-spacing:.6px;}
+.nav:hover{color:var(--ink);background:var(--hover);}
+.nav[aria-selected="true"]{color:var(--ink);border-left-color:var(--rail);background:var(--sel);}
+.rail-spacer{flex:1 1 auto;}
+.motor{display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 4px 2px;text-align:center;}
+.motor .dot{width:9px;height:9px;border-radius:50%;background:var(--faint);}
+.motor .dot.live{background:var(--green);} .motor .dot.mock{background:var(--amber);} .motor .dot.off{background:var(--red);}
+.motor span:last-child{font-size:9.5px;font-weight:600;letter-spacing:.4px;color:var(--dim);line-height:1.25;}
+
+/* ── mittkolumn: overlay-lista ── */
+.list{flex:0 0 262px;border-right:1px solid var(--divider);display:flex;flex-direction:column;min-height:0;}
+.list-head{padding:16px 18px 10px;font-size:11px;font-weight:700;letter-spacing:2px;
+  text-transform:uppercase;color:var(--amber);}
+#list{flex:1 1 auto;overflow-y:auto;padding:0 8px 12px;}
+.list-foot{flex:0 0 auto;display:flex;align-items:center;gap:10px;
+  padding:12px 16px;border-top:1px solid var(--divider);background:var(--rail-bg);}
+.list-foot .lf-text{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.list-foot .lf-title{font-size:12px;font-weight:600;}
+.list-foot .lf-sub{font-size:10px;color:var(--faint);}
+.lrow{width:100%;appearance:none;background:none;border:0;color:var(--ink);font:inherit;cursor:pointer;
+  display:flex;align-items:center;gap:10px;padding:11px 12px 11px 9px;border-radius:9px;
+  border-left:3px solid transparent;text-align:left;transition:background .12s ease;}
+.lrow:hover{background:var(--hover);}
+.lrow.sel{background:var(--sel);}
+.lrow.on{border-left-color:var(--green);}
+.lrow .ltitle{flex:1 1 auto;font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.lrow .lstate{font-size:10.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--faint);}
+.lrow.on .lstate{color:var(--green);}
+.empty{padding:16px 18px;font-size:12px;color:var(--dim);line-height:1.5;}
+
+/* ── höger detaljpanel ── */
+.detail{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;overflow:hidden;}
+.pane{display:none;flex:1 1 auto;min-height:0;overflow-y:auto;}
+.app[data-section="overlays"] #pane-overlays{display:flex;flex-direction:column;}
+.app[data-section="referens"] #pane-referens{display:flex;flex-direction:column;}
+.app[data-section="om"] #pane-om{display:flex;flex-direction:column;}
+.app:not([data-section="overlays"]) .list{display:none;}
+
+/* preview */
+#previewBox{position:relative;flex:0 0 40%;min-height:190px;margin:16px 18px 0;border-radius:12px;
+  background:
+    radial-gradient(120% 120% at 50% 0%, rgba(255,255,255,0.02), transparent 60%),
+    var(--plot);
+  border:1px solid var(--edge);overflow:hidden;box-shadow:var(--sheen);}
+#pv{position:absolute;top:50%;left:50%;border:0;transform-origin:center center;
+  transform:translate(-50%,-50%);background:transparent;pointer-events:none;}
+.pv-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:11.5px;color:var(--faint);letter-spacing:.4px;pointer-events:none;}
+
+/* titel + beskrivning (centrerad, röd understrykning) */
+.titleband{padding:20px 22px 6px;text-align:center;}
+.titleband h2{font-size:22px;font-weight:700;letter-spacing:.4px;}
+.titleband h2::after{content:"";display:block;width:46px;height:2.5px;background:var(--rail);
+  margin:8px auto 0;border-radius:2px;}
+.titleband p{max-width:560px;margin:11px auto 0;font-size:12.5px;font-weight:500;line-height:1.55;color:var(--dim);}
+
+/* kontroller: kontrollremsa + kort */
+.controls{display:flex;gap:16px;padding:16px 22px 22px;align-items:flex-start;}
+.strip{flex:0 0 auto;display:flex;flex-direction:column;gap:8px;padding-top:26px;}
+.sbtn{width:46px;height:46px;display:flex;align-items:center;justify-content:center;
+  background:var(--ctrl);border:1px solid var(--divider);border-radius:11px;color:var(--dim);
+  cursor:pointer;transition:background .15s ease,color .15s ease,border-color .15s ease;}
+.sbtn svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;}
+.sbtn:hover{background:var(--ctrl-hi);color:var(--ink);}
+.sbtn.active{color:var(--amber);border-color:rgba(251,191,36,0.5);background:rgba(251,191,36,0.10);}
+.strip .lbl{font-size:9px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--faint);text-align:center;}
+
+.cards{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:12px;}
+.cards.single{max-width:560px;}
+.card{background:var(--panel);border:1px solid var(--divider);border-radius:13px;padding:6px 16px 10px;box-shadow:var(--depth);}
+.card > h3{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--amber);
+  padding:12px 0 4px;}
+.row{display:flex;align-items:center;gap:12px;padding:11px 0;}
 .row + .row{border-top:1px solid var(--divider);}
-.row .name{flex:1 1 auto;font-size:13.5px;font-weight:600;}
-.row .sub{font-size:11px;font-weight:500;color:var(--dim);margin-top:2px;}
+.rlabel{flex:1 1 auto;font-size:13px;font-weight:600;}
+.state{font-size:11.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--dim);}
+.row.on .state,.state.on{color:var(--green);}
+
+/* slider-rad */
+.row.slide label{flex:0 0 62px;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--dim);}
+.row.slide input[type=range]{flex:1 1 auto;accent-color:var(--green);height:4px;}
+.row.slide .val{flex:0 0 48px;text-align:right;font-size:12.5px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;}
 
 /* toggle */
 .sw{position:relative;width:42px;height:24px;flex:0 0 auto;cursor:pointer;}
 .sw input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer;}
 .sw .track{position:absolute;inset:0;border-radius:999px;background:var(--track);
-  border:1px solid var(--slot-edge);transition:background .18s ease;}
+  border:1px solid var(--slot-edge);transition:background .18s ease,border-color .18s ease;}
 .sw .knob{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;
   background:var(--dim);transition:transform .18s ease,background .18s ease;}
 .sw input:checked ~ .track{background:rgba(13,230,34,0.22);border-color:rgba(13,230,34,0.5);}
 .sw input:checked ~ .knob{transform:translateX(18px);background:var(--green);}
 
-/* sliders */
-.ctl{display:flex;flex-direction:column;gap:9px;margin-top:6px;}
-.ctl.hidden{display:none;}
-.slide{display:flex;align-items:center;gap:10px;}
-.slide label{width:58px;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--dim);}
-.slide input[type=range]{flex:1 1 auto;accent-color:var(--green);height:4px;}
-.slide .val{width:44px;text-align:right;font-size:12px;font-weight:600;color:var(--ink);
-  font-variant-numeric:tabular-nums;}
+/* knappar + text i Referens/Om */
+button.act{width:100%;font:inherit;font-size:12.5px;font-weight:600;letter-spacing:.4px;color:var(--ink);
+  background:var(--ctrl);border:1px solid var(--divider);border-radius:10px;padding:12px;cursor:pointer;
+  transition:background .15s ease;margin:6px 0 4px;}
+button.act:hover{background:var(--ctrl-hi);}
+.refpath{font-size:11px;font-weight:500;color:var(--dim);margin:8px 0 6px;word-break:break-all;
+  font-variant-numeric:tabular-nums;line-height:1.5;}
+.hint{font-size:11px;color:var(--faint);line-height:1.55;padding:2px 0 8px;}
+.kv{display:flex;justify-content:space-between;gap:16px;padding:9px 0;font-size:12.5px;}
+.kv + .kv{border-top:1px solid var(--divider);}
+.kv span:first-child{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;}
+.kv span:last-child{color:var(--dim);}
 
-button.act{width:100%;font:inherit;font-size:12.5px;font-weight:600;letter-spacing:.5px;color:var(--ink);
-  background:rgba(255,255,255,0.06);border:1px solid var(--divider);border-radius:10px;
-  padding:11px;cursor:pointer;transition:background .15s ease;}
-button.act:hover{background:rgba(255,255,255,0.11);}
-button.act:active{transform:translateY(1px);}
-.refpath{font-size:11px;font-weight:500;color:var(--dim);margin-top:9px;word-break:break-all;
-  font-variant-numeric:tabular-nums;}
-.hint{font-size:11px;color:var(--faint);padding:2px 4px 10px;line-height:1.5;}
-footer{flex:0 0 auto;padding:12px 16px;border-top:1px solid var(--divider);display:flex;gap:10px;align-items:center;}
-footer .msg{flex:1 1 auto;font-size:11px;color:var(--dim);}
-footer button{font:inherit;font-size:11.5px;font-weight:600;color:var(--dim);background:none;
-  border:1px solid var(--divider);border-radius:8px;padding:8px 12px;cursor:pointer;}
-footer button:hover{color:var(--ink);border-color:var(--dim);}
+/* toast */
+#toast{position:fixed;right:16px;bottom:14px;max-width:340px;padding:9px 13px;border-radius:9px;
+  background:var(--bar);border:1px solid var(--divider);color:var(--ink);font-size:11.5px;font-weight:600;
+  opacity:0;transform:translateY(6px);transition:opacity .2s ease,transform .2s ease;pointer-events:none;z-index:99;}
+#toast.show{opacity:1;transform:none;}
 </style>
 </head>
 <body>
-  <div class="rail"></div>
-  <header>
-    <h1>ACC Overlay</h1>
-    <span class="ver" id="ver">v0.1.0</span>
-  </header>
-  <div class="status"><span class="dot off" id="dot"></span><span id="statusText">Motor offline</span></div>
+  <div class="brandbar"></div>
+  <div class="app" id="app" data-section="overlays">
 
-  <main>
-    <div class="card">
-      <h2>Overlays</h2>
-      <div id="list"></div>
-    </div>
+    <!-- ── vänster ikonrad ── -->
+    <nav class="rail">
+      <div class="brand" title="ACC Overlay">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0Z"/><path d="M12 7v5l3 2"/></svg>
+      </div>
+      <button class="nav" data-sec="overlays" aria-selected="true">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/></svg>
+        <span>Overlays</span>
+      </button>
+      <button class="nav" data-sec="referens" aria-selected="false">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 13V9M9 2h6"/></svg>
+        <span>Referens</span>
+      </button>
+      <button class="nav" data-sec="om" aria-selected="false">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+        <span>Om</span>
+      </button>
+      <div class="rail-spacer"></div>
+      <div class="motor"><span class="dot off" id="dot"></span><span id="statusText">Motor offline</span></div>
+    </nav>
 
-    <div class="card">
-      <h2>Referensvarv (delta)</h2>
-      <button class="act" id="loadRef">Ladda MoTeC .ld …</button>
-      <div class="refpath" id="refpath">Ingen referens laddad — delta visas som platshållare.</div>
-    </div>
+    <!-- ── mittkolumn: overlay-lista ── -->
+    <section class="list">
+      <div class="list-head">Overlays</div>
+      <div id="list"><div class="empty">Laddar …</div></div>
+      <div class="list-foot">
+        <div class="lf-text">
+          <span class="lf-title">Endast när ACC kör</span>
+          <span class="lf-sub">Dölj tills bilen rullar</span>
+        </div>
+        <label class="sw" id="gateSwitch"><input type="checkbox"><span class="track"></span><span class="knob"></span></label>
+      </div>
+    </section>
 
-    <div class="hint">Ctrl+Alt+Space växlar race/edit. I edit-läge kan du dra varje overlay på plats; positionen sparas när panelen stängs.</div>
-  </main>
+    <!-- ── höger detaljpanel ── -->
+    <section class="detail">
 
-  <footer>
-    <span class="msg" id="updmsg"></span>
-    <button id="checkUpd">Sök uppdatering</button>
-  </footer>
+      <!-- OVERLAYS -->
+      <div class="pane" id="pane-overlays">
+        <div id="previewBox">
+          <div class="pv-hint" id="pvHint">Förhandsvisning kräver att motorn kör</div>
+          <iframe id="pv" title="Förhandsvisning"></iframe>
+        </div>
+        <div class="titleband">
+          <h2 id="ovTitle">—</h2>
+          <p id="ovDesc"></p>
+        </div>
+        <div class="controls">
+          <div class="strip">
+            <button class="sbtn" id="btnMove" title="Flytta — slår på edit-läge">
+              <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3 9 6M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>
+            </button>
+            <button class="sbtn" id="btnEye" title="Visa / dölj overlay" aria-pressed="true">
+              <svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="2.7"/></svg>
+            </button>
+            <button class="sbtn" id="btnReset" title="Nollställ läge och utseende">
+              <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg>
+            </button>
+          </div>
+          <div class="cards">
+            <div class="card" id="cardOptions">
+              <h3>Alternativ</h3>
+              <div id="optRows"></div>
+            </div>
+            <div class="card">
+              <h3>Utseende &amp; fönster</h3>
+              <div class="row slide"><label>Skala</label>
+                <input type="range" id="scale" min="0.6" max="1.6" step="0.05" value="1">
+                <span class="val" id="scaleVal">1.00×</span></div>
+              <div class="row slide"><label>Opacitet</label>
+                <input type="range" id="opacity" min="0.2" max="1" step="0.05" value="1">
+                <span class="val" id="opacityVal">100%</span></div>
+              <div class="row"><span class="rlabel">Alltid överst</span>
+                <span class="state" id="aotState">På</span>
+                <label class="sw" id="aotSwitch"><input type="checkbox" checked><span class="track"></span><span class="knob"></span></label></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- REFERENS -->
+      <div class="pane" id="pane-referens">
+        <div class="titleband">
+          <h2>Referensvarv</h2>
+          <p>Ladda ett MoTeC-varv (.ld) så visar delta-overlayn din tidsvinst mot det, alltid jämfört i distans. Motorn väljer automatiskt det snabbaste hela varvet ur filen.</p>
+        </div>
+        <div class="controls">
+          <div class="cards single">
+            <div class="card">
+              <h3>MoTeC-referens</h3>
+              <button class="act" id="loadRef">Ladda MoTeC .ld …</button>
+              <div class="refpath" id="refpath">Ingen referens laddad — delta visas som platshållare.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- OM -->
+      <div class="pane" id="pane-om">
+        <div class="titleband">
+          <h2>ACC Overlay</h2>
+          <p id="omVer">v0.1.0</p>
+        </div>
+        <div class="controls">
+          <div class="cards single">
+            <div class="card">
+              <h3>Uppdatering</h3>
+              <button class="act" id="checkUpd">Sök uppdatering</button>
+              <div class="refpath" id="updmsg">Hämtar nya versioner från GitHub-releaser när det är konfigurerat.</div>
+            </div>
+            <div class="card">
+              <h3>Kortkommandon</h3>
+              <div class="kv"><span>Ctrl + Alt + Space</span><span>Växla race / edit</span></div>
+              <p class="hint">I edit-läge drar du varje overlay på plats. Positionen sparas när du stänger panelen.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+  </div>
+  <div id="toast"></div>
 
 <script>
 const T = window.__TAURI__;
-const invoke = T?.core?.invoke ?? (async()=>{ throw new Error('Tauri saknas'); });
+const invoke = T?.core?.invoke ?? (async () => { throw new Error('Tauri saknas'); });
 const $ = id => document.getElementById(id);
-function status(msg, isErr){ const m=$('updmsg'); m.textContent=msg; m.style.color = isErr ? 'var(--red)' : 'var(--dim)'; }
+const errMsg = e => (e && e.message) ? e.message : String(e);
 
-/* ── Overlay-lista ─────────────────────────────────────────────────────── */
-async function renderList(){
+let overlays = [];
+let selectedId = null;
+let editMode = false;
+
+let toastT = null;
+function toast(msg, isErr){
+  const t = $('toast'); t.textContent = msg; t.style.color = isErr ? 'var(--red)' : 'var(--ink)';
+  t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+/* ── sektionsflikar ── */
+document.querySelectorAll('.nav').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.nav').forEach(b => b.setAttribute('aria-selected', String(b === btn)));
+    $('app').dataset.section = btn.dataset.sec;
+    if (btn.dataset.sec === 'overlays') requestAnimationFrame(fitPreview);
+  });
+});
+
+/* ── overlay-lista ── */
+async function loadOverlays(){
   let items = null, lastErr = 'okänt fel';
-  // Retry: kontrollpanelen kan ladda innan Rust hunnit registrera sitt state.
-  for(let i = 0; i < 25; i++){
+  for (let i = 0; i < 25; i++){
     try { items = await invoke('get_overlays'); break; }
-    catch(e){ lastErr = (e && e.message) ? e.message : String(e); await new Promise(r=>setTimeout(r, 200)); }
+    catch(e){ lastErr = errMsg(e); await new Promise(r => setTimeout(r, 200)); }
   }
-  if(!items){
-    $('list').innerHTML = `<div class="sub">Kunde ej nå appen efter flera försök.<br>Fel: <b>${lastErr}</b></div>`;
-    return;
-  }
+  if (!items){ $('list').innerHTML = `<div class="empty">Når inte appen efter flera försök.<br>Fel: <b>${lastErr}</b></div>`; return; }
+  overlays = items;
+  renderList();
+  const keep = selectedId && overlays.some(o => o.id === selectedId);
+  select(keep ? selectedId : (overlays[0] && overlays[0].id));
+}
+
+function ov(id){ return overlays.find(o => o.id === id); }
+
+function renderList(){
   const list = $('list'); list.innerHTML = '';
-  for(const o of items){
-    const row = document.createElement('div'); row.className = 'row';
-    row.style.flexDirection = 'column'; row.style.alignItems = 'stretch';
-    const top = document.createElement('div'); top.style.display='flex'; top.style.alignItems='center'; top.style.gap='12px';
-    top.innerHTML = `<div class="name">${o.title}</div>`;
-    const sw = document.createElement('label'); sw.className='sw';
-    sw.innerHTML = `<input type="checkbox" ${o.enabled?'checked':''}><span class="track"></span><span class="knob"></span>`;
-    top.appendChild(sw); row.appendChild(top);
-
-    const ctl = document.createElement('div'); ctl.className='ctl'+(o.enabled?'':' hidden');
-    ctl.innerHTML = `
-      <div class="slide"><label>Opacitet</label>
-        <input type="range" min="0.2" max="1" step="0.05" value="${o.opacity}" data-k="opacity">
-        <span class="val">${Math.round(o.opacity*100)}%</span></div>
-      <div class="slide"><label>Skala</label>
-        <input type="range" min="0.6" max="1.6" step="0.05" value="${o.scale}" data-k="scale">
-        <span class="val">${o.scale.toFixed(2)}×</span></div>`;
-    row.appendChild(ctl);
+  for (const o of overlays){
+    const row = document.createElement('button');
+    row.className = 'lrow' + (o.enabled ? ' on' : '') + (o.id === selectedId ? ' sel' : '');
+    row.innerHTML = `<span class="ltitle"></span><span class="lstate">${o.enabled ? 'på' : 'av'}</span>`;
+    row.querySelector('.ltitle').textContent = o.title;
+    row.addEventListener('click', () => select(o.id));
     list.appendChild(row);
-
-    sw.querySelector('input').addEventListener('change', async e=>{
-      const on = e.target.checked; ctl.classList.toggle('hidden', !on);
-      try { await invoke('set_enabled', { id:o.id, enabled:on }); status(`${o.title}: ${on?'på':'av'} ✓`); }
-      catch(err){ status(`FEL set_enabled: ${err&&err.message?err.message:err}`, true); }
-    });
-    ctl.querySelectorAll('input[type=range]').forEach(r=>{
-      const valEl = r.nextElementSibling, k = r.dataset.k;
-      r.addEventListener('input', async ()=>{
-        const v = parseFloat(r.value);
-        valEl.textContent = k==='opacity' ? Math.round(v*100)+'%' : v.toFixed(2)+'×';
-        try { await invoke(k==='opacity'?'set_opacity':'set_scale', { id:o.id, [k]:v }); status(`${o.title} ${k}=${valEl.textContent} ✓`); }
-        catch(err){ status(`FEL set_${k}: ${err&&err.message?err.message:err}`, true); }
-      });
-    });
   }
 }
 
-/* ── MoTeC-referens ────────────────────────────────────────────────────── */
-$('loadRef').addEventListener('click', async ()=>{
-  try{
-    const path = await T.dialog.open({ multiple:false, filters:[{ name:'MoTeC', extensions:['ld'] }] });
-    if(!path) return;
-    await invoke('set_reference', { path });
-    $('refpath').textContent = path;
-  }catch(err){ $('refpath').textContent = 'Kunde ej öppna fil: '+err; }
+function select(id){
+  if (!id) return;
+  selectedId = id; renderList();
+  const o = ov(id); if (!o) return;
+  $('ovTitle').textContent = o.title;
+  $('ovDesc').textContent = o.desc || '';
+  $('scale').value = o.scale; $('scaleVal').textContent = o.scale.toFixed(2) + '×';
+  $('opacity').value = o.opacity; $('opacityVal').textContent = Math.round(o.opacity * 100) + '%';
+  $('aotSwitch').querySelector('input').checked = o.always_on_top;
+  $('aotState').textContent = o.always_on_top ? 'På' : 'Av';
+  $('btnEye').classList.toggle('active', o.enabled);
+  $('btnEye').setAttribute('aria-pressed', String(o.enabled));
+  renderOptions(o);
+  setPreview(o);
+}
+
+function renderOptions(o){
+  const wrap = $('optRows'), card = $('cardOptions');
+  wrap.innerHTML = '';
+  const defs = o.option_defs || [];
+  card.style.display = defs.length ? '' : 'none';
+  for (const d of defs){
+    const val = (o.options && d.id in o.options) ? o.options[d.id] : d.default;
+    const row = document.createElement('div'); row.className = 'row';
+    row.innerHTML = `<span class="rlabel"></span><span class="state">${val ? 'På' : 'Av'}</span>`;
+    row.querySelector('.rlabel').textContent = d.label;
+    const sw = document.createElement('label'); sw.className = 'sw';
+    sw.innerHTML = `<input type="checkbox" ${val ? 'checked' : ''}><span class="track"></span><span class="knob"></span>`;
+    sw.querySelector('input').addEventListener('change', async e => {
+      const on = e.target.checked; row.querySelector('.state').textContent = on ? 'På' : 'Av';
+      const cur = ov(o.id); if (cur){ cur.options = cur.options || {}; cur.options[d.id] = on; }
+      try { await invoke('set_option', { id: o.id, option: d.id, value: on }); }
+      catch(err){ toast('Kunde inte spara alternativ: ' + errMsg(err), true); }
+    });
+    row.appendChild(sw); wrap.appendChild(row);
+  }
+}
+
+/* ── live-preview (overlayn laddas app-relativt, samma bundle) ── */
+function setPreview(o){
+  const pv = $('pv');
+  const src = '../' + o.url;                 // src/control-panel → src/overlays/…
+  if (pv.dataset.src !== src){ pv.dataset.src = src; pv.src = src; }
+  fitPreview();
+}
+function fitPreview(){
+  const o = ov(selectedId); if (!o) return;
+  const box = $('previewBox'), pv = $('pv');
+  const bw = box.clientWidth - 30, bh = box.clientHeight - 30;
+  if (bw <= 0 || bh <= 0) return;
+  const s = Math.min(bw / o.base_width, bh / o.base_height, 1);
+  pv.style.width = o.base_width + 'px';
+  pv.style.height = o.base_height + 'px';
+  pv.style.transform = `translate(-50%,-50%) scale(${s})`;
+}
+addEventListener('resize', () => { if (selectedId) fitPreview(); });
+
+/* ── kontrollremsa ── */
+$('btnMove').addEventListener('click', async () => {
+  editMode = !editMode; $('btnMove').classList.toggle('active', editMode);
+  try { await invoke('set_edit_mode', { edit: editMode }); }
+  catch(e){ toast('Kunde inte växla edit-läge: ' + errMsg(e), true); }
+});
+$('btnEye').addEventListener('click', async () => {
+  const o = ov(selectedId); if (!o) return;
+  const on = !o.enabled; o.enabled = on;
+  $('btnEye').classList.toggle('active', on); renderList();
+  try { await invoke('set_enabled', { id: o.id, enabled: on }); }
+  catch(e){ toast('Kunde inte visa/dölja: ' + errMsg(e), true); }
+});
+$('btnReset').addEventListener('click', async () => {
+  if (!selectedId) return;
+  try { await invoke('reset_overlay', { id: selectedId }); await loadOverlays(); toast('Nollställd.'); }
+  catch(e){ toast('Kunde inte nollställa: ' + errMsg(e), true); }
 });
 
-/* ── Motorns status via WS ─────────────────────────────────────────────── */
+/* ── skala / opacitet / alltid överst ── */
+$('scale').addEventListener('input', async () => {
+  const v = parseFloat($('scale').value); $('scaleVal').textContent = v.toFixed(2) + '×';
+  const o = ov(selectedId); if (o) o.scale = v;
+  try { await invoke('set_scale', { id: selectedId, scale: v }); }
+  catch(e){ toast('set_scale: ' + errMsg(e), true); }
+});
+$('opacity').addEventListener('input', async () => {
+  const v = parseFloat($('opacity').value); $('opacityVal').textContent = Math.round(v * 100) + '%';
+  const o = ov(selectedId); if (o) o.opacity = v;
+  try { await invoke('set_opacity', { id: selectedId, opacity: v }); }
+  catch(e){ toast('set_opacity: ' + errMsg(e), true); }
+});
+$('aotSwitch').querySelector('input').addEventListener('change', async e => {
+  const on = e.target.checked; $('aotState').textContent = on ? 'På' : 'Av';
+  const o = ov(selectedId); if (o) o.always_on_top = on;
+  try { await invoke('set_always_on_top', { id: selectedId, value: on }); }
+  catch(err){ toast('set_always_on_top: ' + errMsg(err), true); }
+});
+
+/* ── referens (MoTeC) ── */
+$('loadRef').addEventListener('click', async () => {
+  try {
+    const path = await T.dialog.open({ multiple: false, filters: [{ name: 'MoTeC', extensions: ['ld'] }] });
+    if (!path) return;
+    await invoke('set_reference', { path });
+    $('refpath').textContent = path;
+  } catch(err){ $('refpath').textContent = 'Kunde inte öppna filen: ' + errMsg(err); }
+});
+
+/* ── uppdatering ── */
+$('checkUpd').addEventListener('click', async () => {
+  const m = $('updmsg'); m.textContent = 'Söker …';
+  try {
+    if (!T || !T.updater) throw new Error('no-updater');
+    const upd = await Promise.race([
+      T.updater.check(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
+    ]);
+    if (upd){ m.textContent = `Ny version ${upd.version} — installerar …`; await upd.downloadAndInstall(); m.textContent = 'Klart — starta om appen.'; }
+    else m.textContent = 'Du har senaste versionen.';
+  } catch(err){ m.textContent = 'Uppdateringar är inte konfigurerade än (kräver GitHub-repo + nycklar).'; }
+});
+
+/* ── motorstatus via WS ── */
 (function statusLoop(){
-  let ws, seen=false;
-  const set=(cls,txt)=>{ $('dot').className='dot '+cls; $('statusText').textContent=txt; };
+  let ws;
+  const set = (cls, txt) => { $('dot').className = 'dot ' + cls; $('statusText').textContent = txt; };
   function connect(){
-    seen=false; set('off','Motor offline');
-    try{ ws = new WebSocket('ws://127.0.0.1:8777'); }catch{ return setTimeout(connect,1500); }
-    ws.onmessage = e=>{ seen=true; try{ const f=JSON.parse(e.data);
-      if(f.connected) set('live','ACC ansluten'); else set('mock','Mock-data (ACC ej igång)'); }catch{} };
-    ws.onclose = ()=>{ set('off','Motor offline'); setTimeout(connect,1500); };
-    ws.onerror = ()=>{ try{ws.close();}catch{} };
+    set('off', 'Motor offline');
+    try { ws = new WebSocket('ws://127.0.0.1:8777'); } catch { return setTimeout(connect, 1500); }
+    ws.onmessage = e => { try { const f = JSON.parse(e.data); set(f.connected ? 'live' : 'mock', f.connected ? 'ACC ansluten' : 'Mock-data'); } catch {} };
+    ws.onclose = () => { set('off', 'Motor offline'); setTimeout(connect, 1500); };
+    ws.onerror = () => { try { ws.close(); } catch {} };
   }
   connect();
 })();
 
-/* ── Uppdatering ───────────────────────────────────────────────────────── */
-$('checkUpd').addEventListener('click', async ()=>{
-  status('Söker …');
-  try{
-    if(!T || !T.updater) throw new Error('no-updater');
-    const upd = await Promise.race([
-      T.updater.check(),
-      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')), 8000))
-    ]);
-    if(upd){ status(`Ny version ${upd.version} — installerar …`);
-      await upd.downloadAndInstall(); status('Klart — starta om appen.'); }
-    else status('Senaste versionen.');
-  }catch(err){ status('Uppdateringar ej konfigurerade ännu (kräver GitHub-repo + nycklar).'); }
-});
+/* ── sync edit-läge från hotkey ── */
+if (T && T.event) T.event.listen('edit-mode', e => { editMode = !!e.payload; $('btnMove').classList.toggle('active', editMode); });
 
-renderList();
+/* ── version ── */
+try { T?.app?.getVersion?.().then(v => { if (v) $('omVer').textContent = 'v' + v; }).catch(() => {}); } catch {}
+
+/* ── global: visa overlays endast när ACC kör ── */
+$('gateSwitch').querySelector('input').addEventListener('change', async e => {
+  try { await invoke('set_hide_until_connected', { value: e.target.checked }); }
+  catch(err){ toast('Kunde inte spara inställningen: ' + errMsg(err), true); }
+});
+async function loadGlobals(){
+  try {
+    const g = await invoke('get_globals');
+    $('gateSwitch').querySelector('input').checked = !!(g && g.hide_until_connected);
+  } catch {}
+}
+
+document.fonts.ready.then(() => { loadOverlays(); loadGlobals(); });
 </script>
 </body>
 </html>
