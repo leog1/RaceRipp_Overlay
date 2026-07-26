@@ -1,7 +1,6 @@
 # ACC Overlay
 
-Modulärt overlay-paket för Assetto Corsa Competizione. **Funktionellt** som Race
-Element (lätt, rensat, ingen FPS-förlust); **visuellt** som RaceLab (mörkt, polerat).
+Modulärt overlay-paket för Assetto Corsa Competizione.
 
 Frikopplad arkitektur: en **Python-motor** läser telemetri och publicerar JSON-ramar
 över en **lokal WebSocket**; **overlays renderas som webb** (HTML/CSS/SVG/Canvas) och
