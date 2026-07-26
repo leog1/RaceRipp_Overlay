@@ -19,6 +19,9 @@ def main():
                            "--paths", str(HERE),
                            "--collect-submodules", "acc_engine",
                            "--hidden-import", "ldparser",
+                           "--distpath", str(HERE / "dist"),
+                           "--workpath", str(HERE / "build"),
+                           "--specpath", str(HERE),
                            str(HERE / "run_engine.py")])
     out = ROOT / "src-tauri" / "binaries"
     out.mkdir(parents=True, exist_ok=True)

@@ -452,7 +452,14 @@ pub fn run() {
             }
 
             app.manage(Mutex::new(settings));
-            app.global_shortcut().register(toggle.clone())?;
+            // Registrera hotkeyen, men låt inte appen krascha om genvägen redan
+            // ägs av något annat program — panelens "flytta"-knapp (set_edit_mode)
+            // fungerar ändå, så edit-läget går att nå utan hotkeyen.
+            if let Err(e) = app.global_shortcut().register(toggle.clone()) {
+                eprintln!("[shell] kunde ej registrera Ctrl+Alt+Space ({e}). \
+                           Genvägen är troligen upptagen av ett annat program. \
+                           Använd panelens flytta-knapp för att växla edit-läge.");
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
