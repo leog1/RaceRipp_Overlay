@@ -149,13 +149,14 @@ function valueArc(delta){let s=-delta*MAXDEG;s=Math.max(-MAXDEG,Math.min(MAXDEG,
 /* ---- state, matad av bussen ---- */
 const REDUCED=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const HZ=30,FRAME_MS=1000/HZ;
-const state={hasDelta:false,target:0,shown:0,bestMs:null,driver:''};
+const state={hasDelta:false,target:0,shown:0,bestMs:null,refMs:null,driver:''};
 
 const bus=new WsBus();
 bus.subscribe(f=>{
   state.hasDelta = typeof f.delta === 'number';
   if(state.hasDelta) state.target=f.delta;
   state.bestMs = (typeof f.sessionBestMs==='number') ? f.sessionBestMs : null;  // rensa gammalt värde när ACC saknar bästa varv
+  state.refMs  = (typeof f.refTotalMs==='number') ? f.refTotalMs : null;         // referensvarvets totaltid (MoTeC)
   if(f.driverName && f.driverName!==state.driver){state.driver=f.driverName;el.driver.textContent=f.driverName;}
 });
 
@@ -170,7 +171,8 @@ function render(){
   if(!state.hasDelta){
     if(lastArc!==''){el.arc.setAttribute('d','');lastArc='';}
     if(lastD!==DASH_D){setCells(el.deltaVal,cD,DASH_D);el.deltaVal.classList.add('faint');lastD=DASH_D;}
-    const p = state.bestMs!=null ? b : DASH_L;
+    const pbase = state.refMs!=null ? state.refMs : state.bestMs;
+    const p = pbase!=null ? fmtLap(pbase) : DASH_L;
     if(lastP!==p){setCells(el.tPred,cP,p);el.tPred.classList.add('faint');lastP=p;}
     return;
   }
@@ -181,7 +183,8 @@ function render(){
     el.arc.style.stroke=ahead?'#0DE622':'#FF3B3B';el.deltaVal.style.color=el.arc.style.stroke;
     el.cellPred.toggleAttribute('data-slow',!ahead);lastAhead=ahead;}
   const ds=fmtDelta(d); if(ds!==lastD){setCells(el.deltaVal,cD,ds);lastD=ds;}
-  const ps = state.bestMs!=null ? fmtLap(state.bestMs+d*1000) : DASH_L;
+  const pbase = state.refMs!=null ? state.refMs : state.bestMs;
+  const ps = pbase!=null ? fmtLap(pbase+d*1000) : DASH_L;
   if(ps!==lastP){setCells(el.tPred,cP,ps);lastP=ps;}
 }
 

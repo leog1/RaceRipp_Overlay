@@ -20,6 +20,7 @@ class Frame:
     sessionBestMs: Optional[int] = None
     lastLapMs: Optional[int] = None
     curLapMs: Optional[int] = None   # internt: aktuell varvtid för delta
+    refTotalMs: Optional[int] = None # referensvarvets totaltid (om MoTeC laddad)
     driverName: str = ""
     position: float = 0.0            # normalizedCarPosition 0..1
 

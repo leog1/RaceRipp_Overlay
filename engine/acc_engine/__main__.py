@@ -93,6 +93,7 @@ async def run():
                 if f.connected:
                     if ref.loaded:
                         f.delta = ref.delta(f.position, f.curLapMs)
+                        f.refTotalMs = ref.total_ms()
                     frame = f
             if frame is None:
                 frame = mock.read() if mock else Frame(connected=False)
