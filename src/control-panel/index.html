@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ACC Overlay — Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../shared/tokens.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{font-family:var(--font);background:#0c0e0d;color:var(--ink);-webkit-font-smoothing:antialiased;
+  display:flex;flex-direction:column;}
+.rail{height:4px;background:var(--rail);flex:0 0 auto;}
+header{padding:18px 20px 14px;display:flex;align-items:baseline;justify-content:space-between;}
+header h1{font-size:15px;font-weight:700;letter-spacing:2px;text-transform:uppercase;}
+header .ver{font-size:11px;font-weight:600;color:var(--dim);font-variant-numeric:tabular-nums;}
+.status{margin:0 20px 8px;display:flex;align-items:center;gap:9px;font-size:12px;font-weight:600;
+  color:var(--dim);letter-spacing:.5px;}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--faint);box-shadow:0 0 0 0 transparent;}
+.dot.live{background:var(--green);} .dot.mock{background:var(--amber);} .dot.off{background:var(--red);}
+
+main{flex:1 1 auto;overflow-y:auto;padding:8px 16px 16px;}
+.card{background:var(--panel);border:1px solid var(--divider);border-radius:14px;
+  padding:14px 16px;margin-bottom:12px;box-shadow:var(--depth);}
+.card h2{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--amber);
+  margin-bottom:12px;}
+.row{display:flex;align-items:center;gap:12px;padding:9px 0;}
+.row + .row{border-top:1px solid var(--divider);}
+.row .name{flex:1 1 auto;font-size:13.5px;font-weight:600;}
+.row .sub{font-size:11px;font-weight:500;color:var(--dim);margin-top:2px;}
+
+/* toggle */
+.sw{position:relative;width:42px;height:24px;flex:0 0 auto;cursor:pointer;}
+.sw input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer;}
+.sw .track{position:absolute;inset:0;border-radius:999px;background:var(--track);
+  border:1px solid var(--slot-edge);transition:background .18s ease;}
+.sw .knob{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;
+  background:var(--dim);transition:transform .18s ease,background .18s ease;}
+.sw input:checked ~ .track{background:rgba(13,230,34,0.22);border-color:rgba(13,230,34,0.5);}
+.sw input:checked ~ .knob{transform:translateX(18px);background:var(--green);}
+
+/* sliders */
+.ctl{display:flex;flex-direction:column;gap:9px;margin-top:6px;}
+.ctl.hidden{display:none;}
+.slide{display:flex;align-items:center;gap:10px;}
+.slide label{width:58px;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--dim);}
+.slide input[type=range]{flex:1 1 auto;accent-color:var(--green);height:4px;}
+.slide .val{width:44px;text-align:right;font-size:12px;font-weight:600;color:var(--ink);
+  font-variant-numeric:tabular-nums;}
+
+button.act{width:100%;font:inherit;font-size:12.5px;font-weight:600;letter-spacing:.5px;color:var(--ink);
+  background:rgba(255,255,255,0.06);border:1px solid var(--divider);border-radius:10px;
+  padding:11px;cursor:pointer;transition:background .15s ease;}
+button.act:hover{background:rgba(255,255,255,0.11);}
+button.act:active{transform:translateY(1px);}
+.refpath{font-size:11px;font-weight:500;color:var(--dim);margin-top:9px;word-break:break-all;
+  font-variant-numeric:tabular-nums;}
+.hint{font-size:11px;color:var(--faint);padding:2px 4px 10px;line-height:1.5;}
+footer{flex:0 0 auto;padding:12px 16px;border-top:1px solid var(--divider);display:flex;gap:10px;align-items:center;}
+footer .msg{flex:1 1 auto;font-size:11px;color:var(--dim);}
+footer button{font:inherit;font-size:11.5px;font-weight:600;color:var(--dim);background:none;
+  border:1px solid var(--divider);border-radius:8px;padding:8px 12px;cursor:pointer;}
+footer button:hover{color:var(--ink);border-color:var(--dim);}
+</style>
+</head>
+<body>
+  <div class="rail"></div>
+  <header>
+    <h1>ACC Overlay</h1>
+    <span class="ver" id="ver">v0.1.0</span>
+  </header>
+  <div class="status"><span class="dot off" id="dot"></span><span id="statusText">Motor offline</span></div>
+
+  <main>
+    <div class="card">
+      <h2>Overlays</h2>
+      <div id="list"></div>
+    </div>
+
+    <div class="card">
+      <h2>Referensvarv (delta)</h2>
+      <button class="act" id="loadRef">Ladda MoTeC .ld …</button>
+      <div class="refpath" id="refpath">Ingen referens laddad — delta visas som platshållare.</div>
+    </div>
+
+    <div class="hint">Ctrl+Alt+Space växlar race/edit. I edit-läge kan du dra varje overlay på plats; positionen sparas när panelen stängs.</div>
+  </main>
+
+  <footer>
+    <span class="msg" id="updmsg"></span>
+    <button id="checkUpd">Sök uppdatering</button>
+  </footer>
+
+<script>
+const T = window.__TAURI__;
+const invoke = T?.core?.invoke ?? (async()=>{ throw new Error('Tauri saknas'); });
+const $ = id => document.getElementById(id);
+function status(msg, isErr){ const m=$('updmsg'); m.textContent=msg; m.style.color = isErr ? 'var(--red)' : 'var(--dim)'; }
+
+/* ── Overlay-lista ─────────────────────────────────────────────────────── */
+async function renderList(){
+  let items = null, lastErr = 'okänt fel';
+  // Retry: kontrollpanelen kan ladda innan Rust hunnit registrera sitt state.
+  for(let i = 0; i < 25; i++){
+    try { items = await invoke('get_overlays'); break; }
+    catch(e){ lastErr = (e && e.message) ? e.message : String(e); await new Promise(r=>setTimeout(r, 200)); }
+  }
+  if(!items){
+    $('list').innerHTML = `<div class="sub">Kunde ej nå appen efter flera försök.<br>Fel: <b>${lastErr}</b></div>`;
+    return;
+  }
+  const list = $('list'); list.innerHTML = '';
+  for(const o of items){
+    const row = document.createElement('div'); row.className = 'row';
+    row.style.flexDirection = 'column'; row.style.alignItems = 'stretch';
+    const top = document.createElement('div'); top.style.display='flex'; top.style.alignItems='center'; top.style.gap='12px';
+    top.innerHTML = `<div class="name">${o.title}</div>`;
+    const sw = document.createElement('label'); sw.className='sw';
+    sw.innerHTML = `<input type="checkbox" ${o.enabled?'checked':''}><span class="track"></span><span class="knob"></span>`;
+    top.appendChild(sw); row.appendChild(top);
+
+    const ctl = document.createElement('div'); ctl.className='ctl'+(o.enabled?'':' hidden');
+    ctl.innerHTML = `
+      <div class="slide"><label>Opacitet</label>
+        <input type="range" min="0.2" max="1" step="0.05" value="${o.opacity}" data-k="opacity">
+        <span class="val">${Math.round(o.opacity*100)}%</span></div>
+      <div class="slide"><label>Skala</label>
+        <input type="range" min="0.6" max="1.6" step="0.05" value="${o.scale}" data-k="scale">
+        <span class="val">${o.scale.toFixed(2)}×</span></div>`;
+    row.appendChild(ctl);
+    list.appendChild(row);
+
+    sw.querySelector('input').addEventListener('change', async e=>{
+      const on = e.target.checked; ctl.classList.toggle('hidden', !on);
+      try { await invoke('set_enabled', { id:o.id, enabled:on }); status(`${o.title}: ${on?'på':'av'} ✓`); }
+      catch(err){ status(`FEL set_enabled: ${err&&err.message?err.message:err}`, true); }
+    });
+    ctl.querySelectorAll('input[type=range]').forEach(r=>{
+      const valEl = r.nextElementSibling, k = r.dataset.k;
+      r.addEventListener('input', async ()=>{
+        const v = parseFloat(r.value);
+        valEl.textContent = k==='opacity' ? Math.round(v*100)+'%' : v.toFixed(2)+'×';
+        try { await invoke(k==='opacity'?'set_opacity':'set_scale', { id:o.id, [k]:v }); status(`${o.title} ${k}=${valEl.textContent} ✓`); }
+        catch(err){ status(`FEL set_${k}: ${err&&err.message?err.message:err}`, true); }
+      });
+    });
+  }
+}
+
+/* ── MoTeC-referens ────────────────────────────────────────────────────── */
+$('loadRef').addEventListener('click', async ()=>{
+  try{
+    const path = await T.dialog.open({ multiple:false, filters:[{ name:'MoTeC', extensions:['ld'] }] });
+    if(!path) return;
+    await invoke('set_reference', { path });
+    $('refpath').textContent = path;
+  }catch(err){ $('refpath').textContent = 'Kunde ej öppna fil: '+err; }
+});
+
+/* ── Motorns status via WS ─────────────────────────────────────────────── */
+(function statusLoop(){
+  let ws, seen=false;
+  const set=(cls,txt)=>{ $('dot').className='dot '+cls; $('statusText').textContent=txt; };
+  function connect(){
+    seen=false; set('off','Motor offline');
+    try{ ws = new WebSocket('ws://127.0.0.1:8777'); }catch{ return setTimeout(connect,1500); }
+    ws.onmessage = e=>{ seen=true; try{ const f=JSON.parse(e.data);
+      if(f.connected) set('live','ACC ansluten'); else set('mock','Mock-data (ACC ej igång)'); }catch{} };
+    ws.onclose = ()=>{ set('off','Motor offline'); setTimeout(connect,1500); };
+    ws.onerror = ()=>{ try{ws.close();}catch{} };
+  }
+  connect();
+})();
+
+/* ── Uppdatering ───────────────────────────────────────────────────────── */
+$('checkUpd').addEventListener('click', async ()=>{
+  status('Söker …');
+  try{
+    if(!T || !T.updater) throw new Error('no-updater');
+    const upd = await Promise.race([
+      T.updater.check(),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')), 8000))
+    ]);
+    if(upd){ status(`Ny version ${upd.version} — installerar …`);
+      await upd.downloadAndInstall(); status('Klart — starta om appen.'); }
+    else status('Senaste versionen.');
+  }catch(err){ status('Uppdateringar ej konfigurerade ännu (kräver GitHub-repo + nycklar).'); }
+});
+
+renderList();
+</script>
+</body>
+</html>

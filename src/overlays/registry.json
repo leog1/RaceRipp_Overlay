@@ -1,0 +1,36 @@
+{
+  "overlays": [
+    {
+      "id": "delta-bar",
+      "title": "Delta + Lap-time Row",
+      "url": "overlays/delta-bar/index.html",
+      "baseWidth": 1300,
+      "baseHeight": 460,
+      "defaultX": 460,
+      "defaultY": 40,
+      "defaultScale": 0.9,
+      "channels": [
+        "delta",
+        "sessionBestMs",
+        "driverName"
+      ]
+    },
+    {
+      "id": "inputs-trace",
+      "title": "Inputs Trace",
+      "url": "overlays/inputs-trace/index.html",
+      "baseWidth": 600,
+      "baseHeight": 200,
+      "defaultX": 40,
+      "defaultY": 40,
+      "defaultScale": 1.0,
+      "channels": [
+        "throttle",
+        "brake",
+        "clutch",
+        "abs",
+        "tc"
+      ]
+    }
+  ]
+}

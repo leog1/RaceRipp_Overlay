@@ -1,0 +1,52 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   DESIGNTOKENS — enda sanningskällan. Alla overlays importerar denna fil och
+   använder BARA dessa variabler. Nytt värde behövs → lägg till HÄR först.
+   Medvetet EN palett för sammanhållning (RaceLab varierar mellan widgets; vi
+   standardiserar).
+   ══════════════════════════════════════════════════════════════════════════ */
+:root{
+  /* ── Färg: betydelse, inte dekoration ── */
+  --green:  #0DE622;   /* snabbare / vinner tid / full gas / negativ delta        */
+  --red:    #FF3B3B;   /* långsammare / förlorar tid / broms / positiv delta      */
+  --amber:  #FBBF24;   /* highlight & accenter: guldstreck, växelsiffra, rubriker */
+  --purple: #C869FF;   /* session- eller overall best                            */
+  --rail:   #D10404;   /* klarröd brand-rail / topp-accent                        */
+
+  /* ── Larmfärger på trace (inputs) ── */
+  --abs:    #ECC328;   /* ABS-ingrepp: brom-trace blir gult   */
+  --tc:     #29A3FF;   /* TC-ingrepp:  gas-trace blir blått    */
+  --clutch: #0000FF;   /* kopplingens pedalstapel             */
+
+  /* ── Text ── */
+  --ink:    #f4f6f4;   /* primär text (tider, värden)   */
+  --dim:    #7f867d;   /* etiketter, dämpad text         */
+  --faint:  #565c55;   /* svagast / hint / saknat värde  */
+
+  /* ── Ytor ── */
+  --panel:     rgba(18,20,22,0.86);      /* generell mörk, genomskinlig panel     */
+  --plot:      #141613;                  /* grafrutans inset-yta                  */
+  --edge:      #070807;                  /* nästan svart 1px-border               */
+  --bar:       rgba(6,7,8,0.90);         /* djupsvart bar                         */
+  --band:      #050705;                  /* mörkast: läsband i cirkeln            */
+  --track:     rgba(0,0,0,0.45);         /* mätarspår/skåra                       */
+  --divider:   rgba(255,255,255,0.07);   /* avdelare mellan kolumner              */
+  --slot-edge: rgba(255,255,255,0.035);  /* svagare kant runt pedalstaplar        */
+  --grid:      rgba(255,255,255,0.05);   /* svaga gridlinjer i grafer             */
+  --wheel:     #AFAFAF;                  /* ratt-indikator (grå)                  */
+
+  /* delta-cirkelns grågröna kupolyta (topp → botten) */
+  --disc-top:  rgb(42,46,43);
+  --disc-mid:  rgb(33,37,34);
+  --disc-bot:  rgb(17,20,18);
+
+  /* mjukt djup */
+  --depth: 0 10px 30px rgba(0,0,0,0.55);
+  --sheen: inset 0 1px 0 rgba(255,255,255,0.05);
+
+  /* FPS: INGEN blur över spelet (platta halvtransparenta paneler).
+     För OBS där FPS ej spelar roll: blur(9px) saturate(0.95) */
+  --glass: none;
+
+  /* ── Typografi ── */
+  --font: 'Montserrat', system-ui, sans-serif;   /* 500 / 600 (primär) / 700 */
+}

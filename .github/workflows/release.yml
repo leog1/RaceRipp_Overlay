@@ -1,0 +1,62 @@
+name: release
+
+# Bygger Windows-installer + genererar latest.json (auto-update) när du taggar
+# en version, t.ex.:  git tag v0.2.0 && git push origin v0.2.0
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node + pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Bygg Python-motorn (sidecar)
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip pyinstaller
+          pip install -r engine/requirements.txt
+          pip install git+https://github.com/gotzl/ldparser
+          pyinstaller --onefile --name acc-engine engine/acc_engine/__main__.py
+          New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
+          # Tauri kräver target-triple-suffix på externalBin:
+          Copy-Item dist/acc-engine.exe src-tauri/binaries/acc-engine-x86_64-pc-windows-msvc.exe -Force
+
+      - name: Bygg & publicera (Tauri)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Genereras med `pnpm tauri signer generate`; läggs som repo-secrets.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "ACC Overlay ${{ github.ref_name }}"
+          releaseBody: "Se ändringar nedan. Auto-update via latest.json."
+          releaseDraft: false
+          prerelease: false
+          # Genererar latest.json som updater-endpointen pekar på:
+          includeUpdaterJson: true

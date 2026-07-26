@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inputs Trace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../shared/tokens.css">
+<style>
+/* Overlay-specifik geometri (palett från tokens.css) */
+:root{
+  --H:150px;                              /* panelhöjd = skalenhet; sätts av kontrollpanelen */
+  --r:calc(var(--H)*0.0625); --pad:calc(var(--H)*0.060);
+  --bar-w:calc(var(--H)*0.190); --bar-h:calc(var(--H)*0.735);
+  --bar-gap:calc(var(--H)*0.055); --bar-r:calc(var(--H)*0.022);
+  --col-gap:calc(var(--H)*0.075); --val-fs:calc(var(--H)*0.115);
+}
+*{box-sizing:border-box;}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:var(--font);}
+#ui{position:absolute;top:14px;left:14px;will-change:opacity;}
+
+.overlay{height:var(--H);width:calc(var(--H)*3.72);padding:var(--pad);
+  display:flex;align-items:flex-end;gap:var(--col-gap);
+  background:var(--panel);border:1px solid var(--edge);border-radius:var(--r);
+  box-shadow:var(--depth),var(--sheen);
+  -webkit-backdrop-filter:var(--glass);backdrop-filter:var(--glass);
+  opacity:0;transition:opacity .35s ease;}
+.overlay.ready{opacity:1;}
+.graph{position:relative;flex:1 1 auto;align-self:stretch;min-width:0;
+  background:var(--plot);border:1px solid var(--edge);border-radius:calc(var(--r)*0.5);overflow:hidden;}
+.graph .grid{position:absolute;inset:0;width:100%;height:100%;}
+.graph .grid line{stroke:var(--grid);stroke-width:1;stroke-dasharray:3 4;}
+.graph canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
+.bars{display:flex;align-items:flex-end;gap:var(--bar-gap);}
+.bar-col{display:flex;flex-direction:column;align-items:center;width:var(--bar-w);}
+.bar-value{width:100%;text-align:center;white-space:nowrap;overflow:visible;
+  font-size:var(--val-fs);font-weight:600;line-height:1;color:var(--dim);
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;margin-bottom:calc(var(--H)*0.028);}
+.bar-value.active{color:var(--ink);}
+.bar-slot{position:relative;width:var(--bar-w);height:var(--bar-h);background:var(--track);
+  border:1px solid var(--slot-edge);border-radius:var(--bar-r);overflow:hidden;}
+.bar-fill{position:absolute;left:0;right:0;bottom:0;top:0;transform-origin:bottom center;transform:scaleY(0);}
+.bar-fill.clutch{background:var(--clutch);} .bar-fill.brake{background:var(--red);} .bar-fill.throttle{background:var(--green);}
+
+.edit-mode #ui{outline:2px dashed var(--amber);outline-offset:8px;border-radius:8px;cursor:move;}
+.edit-badge{position:fixed;top:8px;left:8px;display:none;gap:8px;padding:6px 10px;border-radius:8px;
+  background:var(--bar);color:var(--amber);font:700 11px/1 var(--font);letter-spacing:1.4px;text-transform:uppercase;z-index:99;}
+.edit-mode .edit-badge{display:flex;}
+</style>
+</head>
+<body>
+  <div class="edit-badge">● Edit</div>
+  <div id="ui">
+    <div class="overlay" id="overlay" aria-label="Inputs trace overlay">
+      <div class="graph">
+        <svg class="grid" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <line x1="0" y1="25" x2="100" y2="25" vector-effect="non-scaling-stroke"/>
+          <line x1="0" y1="50" x2="100" y2="50" vector-effect="non-scaling-stroke"/>
+          <line x1="0" y1="75" x2="100" y2="75" vector-effect="non-scaling-stroke"/>
+          <line x1="20" y1="0" x2="20" y2="100" vector-effect="non-scaling-stroke"/>
+          <line x1="40" y1="0" x2="40" y2="100" vector-effect="non-scaling-stroke"/>
+          <line x1="60" y1="0" x2="60" y2="100" vector-effect="non-scaling-stroke"/>
+          <line x1="80" y1="0" x2="80" y2="100" vector-effect="non-scaling-stroke"/>
+        </svg>
+        <canvas id="trace"></canvas>
+      </div>
+      <div class="bars">
+        <div class="bar-col"><div class="bar-value" id="v-clutch">0</div><div class="bar-slot"><div class="bar-fill clutch" id="f-clutch"></div></div></div>
+        <div class="bar-col"><div class="bar-value" id="v-brake">0</div><div class="bar-slot"><div class="bar-fill brake" id="f-brake"></div></div></div>
+        <div class="bar-col"><div class="bar-value" id="v-throttle">0</div><div class="bar-slot"><div class="bar-fill throttle" id="f-throttle"></div></div></div>
+      </div>
+    </div>
+  </div>
+
+<script type="module">
+import { WsBus, wireShell } from '../../shared/bus.js';
+
+const prefersReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const Clock = { now(){ return performance.now(); } };   // scroll-tid (lokal)
+
+class InputsTrace{
+  constructor(bus, root){
+    this.channels=['throttle','brake','clutch','abs','tc'];
+    this.root=root; this.canvas=root.querySelector('#trace'); this.ctx=this.canvas.getContext('2d');
+    this.graph=root.querySelector('.graph');
+    this.el={ throttle:[root.querySelector('#f-throttle'),root.querySelector('#v-throttle')],
+              brake:[root.querySelector('#f-brake'),root.querySelector('#v-brake')],
+              clutch:[root.querySelector('#f-clutch'),root.querySelector('#v-clutch')] };
+    this.samples=[]; this.latest={throttle:0,brake:0,clutch:0,abs:false,tc:false};
+    this.disp={throttle:0,brake:0,clutch:0};
+    this.VISIBLE_MS=4500; this.HISTORY_MS=8000;
+    this.col=this._readColors(); this._resize();
+    new ResizeObserver(()=>this._resize()).observe(this.graph);
+    bus.subscribe(f=>this._onFrame(f));
+    requestAnimationFrame(()=>this._render());
+  }
+  _readColors(){const cs=getComputedStyle(document.documentElement),g=n=>cs.getPropertyValue(n).trim();
+    return {green:g('--green'),red:g('--red'),tc:g('--tc'),abs:g('--abs')};}
+  _resize(){const dpr=window.devicePixelRatio||1;
+    this.cw=Math.round(this.graph.clientWidth);this.ch=Math.round(this.graph.clientHeight);
+    this.canvas.width=Math.round(this.cw*dpr);this.canvas.height=Math.round(this.ch*dpr);
+    this.ctx.setTransform(dpr,0,0,dpr,0,0);
+    this.traceW=Math.max(2,Math.round(this.ch*0.018));
+    this.plotTop=Math.round(this.ch*0.06);this.plotBot=this.ch-Math.round(this.traceW/2);}
+  _onFrame(f){this.latest=f;
+    this.samples.push({t:Clock.now(),throttle:f.throttle,brake:f.brake,abs:f.abs,tc:f.tc});
+    const cutoff=Clock.now()-this.HISTORY_MS-200;
+    while(this.samples.length&&this.samples[0].t<cutoff)this.samples.shift();}
+  _yOf(v){return this.plotBot-v*(this.plotBot-this.plotTop);}
+  _drawLine(now,key,flag,base,alt,pxPerMs){
+    const s=this.samples,n=s.length; if(n<2)return; const ctx=this.ctx;
+    const X=smp=>Math.round(this.cw-(now-smp.t)*pxPerMs);
+    ctx.lineWidth=this.traceW;ctx.lineJoin='miter';ctx.miterLimit=12;ctx.lineCap='butt';
+    let k=0;
+    while(k<n-1){const segAlt=s[k][flag]||s[k+1][flag];ctx.strokeStyle=segAlt?alt:base;
+      ctx.beginPath();ctx.moveTo(X(s[k]),this._yOf(s[k][key]));ctx.lineTo(X(s[k+1]),this._yOf(s[k+1][key]));
+      let m=k+1;while(m<n-1&&((s[m][flag]||s[m+1][flag])===segAlt)){ctx.lineTo(X(s[m+1]),this._yOf(s[m+1][key]));m++;}
+      ctx.stroke();k=m;}}
+  _render(){
+    const ctx=this.ctx,now=Clock.now(),col=this.col;
+    ctx.clearRect(0,0,this.cw,this.ch);ctx.save();
+    ctx.beginPath();ctx.rect(0,0,this.cw,this.ch);ctx.clip();
+    const pxPerMs=this.cw/this.VISIBLE_MS;
+    // Fast ritordning: broms under, gas överst → baslinjen flimrar inte färg vid vila.
+    this._drawLine(now,'brake','abs',col.red,col.abs,pxPerMs);
+    this._drawLine(now,'throttle','tc',col.green,col.tc,pxPerMs);
+    ctx.restore();
+    const a=prefersReduced?1:0.28;
+    for(const key of ['throttle','brake','clutch']){
+      this.disp[key]+=(this.latest[key]-this.disp[key])*a;const v=this.disp[key];
+      const [fill,label]=this.el[key];fill.style.transform=`scaleY(${v.toFixed(4)})`;
+      const pct=Math.round(v*100);label.textContent=pct;label.classList.toggle('active',pct>=2);}
+    requestAnimationFrame(()=>this._render());
+  }
+}
+
+const bus=new WsBus();
+new InputsTrace(bus, document.getElementById('overlay'));
+
+wireShell(({scale,opacity})=>{
+  if(typeof scale==='number') document.documentElement.style.setProperty('--H',(150*scale)+'px');
+  if(typeof opacity==='number') document.getElementById('ui').style.opacity=opacity;
+});
+document.fonts.ready.then(()=>document.getElementById('overlay').classList.add('ready'));
+</script>
+</body>
+</html>

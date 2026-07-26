@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Delta + Lap-time Row</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../shared/tokens.css">
+<style>
+/* Overlay-specifik geometri (palett kommer från tokens.css) */
+:root{
+  --disc:280px; --bar-h:86px; --overlap:46px;
+  --ui-scale:0.9;                 /* sätts av kontrollpanelen (M2) */
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{width:100%;height:100%;overflow:hidden;background:transparent;}
+body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased;}
+
+/* skalbart, positionerbart rot-element — window:t är tajt runt detta */
+#ui{position:absolute;top:34px;left:30px;transform:scale(var(--ui-scale));transform-origin:top left;
+  opacity:0;transition:opacity .3s ease;will-change:transform,opacity;}
+#ui.ready{opacity:1;}
+.delta-row{display:flex;align-items:center;}
+
+/* ---- CIRKEL ---- */
+.gauge{position:relative;z-index:3;flex:0 0 auto;width:var(--disc);height:var(--disc);border-radius:50%;
+  background:
+    conic-gradient(from 0deg at 50% 50%, rgba(0,0,0,0.42) 0deg, rgba(255,255,255,0.12) 360deg),
+    radial-gradient(circle at 50% 44%,transparent 56%,rgba(0,0,0,0.60) 100%),
+    linear-gradient(to bottom, var(--disc-top) 0%, rgb(36,40,37) 42%, rgb(29,33,30) 72%, var(--disc-bot) 100%);
+  box-shadow:inset 0 0 0 3px rgba(0,0,0,0.5),inset 0 0 24px 7px rgba(0,0,0,0.4),
+    0 1px 0 rgba(255,255,255,0.07),0 3px 8px rgba(0,0,0,0.5),0 12px 26px rgba(0,0,0,0.55),0 24px 48px rgba(0,0,0,0.38);
+  backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);
+  display:grid;grid-template-rows:34.5% 31% 34.5%;}
+.band{position:absolute;inset:0;border-radius:50%;pointer-events:none;z-index:1;
+  background:linear-gradient(to bottom, transparent 34.5%, var(--band) 34.5%, var(--band) 65.5%, transparent 65.5%);
+  -webkit-mask:radial-gradient(circle 116px at 50% 50%, #000 111px, transparent 116px);
+          mask:radial-gradient(circle 116px at 50% 50%, #000 111px, transparent 116px);}
+.gauge svg.ring{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;}
+.track{fill:none;stroke:var(--track);stroke-width:13;}
+.arc{fill:none;stroke-width:13;stroke-linecap:butt;}
+.knob{fill:#eef2ef;stroke:#04070a;stroke-width:1.3;}
+.endtick{stroke:rgba(255,255,255,0.18);stroke-width:2.5;stroke-linecap:round;}
+.g-label{align-self:end;justify-self:center;padding-bottom:7px;font-size:11.5px;font-weight:600;
+  letter-spacing:3px;color:var(--dim);text-transform:uppercase;}
+.g-value{align-self:center;justify-self:center;font-size:52px;font-weight:600;line-height:1;
+  letter-spacing:-0.5px;color:var(--green);display:flex;}
+.g-mark{align-self:start;justify-self:center;padding-top:8px;width:26px;height:26px;opacity:.5;}
+.g-label,.g-value,.g-mark{position:relative;z-index:3;}
+.g-mark path,.g-mark line{fill:none;stroke:var(--dim);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+
+/* ---- BAR ---- */
+.bar{position:relative;z-index:2;margin-left:calc(var(--overlap)*-1);height:var(--bar-h);
+  display:flex;align-items:stretch;background:var(--bar);border-radius:16px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.04),0 16px 34px rgba(0,0,0,0.5);
+  backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);padding-left:calc(var(--overlap) + 6px);}
+.col{position:relative;flex:1 0 auto;min-width:198px;padding:0 28px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;}
+.col + .col::before{content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);
+  width:1px;height:52px;background:var(--divider);}
+.time{font-size:40px;font-weight:600;line-height:1;letter-spacing:0.5px;color:var(--ink);display:flex;}
+.lab{font-size:12.5px;font-weight:600;letter-spacing:1.6px;color:var(--dim);text-transform:uppercase;
+  display:flex;align-items:center;gap:7px;white-space:nowrap;}
+.lab svg{width:14px;height:14px;}.lab svg path{fill:currentColor;}
+.col.pred .time{color:var(--green);} .col.pred .lab{color:var(--green);}
+.col.pred[data-slow] .time{color:var(--red);} .col.pred[data-slow] .lab{color:var(--red);}
+.col.best::before,.col.best::after{content:"";position:absolute;left:10px;right:10px;height:3px;background:var(--amber);}
+.col.best::before{top:0;} .col.best::after{bottom:0;}
+.ch{display:inline-block;text-align:center;}
+.ch.d{width:0.60em;} .ch.s{width:0.30em;} .ch.m{width:0.62em;}
+.faint{color:var(--faint)!important;}
+
+/* edit-läge */
+.edit-mode #ui{outline:2px dashed var(--amber);outline-offset:10px;border-radius:8px;cursor:move;}
+.edit-badge{position:fixed;top:10px;left:10px;display:none;gap:8px;padding:7px 12px;border-radius:8px;
+  background:var(--bar);color:var(--amber);font:700 12px/1 var(--font);letter-spacing:1.5px;text-transform:uppercase;z-index:99;}
+.edit-mode .edit-badge{display:flex;}
+@media (prefers-reduced-motion:reduce){.arc{transition:none;}}
+</style>
+</head>
+<body>
+  <div class="edit-badge">● Edit mode — Ctrl+Alt+Space</div>
+  <div id="ui">
+    <div class="delta-row">
+      <div class="gauge">
+        <div class="band"></div>
+        <svg class="ring" viewBox="0 0 280 280">
+          <circle class="track" cx="140" cy="140" r="120"></circle>
+          <path class="arc" id="arc" d=""></path>
+          <line class="endtick" x1="140" y1="256" x2="140" y2="266"></line>
+          <circle class="knob" id="knob" r="5"></circle>
+        </svg>
+        <div class="g-label">Delta</div>
+        <div class="g-value" id="deltaVal"></div>
+        <svg class="g-mark" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 4 L20 18.5 H4 Z"></path><line x1="8.2" y1="14" x2="15.8" y2="14"></line>
+        </svg>
+      </div>
+      <div class="bar">
+        <div class="col best"><div class="time" id="tBest"></div><div class="lab">P.Session Best</div></div>
+        <div class="col"><div class="time" id="tRef"></div>
+          <div class="lab">
+            <svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5Zm0 2c-4 0-8 2-8 5v1h16v-1c0-3-4-5-8-5Z"/></svg>
+            <span id="driver">—</span>
+          </div>
+        </div>
+        <div class="col pred" id="cellPred"><div class="time" id="tPred"></div><div class="lab">Predicted</div></div>
+      </div>
+    </div>
+  </div>
+
+<script type="module">
+import { WsBus, wireShell } from '../../shared/bus.js';
+
+/* ---- format ---- */
+const DASH_D = '\u2013.\u2013\u2013';          // –.––   (delta saknas)
+const DASH_L = '\u2013\u2013:\u2013\u2013.\u2013\u2013\u2013'; // ––:––.––– (varvtid saknas)
+function fmtDelta(s){return (s>=0?'+':'-')+Math.abs(s).toFixed(2);}
+function fmtLap(ms){ms=Math.max(0,Math.round(ms));const m=(ms/60000)|0,se=((ms%60000)/1000)|0,mm=ms%1000;
+  return `${String(m).padStart(2,'0')}:${String(se).padStart(2,'0')}.${String(mm).padStart(3,'0')}`;}
+
+/* fasta teckenceller (byggs en gång; vi rör bara textContent) */
+function specFor(str){return [...str].map(ch => ch>='0'&&ch<='9'?'d':(ch==='-'||ch==='+')?'m':'s');}
+function buildCells(el,str){el.innerHTML='';return [...str].map((ch,i)=>{const s=document.createElement('span');
+  s.className='ch '+specFor(str)[i];s.textContent=ch;el.appendChild(s);return s;});}
+function setCells(el,cache,str){
+  if(cache.n!==str.length){cache.nodes=buildCells(el,str);cache.n=str.length;cache.cls=specFor(str);return;}
+  const cls=specFor(str);
+  for(let i=0;i<str.length;i++){const nd=cache.nodes[i];
+    if(cache.cls[i]!==cls[i]){nd.className='ch '+cls[i];cache.cls[i]=cls[i];}
+    if(nd.textContent!==str[i])nd.textContent=str[i];}
+}
+
+const $=id=>document.getElementById(id);
+const el={arc:$('arc'),knob:$('knob'),deltaVal:$('deltaVal'),tBest:$('tBest'),tRef:$('tRef'),
+          tPred:$('tPred'),cellPred:$('cellPred'),driver:$('driver')};
+(()=>{const a=-90*Math.PI/180;el.knob.setAttribute('cx',140+120*Math.cos(a));el.knob.setAttribute('cy',140+120*Math.sin(a));})();
+const cD={n:-1},cB={n:-1},cR={n:-1},cP={n:-1};
+
+/* gauge-geometri: 0=topp, medurs positiv, full=180° (botten) = 1.0 s */
+const R=120,MAXDEG=180;
+function polar(a){const r=(a-90)*Math.PI/180;return [140+R*Math.cos(r),140+R*Math.sin(r)];}
+function arcPath(a1){const[sx,sy]=polar(0),[ex,ey]=polar(a1),large=Math.abs(a1)>180?1:0,sw=a1>=0?1:0;
+  return `M ${sx.toFixed(2)} ${sy.toFixed(2)} A ${R} ${R} 0 ${large} ${sw} ${ex.toFixed(2)} ${ey.toFixed(2)}`;}
+function valueArc(delta){let s=-delta*MAXDEG;s=Math.max(-MAXDEG,Math.min(MAXDEG,s));return Math.abs(s)<0.6?'':arcPath(s);}
+
+/* ---- state, matad av bussen ---- */
+const REDUCED=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const HZ=30,FRAME_MS=1000/HZ;
+const state={hasDelta:false,target:0,shown:0,bestMs:null,driver:''};
+
+const bus=new WsBus();
+bus.subscribe(f=>{
+  state.hasDelta = typeof f.delta === 'number';
+  if(state.hasDelta) state.target=f.delta;
+  state.bestMs = (typeof f.sessionBestMs==='number') ? f.sessionBestMs : null;  // rensa gammalt värde när ACC saknar bästa varv
+  if(f.driverName && f.driverName!==state.driver){state.driver=f.driverName;el.driver.textContent=f.driverName;}
+});
+
+/* render — skriv till DOM bara vid ändring, i 30 Hz-tak */
+let lastArc='',lastAhead=null,lastD='',lastB='',lastP='';
+function render(){
+  // best/ref-tid
+  const b = state.bestMs!=null ? fmtLap(state.bestMs) : DASH_L;
+  if(b!==lastB){setCells(el.tBest,cB,b);setCells(el.tRef,cR,b);lastB=b;
+    el.tBest.classList.toggle('faint',state.bestMs==null);el.tRef.classList.toggle('faint',state.bestMs==null);}
+
+  if(!state.hasDelta){
+    if(lastArc!==''){el.arc.setAttribute('d','');lastArc='';}
+    if(lastD!==DASH_D){setCells(el.deltaVal,cD,DASH_D);el.deltaVal.classList.add('faint');lastD=DASH_D;}
+    const p = state.bestMs!=null ? b : DASH_L;
+    if(lastP!==p){setCells(el.tPred,cP,p);el.tPred.classList.add('faint');lastP=p;}
+    return;
+  }
+  el.deltaVal.classList.remove('faint');el.tPred.classList.remove('faint');
+  const d=state.shown,ahead=d<0;
+  const path=valueArc(d); if(path!==lastArc){el.arc.setAttribute('d',path);lastArc=path;}
+  if(ahead!==lastAhead){const col=ahead?'var(--green)':'var(--red)';
+    el.arc.style.stroke=ahead?'#0DE622':'#FF3B3B';el.deltaVal.style.color=el.arc.style.stroke;
+    el.cellPred.toggleAttribute('data-slow',!ahead);lastAhead=ahead;}
+  const ds=fmtDelta(d); if(ds!==lastD){setCells(el.deltaVal,cD,ds);lastD=ds;}
+  const ps = state.bestMs!=null ? fmtLap(state.bestMs+d*1000) : DASH_L;
+  if(ps!==lastP){setCells(el.tPred,cP,ps);lastP=ps;}
+}
+
+let lastT=performance.now();
+function frame(now){
+  requestAnimationFrame(frame);
+  const dtMs=now-lastT; if(dtMs<FRAME_MS) return; lastT=now;
+  const dt=Math.min(0.05,dtMs/1000),tau=REDUCED?0.0001:0.20;
+  state.shown+=(state.target-state.shown)*(1-Math.exp(-dt/tau));
+  render();
+}
+
+/* skal: skala/opacitet från kontrollpanelen, edit-läge/drag */
+wireShell(({scale,opacity})=>{
+  if(typeof scale==='number') document.documentElement.style.setProperty('--ui-scale',scale);
+  if(typeof opacity==='number') document.getElementById('ui').style.opacity=opacity;
+});
+
+document.fonts.ready.then(()=>{document.getElementById('ui').classList.add('ready');
+  render();frame(performance.now());});
+</script>
+</body>
+</html>

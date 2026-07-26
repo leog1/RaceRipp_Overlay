@@ -1,0 +1,25 @@
+# ── Node ──
+node_modules/
+pnpm-lock.yaml.bak
+
+# ── Rust / Tauri ──
+src-tauri/target/
+src-tauri/gen/
+# byggd sidecar (byggs av CI eller build_sidecar.py, ska ej committas)
+src-tauri/binaries/*
+!src-tauri/binaries/README.md
+
+# ── Python ──
+__pycache__/
+*.pyc
+engine/build/
+engine/dist/
+engine/*.spec
+.venv/
+venv/
+
+# ── OS / editor ──
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
