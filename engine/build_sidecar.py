@@ -15,7 +15,11 @@ TRIPLE = "x86_64-pc-windows-msvc"  # Windows x64. Byt om du bygger för annan ta
 
 def main():
     subprocess.check_call([sys.executable, "-m", "PyInstaller", "--onefile",
-                           "--name", "acc-engine", str(HERE / "acc_engine" / "__main__.py")])
+                           "--name", "acc-engine",
+                           "--paths", str(HERE),
+                           "--collect-submodules", "acc_engine",
+                           "--hidden-import", "ldparser",
+                           str(HERE / "run_engine.py")])
     out = ROOT / "src-tauri" / "binaries"
     out.mkdir(parents=True, exist_ok=True)
     exe = HERE / "dist" / ("acc-engine.exe" if sys.platform == "win32" else "acc-engine")

@@ -40,7 +40,7 @@ jobs:
           python -m pip install --upgrade pip pyinstaller
           pip install -r engine/requirements.txt
           pip install git+https://github.com/gotzl/ldparser
-          pyinstaller --onefile --name acc-engine engine/acc_engine/__main__.py
+          pyinstaller --onefile --name acc-engine --paths engine --collect-submodules acc_engine --hidden-import ldparser engine/run_engine.py
           New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
           # Tauri kräver target-triple-suffix på externalBin:
           Copy-Item dist/acc-engine.exe src-tauri/binaries/acc-engine-x86_64-pc-windows-msvc.exe -Force
