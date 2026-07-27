@@ -141,6 +141,10 @@ export function startLoop(tick, opts = {}) {
     requestAnimationFrame(step);
     if (now < nextT) return;
     nextT = Math.max(now, nextT + FRAME_MS);
+    // Rita inte alls när overlayn är dold. Fönstret är OS-dolt i det läget, så
+    // arbetet syns ingenstans — men rAF fortsätter ticka och canvas ritades om
+    // 30 ggr/s i onödan. lastT flyttas fram så dt inte hoppar vid återkomsten.
+    if (_gateHidden === true) { lastT = now; return; }
     const dt = Math.min(dtCap, (now - lastT) / 1000); lastT = now;
     tick(dt, now);
   }
@@ -155,6 +159,49 @@ export function startLoop(tick, opts = {}) {
 const GATE_HOLD_MS = 1500;
 let _disconnectedAt = 0;
 
+/* Är overlayn dold just nu? Renderloopar frågar den för att kunna hoppa arbetet
+   helt — se startLoop. */
+export function isGated() { return _gateHidden === true; }
+
+let _editMode = false;
+let _osHidden = null;
+
+/* Dölj även OS-FÖNSTRET, inte bara innehållet.
+   Mätt: med bara `visibility:hidden` låg WebView2 på 37 % av en kärna med båda
+   overlays DOLDA — renderarna gick vidare och GPU-processen komponerade fortfarande
+   två always-on-top-fönster. Att stänga fönstret tar bort båda kostnaderna, och
+   eftersom overlayn ändå är osynlig i det läget syns ingen skillnad.
+   CSS-dölningen ligger kvar som första försvar: den verkar direkt, medan
+   fönsteranropet är async. */
+function _applyOsVisibility(hidden) {
+  // I edit-läge ska fönstret ALDRIG OS-döljas — då går det inte att dra på plats.
+  const want = hidden && !_editMode;
+  if (want === _osHidden) return;
+  // Visa BARA fönster vi själva har dolt. Utan det anropades show() på första
+  // anslutna ramen, och en AVSTÄNGD overlay (som Rust skapar dold) hade då dykt upp
+  // på skärmen. Overlayns synlighet är skalets beslut; grinden får bara låna den
+  // tillfälligt.
+  if (!want && _osHidden !== true) { _osHidden = want; return; }
+  _osHidden = want;
+  try {
+    const T = globalThis.__TAURI__;
+    if (!T || !T.window || IN_PREVIEW) return;
+    const w = T.window.getCurrentWindow();
+    // Svälj INTE felet. Första versionen hade .catch(() => {}) och då misslyckades
+    // anropet tyst eftersom core:window:allow-hide saknades i capabilities —
+    // overlayn såg ut att fungera men fönstret doldes aldrig, och CPU:n låg kvar.
+    // Samma fälla som §8.3. Logga en gång, fall tillbaka på CSS-dölningen.
+    (want ? w.hide() : w.show()).catch((e) => {
+      if (!_osHideWarned) {
+        _osHideWarned = true;
+        console.warn('[bus] kunde inte dölja overlay-fönstret (saknad behörighet?):', e,
+                     '— faller tillbaka på visibility:hidden, men CPU:n frigörs inte.');
+      }
+    });
+  } catch {}
+}
+let _osHideWarned = false;
+
 function _applyGate() {
   let hidden = false;
   if (!IN_PREVIEW && _hideUntilConnected && !_lastConnected) {
@@ -167,6 +214,7 @@ function _applyGate() {
   if (hidden === _gateHidden) return;   // skriv bara vid ändring (_emit körs 40 ggr/s)
   _gateHidden = hidden;
   document.documentElement.style.visibility = hidden ? 'hidden' : '';
+  _applyOsVisibility(hidden);
 }
 
 // Grinden sätts direkt vid modulladdning, inte först när get_globals svarar.
@@ -245,7 +293,10 @@ export function wireShell(applyConfig, applyOption) {
     if (applyOption) applyOption(p.option, p.value);
   });
   T.event.listen('edit-mode', (e) => {
-    document.body.classList.toggle('edit-mode', e.payload === true);
+    _editMode = e.payload === true;
+    document.body.classList.toggle('edit-mode', _editMode);
+    // Gå ur OS-dölj direkt när edit-läget slås på, annars går overlayn inte att dra.
+    _applyOsVisibility(_gateHidden === true);
   });
   // I edit-läge: dra overlayn för att positionera (flyttar OS-fönstret).
   // Aldrig i previewn — där hade det dragit kontrollpanelens fönster.

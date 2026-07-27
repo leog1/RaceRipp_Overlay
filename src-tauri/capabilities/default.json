@@ -9,6 +9,8 @@
     "core:window:allow-start-dragging",
     "core:window:allow-set-ignore-cursor-events",
     "core:window:allow-set-always-on-top",
+    "core:window:allow-hide",
+    "core:window:allow-show",
     "global-shortcut:default",
     "dialog:default",
     "updater:default",

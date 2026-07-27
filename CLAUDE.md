@@ -70,6 +70,15 @@ acc-overlay.exe → acc-engine.exe (PyInstaller-bootloader) → acc-engine.exe (
   fullskärms transparent fönster (det tvingar DWM att komponera hela skärmen varje frame).
   Dessutom: inga backdrop-blur över spelet (`--glass:none`), DOM-skrivningar bara vid
   ändring, 30 Hz-tak, animera bara `transform`/`opacity`. Detta löste användarens FPS-tapp.
+  Sedan 0.3.6 stängs dessutom fönstret helt när grinden döljer overlayn (§8.5b) —
+  ett dolt innehåll räcker inte, fönstret komponeras ändå.
+- **Om någon föreslår "gör om allt till canvas för prestanda":** delta-baren ska
+  förbli SVG/DOM. Den skriver bara vid ÄNDRING och kostar noll när inget rör sig,
+  medan en canvas hade rensat och ritat om 30 ggr/s oavsett. Canvas ersätter
+  målningsarbetet, det försvinner inte till GPU:n. Canvas är rätt för TÄTA traces
+  (inputs-trace, kommande grafer) — det står redan i §4 och gäller fortfarande.
+  Mätningen i §8.5b visade dessutom att kostnaden satt i komposition och
+  renderloopar, inte i DOM-skrivningar.
 
 ## 4. Designspråk & tokens (enda sanningskällan: `src/shared/tokens.css`)
 Varje overlay importerar `tokens.css` och använder BARA variablerna. Nytt värde → lägg
@@ -322,6 +331,49 @@ kommer ur `hz` i `registry.json` via `__OVERLAY_INIT__` (§8.3), så en sällan-
 widget kan köra 5 Hz utan att röra kärnan. `tick(dt, now)` får `dt` i sekunder;
 använd det till all utjämning. `tests/overlay-loop.mjs` bevakar loopen och jämför
 mot det trasiga mönstret för att bevisa att mätningen biter.
+
+### 8.5b Dolda overlays kostade CPU ändå — `visibility:hidden` räcker inte
+Synk-grinden dolde overlayn med `document.documentElement.style.visibility='hidden'`.
+Sidan målade då ingenting — men **fönstret fanns kvar**, så Windows komponerade
+fortfarande två transparenta always-on-top-fönster, och renderloopen tickade vidare
+30 ggr/s och ritade canvas som ingen såg.
+
+Mätt på den här maskinen (6 kärnor), båda overlays dolda av grinden och panelen
+öppen men ofokuserad:
+
+| | WebView2 totalt |
+|---|---|
+| Före | **6,30 %** av alla kärnor (37,8 % av en) |
+| Efter | **2,46 %** av alla kärnor (14,8 % av en) |
+
+Uppdelningen före visade var det satt: GPU-processen 17,8 % av en kärna, tre
+renderare 8,4 + 4,8 + 4,5 %. Alltså komposition och renderloopar, inte JavaScript.
+
+Tre ändringar, ingen med någon synlig effekt:
+- **Stäng OS-fönstret**, inte bara innehållet (`getCurrentWindow().hide()`). Overlayn
+  är ändå osynlig i det läget. CSS-dölningen ligger kvar som första försvar
+  eftersom den verkar direkt medan fönsteranropet är async.
+- **`startLoop` hoppar hela tick:en när grinden är på.** `lastT` flyttas ändå fram
+  så `dt` inte hoppar vid återkomsten.
+- **Panelens preview pausas när panelen inte syns** (`display:none` på iframen gör
+  dokumentet orenderat, då kör webbläsaren inte dess rAF). Previewn är en FJÄRDE
+  renderloop som annars gick medan man kör. Statusraden strypt till 4 Hz — den
+  parsade 40 ramar/s för en prick som ändras någon gång per minut.
+
+**Två fällor på vägen, båda värda att minnas:**
+1. `hide()` kräver `core:window:allow-hide` i `capabilities/default.json`. Utan den
+   avvisas anropet — och med ett `.catch(() => {})` blev det HELT tyst: overlayn såg
+   ut att fungera, men fönstret doldes aldrig och CPU:n låg kvar. Samma svälj-fälla
+   som §8.3. Felet loggas nu en gång.
+2. Grinden fick BARA visa fönster den själv har dolt. Första versionen anropade
+   `show()` på första anslutna ramen, vilket hade gjort en **avstängd** overlay
+   synlig — Rust skapar den dold med `.visible(st.enabled)`. Synligheten är skalets
+   beslut; grinden lånar den tillfälligt. `tests/overlay-gate.mjs` fångade det.
+
+**Så mäter du om:** hitta WebView2-processerna som är barn (i valfritt led) till
+`acc-overlay.exe`, summera `TotalProcessorTime` över 20 s och dela med tiden. Att
+mäta `msedgewebview2` rakt av ger fel svar — det finns oftast andra program med
+egna WebView2-processer på maskinen (här 14 totalt, varav 8 våra).
 
 ### 8.6 Motorn får aldrig dö tyst
 ACC:s delade minne kan försvinna mitt i en session (alt-F4) och kasta. Utan

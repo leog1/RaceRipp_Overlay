@@ -26,6 +26,7 @@ function check(name, ok, detail) {
    så vi loggar varje skrivning och mäter dem. */
 let NOW = 100000;
 const writes = [];
+const winCalls = [];
 function setupEnv(gate) {
   globalThis.__OVERLAY_INIT__ = { id: 'delta-bar', scale: 1, opacity: 1, gate };
   globalThis.Date = class extends Date { static now() { return NOW; } };
@@ -42,6 +43,16 @@ function setupEnv(gate) {
   globalThis.WebSocket = class {                // öppnar aldrig något
     constructor() { this.onopen = this.onmessage = this.onerror = this.onclose = null; }
     close() {}
+  };
+  // Tauri-stubb som LOGGAR hide/show. Anropen misslyckades tyst i verkligheten
+  // (core:window:allow-hide saknades i capabilities) och overlayn såg ut att
+  // fungera medan fönstret aldrig doldes — CPU:n låg kvar. Därför mäts de här.
+  winCalls.length = 0;
+  globalThis.__TAURI__ = {
+    window: { getCurrentWindow: () => ({
+      hide: () => { winCalls.push('hide'); return Promise.resolve(); },
+      show: () => { winCalls.push('show'); return Promise.resolve(); },
+    }) },
   };
 }
 
@@ -126,6 +137,32 @@ const hideCount = (from = 0) => writes.slice(from).filter((w) => w.value === 'hi
   for (let i = 0; i < 200; i++) { bus._emit({ connected: true }); NOW += 25; }
   check('stabil anslutning ger högst en DOM-skrivning', writes.length <= 1,
         `${writes.length} skrivningar på 200 ramar`);
+}
+
+// ── 7. Fönstret ska OS-döljas, inte bara CSS-döljas ───────────────────────
+// Mätt: med enbart visibility:hidden låg WebView2 på 37,8 % av en kärna med båda
+// overlays dolda — renderarna gick vidare och GPU-processen komponerade fortfarande
+// två always-on-top-fönster. Att stänga fönstren tog det till 14,8 %.
+//
+// Detta är också platsen där ett fel går tyst: anropet krävde
+// core:window:allow-hide i capabilities, och utan den avvisades det medan overlayn
+// såg ut att fungera precis som förut.
+{
+  const { WsBus } = await loadBus(true);
+  const bus = new WsBus();
+  bus._emit({ connected: true });
+  check('inget fönsteranrop medan overlayn syns', winCalls.length === 0,
+        winCalls.join(',') || 'inga anrop');
+
+  for (let i = 0; i < 120; i++) { bus._emit({ connected: false }); NOW += 25; }
+  check('fönstret döljs på OS-nivå vid frånkoppling', winCalls.includes('hide'),
+        winCalls.join(',') || 'inga anrop');
+
+  bus._emit({ connected: true });
+  check('fönstret visas igen vid återanslutning',
+        winCalls[winCalls.length - 1] === 'show', winCalls.join(','));
+  check('ett anrop per lägesbyte, inte per ram', winCalls.length === 2,
+        `${winCalls.length} anrop: ${winCalls.join(',')}`);
 }
 
 console.log(failed ? `\n${failed} kontroll(er) misslyckades` : '\nAllt OK');

@@ -36,3 +36,7 @@ Thumbs.db
 
 # research-anteckningar om Race Element (GPL) — ska aldrig committas
 .race-element-notes/
+
+# Underlag fran andra verktyg (roadmap-/optimeringsforslag). Innehallet vags in i
+# CLAUDE.md nar det ar bedomt - sjalva filerna hor inte hemma i repot.
+optimeringsförslag_gemini.md

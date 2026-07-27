@@ -581,15 +581,48 @@ $('checkUpd').addEventListener('click', async () => {
   function connect(){
     set('off', 'Motor offline');
     try { ws = new WebSocket('ws://127.0.0.1:8777'); } catch { return setTimeout(connect, 1500); }
-    ws.onmessage = e => { try {
-      const f = JSON.parse(e.data);
-      set(f.connected ? 'live' : 'mock', f.connected ? 'ACC ansluten' : 'Mock-data');
-      setBroadcast(f.broadcast, f.broadcastError);
-    } catch {} };
+    /* Statusraden behöver inte 40 Hz. Den visar en prick och två textrader som
+       ändras någon gång per minut, men parsade tidigare VARJE ram — 40 JSON.parse
+       per sekund av en 32-fälts ram, i en egen WebView-renderare som dessutom
+       fortsätter köra medan du kör och panelen ligger bakom spelet.
+       Fyra gånger per sekund är omärkligt för ögat och tar bort 90 % av arbetet. */
+    let nextStatus = 0;
+    ws.onmessage = e => {
+      const now = performance.now();
+      if (now < nextStatus) return;
+      nextStatus = now + 250;
+      try {
+        const f = JSON.parse(e.data);
+        set(f.connected ? 'live' : 'mock', f.connected ? 'ACC ansluten' : 'Mock-data');
+        setBroadcast(f.broadcast, f.broadcastError);
+      } catch {}
+    };
     ws.onclose = () => { set('off', 'Motor offline'); setBroadcast(null); setTimeout(connect, 1500); };
     ws.onerror = () => { try { ws.close(); } catch {} };
   }
   connect();
+})();
+
+/* ── pausa förhandsvisningen när panelen inte syns ── */
+/* Previewn kör en FJÄRDE renderloop: en riktig overlay i en iframe, 30 ggr/s.
+   Den fortsatte köra medan du kör och panelen ligger bakom spelet — alltså exakt
+   när CPU:n behövs till annat. display:none gör iframens dokument orenderat, och
+   då kör webbläsaren inte dess rAF alls.
+   Ingen synlig skillnad: panelen är per definition inte synlig i det läget. */
+(function pausePreviewWhenHidden(){
+  const pv = $('pv');
+  let paused = false;
+  const setPaused = (v) => {
+    if (v === paused) return;
+    paused = v;
+    pv.style.display = v ? 'none' : '';
+    // Storleken räknas om av ResizeObserver inne i overlayn när den syns igen.
+    if (!v && selectedId) { const o = ov(selectedId); if (o) setPreview(o); }
+  };
+  addEventListener('blur',  () => setPaused(true));
+  addEventListener('focus', () => setPaused(false));
+  // Minimerat fönster rapporteras som dolt dokument; täck det också.
+  document.addEventListener('visibilitychange', () => setPaused(document.hidden));
 })();
 
 /* ── sync edit-läge från hotkey ── */
