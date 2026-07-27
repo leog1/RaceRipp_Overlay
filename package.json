@@ -2,6 +2,8 @@
   "name": "acc-overlay",
   "version": "0.3.0",
   "private": true,
+  "//type": "src/shared/bus.js är vår enda .js och den är en ES-modul. Utan detta läser Node om den som CommonJS först och varnar vid varje testkörning — brus i CI-loggen som döljer det man faktiskt vill se.",
+  "type": "module",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",

@@ -26,6 +26,17 @@ jobs:
           cache: pnpm
       - run: pnpm install
 
+      # Testerna kors FORE bygget: ett gront CI-bygge har redan en gang betytt en
+      # trasig utgava (0.2.4, se CLAUDE.md 8.6c), och da var verify_sidecar det enda
+      # som tittade pa vad som faktiskt hamnade i binaren. Overlay-testerna ar rena
+      # Node-skript utan beroenden och tar sekunder.
+      - name: Kor overlay-tester
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          pnpm test
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -65,6 +76,24 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           python engine/verify_sidecar.py src-tauri/binaries/acc-engine-x86_64-pc-windows-msvc.exe
+
+      # Kors efter sidecar-steget for att pip-beroendena ska finnas. verify_sidecar
+      # kontrollerar att modulerna LIGGER i binaren; dessa kontrollerar att motorn
+      # faktiskt gar att kora och att ramschemat ar intakt.
+      #
+      # engine_smoke binder 8777/8078 pa runnern och tar ~1 minut (den startar
+      # medvetet en andra instans for att testa portkonflikten). Blir den nagonsin
+      # flakig ar den ratt sak att plocka bort forst - de andra tva ar deterministiska.
+      #
+      # motec_reference kors INTE har: den kraver en riktig .ld som CI inte har och
+      # skulle bara hoppa over sig sjalv.
+      - name: Kor motortester
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          python tests/broadcast_protocol.py
+          python tests/engine_smoke.py
 
       - name: Bygg & publicera (Tauri)
         uses: tauri-apps/tauri-action@v0

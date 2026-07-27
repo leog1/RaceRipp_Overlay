@@ -110,10 +110,19 @@ src-tauri/tauri.conf.json  control-fönster, updater, externalBin, bundle.resour
 .github/workflows/release.yml  CI: bygg Windows-installer + latest.json vid tagg
 ```
 
-## 7. Status: verifierat vs kvar  (uppdaterad 2026-07-27)
+## 7. Status: verifierat vs kvar  (uppdaterad 2026-07-27, v0.3.0)
 **Verifierat genom att faktiskt köra:**
-- Motorn: 39 Hz, alla 17 ramfält, inga NaN; WS + OBS-HTTP serverar; två samtidiga
+- **BÅDA ACC-källorna mot spelet igång** (2026-07-27, under hotlap). `acc_test.py`
+  och `broadcast_test.py` kördes av användaren: Broadcasting ansluter på ett par
+  sekunder och listar det som förväntas, delade minnet likaså. Det stänger den punkt
+  som stått öppen sedan projektet startade.
+  **Nivån på verifieringen:** bekräftat i drift av en människa som såg rimliga värden
+  — inte en maskinell fält-för-fält-jämförelse mot kända sanningar. Dyker det upp ett
+  enskilt fält som beter sig konstigt (särskilt i Broadcasting, §8.6d) är det alltså
+  fortfarande där man ska titta först.
+- Motorn: 39 Hz, alla ramfält, inga NaN; WS + OBS-HTTP serverar; två samtidiga
   instanser avslutar snyggt med tydligt portmeddelande i stället för traceback.
+  Broadcasting-fälten finns men är `None` med `--broadcast off`.
 - `pnpm tauri dev`: kontrollpanel + båda overlay-fönstren skapas ur registret,
   sidecarn startar automatiskt, panelens preview renderar overlayn korrekt.
 - **Sidecarn dödas** vid stängd panel OCH vid `taskkill /F` på appen (se §8.1).
@@ -139,16 +148,11 @@ src-tauri/tauri.conf.json  control-fönster, updater, externalBin, bundle.resour
   Bash — det senare gav tyst ingen output och såg ut som att binären var trasig.
 
 **Kvar att verifiera:**
-- **Riktig ACC-telemetri** — kräver att ACC körs ute på banan. Fältmappningen i
-  `sources/acc.py` är skriven mot pyaccsharedmemory-doc men aldrig sedd i drift.
-  `engine/acc_test.py` finns för just detta: kör den med ACC igång.
-- **Broadcasting-UDP mot riktiga ACC** — samma sak för den andra datakällan
-  (§8.6d). Handskakningen, byte-layouten och entry list-flödet är verifierade mot en
-  falsk server (`tests/broadcast_protocol.py`, allt OK) och mot din riktiga
-  `broadcasting.json` (port 9000, lösenord läses, registrering skickas, motorn står i
-  `connecting` utan att störas) — men inget riktigt paket har någonsin tolkats.
-  Kör `python engine/broadcast_test.py` med en session laddad.
-  Dessa två är nu det som är overifierat i datavägen.
+- **Broadcasting under RIKTIGT lopp** — hittills bara sett med hotlap, alltså med i
+  praktiken en bil. Entry list-flödet, omfrågan vid okänd bil och bortstädningen av
+  bilar som lämnat sessionen (§8.6d) är testade mot en falsk server men aldrig mot ett
+  fullt startfält. Kör `python engine/broadcast_test.py` i en multiplayer-session
+  eller ett race mot AI.
 - **Installation från MSI/NSIS** — installerarna byggs och binärerna är körda ur dem,
   men själva installationen (Program Files-layout, `resource_dir` där) är inte gjord.
 - **DPI-fixen** (§8.2) — användarens skärm kör 100 % skalning, där logiska och
@@ -343,10 +347,11 @@ DIN bil. Fyra saker som inte är självklara:
   5:e sekund, så en OBS-flik som öppnas mitt i loppet också får förarnamnen. `null`
   betyder alltså **oförändrad**, inte **borta** — latcha den, som HOLD_MS i §8.5.
 
-Byte-layouten är skriven mot Kunos publika dokumentation men **aldrig sedd mot riktiga
-ACC**. `tests/broadcast_protocol.py` (falsk UDP-server) testar parsern mot vår
-förståelse; bara `engine/broadcast_test.py` med spelet igång testar förståelsen mot
-verkligheten. Se §7.
+Byte-layouten är skriven mot Kunos publika dokumentation. Den är körd mot riktiga ACC
+(hotlap, 2026-07-27) och anslöt och gav rimliga värden — men bara med en bil på banan.
+`tests/broadcast_protocol.py` (falsk UDP-server) testar parsern mot vår förståelse;
+`engine/broadcast_test.py` med spelet igång testar förståelsen mot verkligheten. Kör
+den i ett riktigt race innan du litar på entry list-flödet. Se §7.
 
 ### 8.7 ACC:s MoTeC-export har INGEN distanskanal
 55 kanaler, noll med "dist" i namnet. `delta.py` integrerar därför **farten** till
