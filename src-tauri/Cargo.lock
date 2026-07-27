@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "acc-overlay"
-version = "0.1.0"
+version = "0.2.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -14,6 +14,7 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tauri-plugin-shell",
  "tauri-plugin-updater",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

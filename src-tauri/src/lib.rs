@@ -10,9 +10,10 @@ use std::sync::{Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
 use tauri::{
-    AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_shell::process::CommandChild;
 
 // ── Registret (kompileras in; katalog över overlays) ────────────────────────
 const REGISTRY_JSON: &str = include_str!("../../src/overlays/registry.json");
@@ -155,10 +156,39 @@ fn create_overlay(app: &AppHandle, def: &OverlayDef, st: &OverlayState) -> tauri
         .resizable(false)
         .shadow(false)
         .focused(false)
-        .visible(true)
+        // Skapa avstängda overlays dolda direkt — annars blinkar de synligt vid start
+        // innan hide() hinner köras.
+        .visible(st.enabled)
         .build()?;
     win.set_ignore_cursor_events(CLICK_THROUGH.load(Ordering::Relaxed))?;
     Ok(())
+}
+
+// Spara lägen NU (används när edit-läget lämnas och vid avslut) — annars ligger
+// dragna positioner bara i fönstren och försvinner om appen tar en annan väg ut
+// än "stäng kontrollpanelen".
+fn persist_positions(app: &AppHandle) {
+    if let Some(state) = app.try_state::<Mutex<Settings>>() {
+        if let Ok(mut s) = state.lock() {
+            save_positions(app, &mut s);
+            save_settings(app, &s);
+        }
+    }
+}
+
+// Positioner sparas i LOGISKA pixlar (samma enhet som WebviewWindowBuilder::position
+// och set_position tar). outer_position() ger FYSISKA pixlar, så utan omvandlingen
+// vandrar fönstren med skalfaktorn vid varje omstart på skärmar som inte kör 100 %.
+fn save_positions(app: &AppHandle, s: &mut Settings) {
+    for id in overlay_ids() {
+        let Some(w) = app.get_webview_window(id) else { continue };
+        let (Ok(pos), Ok(sf)) = (w.outer_position(), w.scale_factor()) else { continue };
+        let lp = pos.to_logical::<f64>(sf);
+        if let Some(st) = s.overlays.get_mut(id) {
+            st.x = lp.x.round() as i32;
+            st.y = lp.y.round() as i32;
+        }
+    }
 }
 
 fn apply_size(app: &AppHandle, id: &str, scale: f64) {
@@ -213,6 +243,9 @@ fn get_overlays(state: State<Mutex<Settings>>) -> Vec<OverlayInfo> {
         .collect()
 }
 
+// config/option skickas till ALLA fönster (app.emit) och filtreras på payload-id i
+// bus.js — inte med emit_to(label). Skälet: kontrollpanelens förhandsvisning kör
+// overlayn i en iframe inuti "control"-fönstret, och emit_to hade aldrig nått den.
 #[derive(Serialize, Clone)]
 struct ConfigPayload {
     id: String,
@@ -268,15 +301,24 @@ fn set_enabled(app: AppHandle, state: State<Mutex<Settings>>, id: String, enable
 
 #[tauri::command]
 fn set_scale(app: AppHandle, state: State<Mutex<Settings>>, id: String, scale: f64) {
-    let opacity;
+    let (opacity, prev);
     {
         let mut s = state.lock().unwrap();
+        prev = s.overlays.get(&id).map(|st| st.scale).unwrap_or(scale);
         if let Some(st) = s.overlays.get_mut(&id) { st.scale = scale; }
         opacity = s.overlays.get(&id).map(|s| s.opacity).unwrap_or(1.0);
         save_settings(&app, &s);
     }
-    apply_size(&app, &id, scale);
-    let _ = app.emit_to(id.as_str(), "config", ConfigPayload { id: id.clone(), scale, opacity });
+    // Fönsterstorlek och CSS-skala ändras i två steg; gör det större steget först
+    // så innehållet aldrig klipps av ett för litet fönster däremellan.
+    let cfg = ConfigPayload { id: id.clone(), scale, opacity };
+    if scale > prev {
+        apply_size(&app, &id, scale);
+        let _ = app.emit("config", cfg);
+    } else {
+        let _ = app.emit("config", cfg);
+        apply_size(&app, &id, scale);
+    }
 }
 
 #[tauri::command]
@@ -288,7 +330,7 @@ fn set_opacity(app: AppHandle, state: State<Mutex<Settings>>, id: String, opacit
         scale = s.overlays.get(&id).map(|s| s.scale).unwrap_or(1.0);
         save_settings(&app, &s);
     }
-    let _ = app.emit_to(id.as_str(), "config", ConfigPayload { id: id.clone(), scale, opacity });
+    let _ = app.emit("config", ConfigPayload { id: id.clone(), scale, opacity });
 }
 
 // Per-overlay always-on-top (era overlays skapas redan överst; detta togglar det).
@@ -310,7 +352,7 @@ fn set_option(app: AppHandle, state: State<Mutex<Settings>>, id: String, option:
         if let Some(st) = s.overlays.get_mut(&id) { st.options.insert(option.clone(), value); }
         save_settings(&app, &s);
     }
-    let _ = app.emit_to(id.as_str(), "option", OptionPayload { id: id.clone(), option, value });
+    let _ = app.emit("option", OptionPayload { id: id.clone(), option, value });
 }
 
 // Nollställ läge/utseende/alternativ till registrets standard (behåller på/av).
@@ -332,9 +374,9 @@ fn reset_overlay(app: AppHandle, state: State<Mutex<Settings>>, id: String) {
         let _ = win.set_position(tauri::LogicalPosition::new(def.default_x as f64, def.default_y as f64));
         let _ = win.set_always_on_top(true);
     }
-    let _ = app.emit_to(id.as_str(), "config", ConfigPayload { id: id.clone(), scale, opacity });
+    let _ = app.emit("config", ConfigPayload { id: id.clone(), scale, opacity });
     for (opt, val) in options {
-        let _ = app.emit_to(id.as_str(), "option", OptionPayload { id: id.clone(), option: opt, value: val });
+        let _ = app.emit("option", OptionPayload { id: id.clone(), option: opt, value: val });
     }
 }
 
@@ -348,6 +390,10 @@ fn set_edit_mode(app: AppHandle, edit: bool) {
         if let Some(w) = app.get_webview_window(id) {
             let _ = w.set_ignore_cursor_events(click_through);
         }
+    }
+    // Lämnar vi edit-läget är dragningen klar → spara direkt.
+    if !edit {
+        persist_positions(&app);
     }
     let _ = app.emit("edit-mode", edit);
 }
@@ -412,6 +458,10 @@ pub fn run() {
                                 let _ = w.set_ignore_cursor_events(next);
                             }
                         }
+                        // next == true betyder klick-igenom, dvs. edit-läget lämnas.
+                        if next {
+                            persist_positions(app);
+                        }
                         let _ = app.emit("edit-mode", !next);
                     }
                 })
@@ -435,23 +485,31 @@ pub fn run() {
             let handle = app.handle().clone();
             let settings = load_settings(&handle);
 
+            // Läget för varje overlay plockas ut FÖRE app.manage, och fönstren skapas
+            // EFTER — annars hinner en overlay-webview anropa get_config innan
+            // Mutex<Settings> är managed, kommandot svarar med fel (som bus.js sväljer)
+            // och overlayn ritas med standardskala i stället för sparad.
+            let plan: Vec<(&'static OverlayDef, OverlayState)> = registry()
+                .iter()
+                .map(|d| {
+                    let st = settings
+                        .overlays
+                        .get(&d.id)
+                        .cloned()
+                        .unwrap_or_else(|| default_state_for(d));
+                    (d, st)
+                })
+                .collect();
+
+            app.manage(Mutex::new(settings));
             start_engine(&handle);
 
-            for def in registry() {
-                let st = settings
-                    .overlays
-                    .get(&def.id)
-                    .cloned()
-                    .unwrap_or_else(|| default_state_for(def));
+            for (def, st) in plan {
                 if let Err(e) = create_overlay(&handle, def, &st) {
                     eprintln!("[shell] kunde ej skapa overlay {}: {e}", def.id);
                 }
-                if !st.enabled {
-                    if let Some(w) = handle.get_webview_window(&def.id) { let _ = w.hide(); }
-                }
             }
 
-            app.manage(Mutex::new(settings));
             // Registrera hotkeyen, men låt inte appen krascha om genvägen redan
             // ägs av något annat program — panelens "flytta"-knapp (set_edit_mode)
             // fungerar ändå, så edit-läget går att nå utan hotkeyen.
@@ -468,22 +526,118 @@ pub fn run() {
                     let app = window.app_handle().clone();
                     if let Some(state) = app.try_state::<Mutex<Settings>>() {
                         let mut s = state.lock().unwrap();
-                        for id in overlay_ids() {
-                            if let Some(w) = app.get_webview_window(id) {
-                                if let Ok(pos) = w.outer_position() {
-                                    if let Some(st) = s.overlays.get_mut(id) { st.x = pos.x; st.y = pos.y; }
-                                }
-                            }
-                        }
+                        save_positions(&app, &mut s);
                         save_settings(&app, &s);
                     }
+                    stop_engine();
                     app.exit(0);
                 }
             }
         })
-        .run(tauri::generate_context!())
-        .expect("fel vid start av ACC Overlay");
+        .build(tauri::generate_context!())
+        .expect("fel vid start av ACC Overlay")
+        // Nät under CloseRequested: fångar alla andra avslutsvägar (exit(), sista
+        // fönstret stängt) så motorn aldrig lämnas kvar som zombie-process.
+        .run(|_app, event| {
+            if let RunEvent::Exit = event {
+                stop_engine();
+            }
+        });
 }
+
+// ── Motorn (Python-sidecar) ─────────────────────────────────────────────────
+// Handtaget till barnprocessen måste sparas — utan det kan vi inte döda motorn
+// när appen stängs, och acc-engine.exe lever vidare och håller port 8777/8078
+// (vilket gör att NÄSTA start får en sidecar som inte kan binda och dör tyst).
+static ENGINE: OnceLock<Mutex<Option<CommandChild>>> = OnceLock::new();
+fn engine_slot() -> &'static Mutex<Option<CommandChild>> {
+    ENGINE.get_or_init(|| Mutex::new(None))
+}
+
+fn stop_engine() {
+    // take() → idempotent, så det är ofarligt att anropa från flera avslutsvägar.
+    let child = engine_slot().lock().ok().and_then(|mut g| g.take());
+    if let Some(child) = child {
+        if let Err(e) = child.kill() {
+            eprintln!("[shell] kunde ej avsluta motorn: {e}");
+        }
+    }
+    // ...och sedan hela trädet under den. Se confine_engine().
+    close_engine_job();
+}
+
+// ── Windows: håll motorn i ett Job Object ───────────────────────────────────
+// child.kill() gör TerminateProcess på BARA den direkta barnprocessen, och Windows
+// dödar inte efterkommande. PyInstaller --onefile kör en bootloader som packar upp
+// och startar den riktiga motorn som ett eget barn — uppmätt process­kedja:
+//   acc-overlay.exe → acc-engine.exe (bootloader) → acc-engine.exe (motorn, äger
+//   port 8777/8078). Bara bootloadern dog, motorn låg kvar som zombie.
+// Ett Job Object med KILL_ON_JOB_CLOSE dödar alla i jobbet när handtaget stängs —
+// vilket OS:et gör åt oss även om appen kraschar eller blir taskkill:ad.
+#[cfg(windows)]
+static ENGINE_JOB: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(windows)]
+fn confine_engine(pid: u32) {
+    use std::sync::atomic::Ordering;
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE};
+
+    unsafe {
+        let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+        if job.is_null() {
+            eprintln!("[shell] kunde ej skapa Job Object för motorn");
+            return;
+        }
+        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        let sized = std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32;
+        if SetInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            &info as *const _ as *const _,
+            sized,
+        ) == 0
+        {
+            CloseHandle(job);
+            return;
+        }
+        // Barn som processen startar EFTER detta ärver jobbet automatiskt.
+        let proc = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
+        if proc.is_null() {
+            CloseHandle(job);
+            return;
+        }
+        let ok = AssignProcessToJobObject(job, proc) != 0;
+        CloseHandle(proc);
+        if ok {
+            // Handtaget läcks medvetet: det ska leva exakt så länge appen gör.
+            ENGINE_JOB.store(job as usize, Ordering::Relaxed);
+        } else {
+            eprintln!("[shell] kunde ej lägga motorn i Job Object");
+            CloseHandle(job);
+        }
+    }
+}
+
+#[cfg(windows)]
+fn close_engine_job() {
+    use std::sync::atomic::Ordering;
+    let h = ENGINE_JOB.swap(0, Ordering::Relaxed);
+    if h != 0 {
+        unsafe { windows_sys::Win32::Foundation::CloseHandle(h as *mut _) };
+    }
+}
+
+#[cfg(not(windows))]
+fn confine_engine(_pid: u32) {}
+#[cfg(not(windows))]
+fn close_engine_job() {}
 
 // Starta motorn (sidecar). --config → app-config/engine.config.json så
 // referensval från kontrollpanelen når motorn. Misslyckas tyst i dev.
@@ -495,8 +649,20 @@ fn start_engine(app: &AppHandle) {
     match app.shell().sidecar("acc-engine") {
         Ok(cmd) => {
             let cmd = if cfg.is_empty() { cmd } else { cmd.args(["--config", &cfg]) };
-            if let Err(e) = cmd.spawn() {
-                eprintln!("[shell] sidecar 'acc-engine' startade ej: {e} (kör motorn manuellt i dev)");
+            // Overlay-filerna på disk (bundle.resources) så motorns OBS-HTTP-server
+            // kan servera dem även i den paketerade appen. Finns de inte (dev) hoppar
+            // motorn över HTTP-servern och loggar det.
+            let cmd = match app.path().resource_dir().map(|d| d.join("web")) {
+                Ok(root) if root.exists() => cmd.args(["--root", &root.to_string_lossy()]),
+                _ => cmd,
+            };
+            match cmd.spawn() {
+                Ok((_rx, child)) => {
+                    // Direkt efter spawn, innan bootloadern hunnit starta sitt barn.
+                    confine_engine(child.pid());
+                    if let Ok(mut slot) = engine_slot().lock() { *slot = Some(child); }
+                }
+                Err(e) => eprintln!("[shell] sidecar 'acc-engine' startade ej: {e} (kör motorn manuellt i dev)"),
             }
         }
         Err(e) => eprintln!("[shell] hittar ej sidecar 'acc-engine': {e} (dev: kör motorn manuellt)"),
