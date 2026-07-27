@@ -46,13 +46,24 @@ async def run():
 
     root = Path(args.root)
     if root.exists():
-        http_static.start(root, args.host, args.http_port)
-        print(f"[engine] HTTP (OBS) → http://{args.host}:{args.http_port}/overlays/")
+        try:
+            http_static.start(root, args.host, args.http_port)
+            print(f"[engine] HTTP (OBS) → http://{args.host}:{args.http_port}/overlays/")
+        except OSError as e:
+            # Icke-fatalt: OBS-servern är valfri, WS-bussen är huvudsaken.
+            print(f"[engine] HTTP-porten {args.http_port} kunde ej bindas ({e}) — "
+                  f"OBS-servern hoppas över. Kör redan en acc-engine?")
     else:
         print(f"[engine] varning: --root finns ej: {root} (OBS-servern hoppas över)")
 
-    # källor
-    acc = AccSource() if args.source in ("auto", "acc") else None
+    # källor. AccSource öppnar delat minne redan i konstruktorn — får den inte det
+    # ska vi falla tillbaka på mock, inte dö innan bussen ens startat.
+    acc = None
+    if args.source in ("auto", "acc"):
+        try:
+            acc = AccSource()
+        except Exception as e:
+            print(f"[engine] kunde ej öppna ACC:s delade minne: {e} (kör mock)")
     mock = MockSource() if args.source in ("auto", "mock") else None
     if args.source == "acc" and not (acc and acc.available):
         print("[engine] pyaccsharedmemory saknas — inga ACC-data (kör --source mock för demo)")
@@ -63,10 +74,19 @@ async def run():
     cfg_path = Path(args.config) if args.config else None
     cfg_mtime = 0.0
 
-    async with bus.serve(args.host, args.ws_port):
+    try:
+        server = await bus.start(args.host, args.ws_port)
+    except OSError as e:
+        print(f"[engine] kan ej binda ws://{args.host}:{args.ws_port} ({e}).\n"
+              f"[engine] En acc-engine kör troligen redan (kolla efter en kvarlämnad "
+              f"acc-engine.exe i Aktivitetshanteraren). Avslutar.")
+        return
+
+    try:
         print(f"[engine] WebSocket → ws://{args.host}:{args.ws_port}  (källa: {args.source})")
         period = 1.0 / args.hz
         last_cfg_check = 0.0
+        acc_errs = 0
         while True:
             t = time.perf_counter()
 
@@ -86,21 +106,36 @@ async def run():
                 except Exception as e:
                     print("[engine] config-fel:", e)
 
-            # välj ram
+            # Välj ram. ALLT kring källäsningen är inkapslat: ACC:s delade minne
+            # kan försvinna mitt i en session (alt-F4) och kasta — utan detta dog
+            # hela motorprocessen och varje overlay frös på sista ramen.
             frame = None
             if acc and acc.available:
-                f = acc.read()
-                if f.connected:
-                    if ref.loaded:
-                        f.delta = ref.delta(f.position, f.curLapMs)
-                        f.refTotalMs = ref.total_ms()
-                    frame = f
+                try:
+                    f = acc.read()
+                    if f.connected:
+                        if ref.loaded:
+                            f.delta = ref.delta(f.position, f.curLapMs)
+                            f.refTotalMs = ref.total_ms()
+                        frame = f
+                    acc_errs = 0
+                except Exception as e:
+                    acc_errs += 1
+                    if acc_errs == 1 or acc_errs % 400 == 0:   # ~var 10:e sekund
+                        print(f"[engine] ACC-läsfel ({acc_errs}): {e} — kör mock tills det går igen")
             if frame is None:
                 frame = mock.read() if mock else Frame(connected=False)
 
             await bus.broadcast(frame.to_dict())
 
-            await asyncio.sleep(max(0.0, period - (time.perf_counter() - t)))
+            # Minst en riktig yield: annars kan loopen spinna på 100 % av en kärna
+            # om ett tick spiller över perioden.
+            await asyncio.sleep(max(0.001, period - (time.perf_counter() - t)))
+    finally:
+        server.close()
+        await server.wait_closed()
+        if acc:
+            acc.close()          # stäng ACC:s delade minne-handtag
 
 
 def main():

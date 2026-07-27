@@ -1,3 +1,5 @@
+# >=12: både legacy- och asyncio-API:t exponerar websockets.serve som awaitable
+# och ger ett Server-objekt med close()/wait_closed() — verifierat på 16.0.
 websockets>=12.0
 numpy>=1.24
 # ACC delat minne (Windows). Saknas den faller motorn tillbaka på mock.

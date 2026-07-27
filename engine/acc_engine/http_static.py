@@ -6,11 +6,20 @@ from pathlib import Path
 
 
 def start(root: Path, host: str, port: int) -> threading.Thread:
+    """Kastar OSError om porten är upptagen — anroparen får avgöra om det är
+    fatalt (det är det inte: OBS-servern är valfri, WS-bussen är det viktiga)."""
     handler = functools.partial(_Quiet, directory=str(root))
-    httpd = http.server.ThreadingHTTPServer((host, port), handler)
+    httpd = _Server((host, port), handler)
     t = threading.Thread(target=httpd.serve_forever, daemon=True, name="http-static")
     t.start()
     return t
+
+
+class _Server(http.server.ThreadingHTTPServer):
+    # HTTPServer sätter allow_reuse_address=1, vilket på Windows låter en ANDRA
+    # motor binda samma port och tyst kapa den (då blir det slumpmässigt vem som
+    # svarar OBS). Vi vill i stället få ett ärligt OSError och logga det.
+    allow_reuse_address = False
 
 
 class _Quiet(http.server.SimpleHTTPRequestHandler):

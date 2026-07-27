@@ -25,13 +25,29 @@ class Reference:
         self.path = ""
         self.lap_ms = None        # referensvarvets totaltid (ms)
 
+    def _clear(self):
+        """Nollar allt referensläge. Utan detta låg gamla varvets distans/tid-kurva
+        kvar i minnet efter ett misslyckat load()."""
+        self._pos = None
+        self._t = None
+        self.loaded = False
+        self.path = ""
+        self.lap_ms = None
+
     def load(self, path: str) -> bool:
+        self._clear()
         try:
             from ldparser import ldData
             ld = ldData.fromfile(path)
             chans = {c.name.lower(): c for c in ld.channs}   # ld.channs = lista av kanaler
 
             def find(*keys):
+                # Exakt namn FÖRST, delsträng sedan: ACC-exporten har både SPEED och
+                # WHEEL_SPEED_LF, och en ren delsträngssökning tog den som råkade ligga
+                # först i filen.
+                for k, c in chans.items():
+                    if k in keys:
+                        return c
                 for k, c in chans.items():
                     if any(key in k for key in keys):
                         return c
@@ -79,7 +95,7 @@ class Reference:
             return True
         except Exception as e:
             print("[delta] load-fel:", e)
-            self.loaded = False
+            self._clear()
             return False
 
     def t_at(self, norm_pos: float) -> Optional[float]:
@@ -99,9 +115,14 @@ class Reference:
             return None
         d = cur_lap_ms / 1000.0 - tref
         # Vid mållinjen kan position (wrappar till 0) och varvtid (nollställs strax
-        # efter) vara ur synk EN frame → falsk spik ≈ hela varvtiden. Avvisa den:
-        # en äkta delta är sekunder, aldrig ~ett halvt varv.
-        if self.lap_ms and abs(d) > 0.5 * (self.lap_ms / 1000.0):
+        # efter) vara ur synk EN frame → falsk spik. Den spiken har alltid magnitud
+        # ≈ HELA varvtiden (mätt: 0,99 × varvet), så tröskeln ligger proportionellt
+        # mot varvlängden och skalar därmed av sig själv mellan Spa (~2:16) och
+        # Nordschleife (~8 min).
+        # 0,8 och inte 0,5: på långa banor är en äkta delta på tiotals sekunder både
+        # möjlig och intressant (t.ex. 24h Nordschleife) och ska visas, inte kastas.
+        # Med 0,5 avvisades allt över 68 s på Spa fastän det var giltig data.
+        if self.lap_ms and abs(d) > 0.8 * (self.lap_ms / 1000.0):
             return None
         return d
 
