@@ -106,7 +106,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "ACC Overlay ${{ github.ref_name }}"
+          releaseName: "SimMatrix ${{ github.ref_name }}"
           releaseBody: "Se ändringar nedan. Auto-update via latest.json."
           releaseDraft: false
           prerelease: false

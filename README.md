@@ -1,4 +1,4 @@
-# ACC Overlay
+# SimMatrix
 
 Modulärt overlay-paket för Assetto Corsa Competizione.
 

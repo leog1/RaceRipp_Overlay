@@ -128,7 +128,7 @@ def _wstr(s: str) -> bytes:
 class AccBroadcast(asyncio.DatagramProtocol):
     name = "acc-broadcast"
 
-    def __init__(self, display_name="ACC Overlay", update_ms=100, config_path=""):
+    def __init__(self, display_name="SimMatrix", update_ms=100, config_path=""):
         self.display_name = display_name
         self.update_ms = update_ms
         self.config_path = config_path

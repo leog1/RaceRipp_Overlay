@@ -1,4 +1,4 @@
-# ACC Overlay — projektkontext
+# SimMatrix — projektkontext
 
 Projektkontexten bor i **[`CLAUDE.md`](CLAUDE.md)** — arkitektur, fattade beslut,
 designtokens, overlay-status, verifieringsläge och de fällor som redan kostat tid.

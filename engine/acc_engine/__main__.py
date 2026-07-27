@@ -1,4 +1,4 @@
-"""ACC Overlay-motor.
+"""SimMatrix-motor.
 
 Startar:
   • WebSocket-buss (data) på --ws-port

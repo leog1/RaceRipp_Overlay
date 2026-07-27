@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ACC Overlay — Control</title>
+<title>SimMatrix — Control</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700&display=swap" rel="stylesheet">
@@ -85,6 +85,16 @@ body{font-family:var(--font);background:var(--app-bg);color:var(--ink);
 .titleband h2::after{content:"";display:block;width:46px;height:2.5px;background:var(--rail);
   margin:8px auto 0;border-radius:2px;}
 .titleband p{max-width:560px;margin:11px auto 0;font-size:12.5px;font-weight:500;line-height:1.55;color:var(--dim);}
+/* Textloggan ersätter rubriken i Om-fliken. Behåller guldstrecket under, men utan
+   h2:ns typografi. Loggan har sin egen röda (#A41F1F) och färgas med flit INTE om:
+   --red betyder "långsammare" i vårt språk, och en logotyp ska inte byta betydelse
+   med omgivningen. width i procent så den krymper med fönstret i stället för att
+   klippas. */
+.titleband h2.wordmark{font-size:0;line-height:0;}
+.titleband h2.wordmark img{width:min(300px,60%);height:auto;display:inline-block;}
+/* Rubrikernas röda streck hör inte hemma under en ordbild — det låg tätt inpå
+   bokstäverna och ordbilden ÄR redan varumärket. */
+.titleband h2.wordmark::after{display:none;}
 
 /* kontroller: kontrollremsa + kort */
 .controls{display:flex;gap:16px;padding:16px 22px 22px;align-items:flex-start;}
@@ -156,7 +166,7 @@ button.act:hover{background:var(--ctrl-hi);}
 
     <!-- ── vänster ikonrad ── -->
     <nav class="rail">
-      <div class="brand" title="ACC Overlay">
+      <div class="brand" title="SimMatrix">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0Z"/><path d="M12 7v5l3 2"/></svg>
       </div>
       <button class="nav" data-sec="overlays" aria-selected="true">
@@ -260,7 +270,9 @@ button.act:hover{background:var(--ctrl-hi);}
       <!-- OM -->
       <div class="pane" id="pane-om">
         <div class="titleband">
-          <h2>ACC Overlay</h2>
+          <!-- Textloggan hör hemma här och inte i vänsterlisten: den är 459×55, alltså
+               8,4:1, och listen är 74 px bred. Där sitter i stället den kompakta ikonen. -->
+          <h2 class="wordmark"><img src="../shared/simmatrix-logo.svg" alt="SimMatrix"></h2>
           <p id="omVer">—</p>
         </div>
         <div class="controls">

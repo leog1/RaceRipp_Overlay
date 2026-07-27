@@ -32,7 +32,7 @@ async def main():
     print(f"  port={data.get('updListenerPort')}  "
           f"lösenord={'satt' if data.get('connectionPassword') else 'TOMT'}")
 
-    bc = AccBroadcast(display_name="ACC Overlay (test)", update_ms=100)
+    bc = AccBroadcast(display_name="SimMatrix (test)", update_ms=100)
     if not await bc.start():
         print("FEL: kunde inte starta Broadcasting-källan.")
         return 1

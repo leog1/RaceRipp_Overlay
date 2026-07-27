@@ -1,4 +1,4 @@
-# ACC Overlay — projektkontext (handoff)
+# SimMatrix — projektkontext (handoff)
 
 > **Till en ny AI-assistent:** Läs denna fil + `README.md` + `src/shared/tokens.css`
 > så har du hela bilden. Detta är ett pågående bygge; nedan står vad som är gjort,
@@ -57,8 +57,13 @@ acc-overlay.exe → acc-engine.exe (PyInstaller-bootloader) → acc-engine.exe (
   research om GPL-kod. Finns den inte i din klon är det väntat; den behövs inte för
   att bygga, bara för att förstå varför de tre sakerna ser ut som de gör.
   `ldparser.py` committas **inte** (GPL) — hämtas lokalt, står i `.gitignore`.
-- **Repo:** publikt (`leog1/RaceRipp_Overlay`). OS-kodsignering (SmartScreen) uppskjuten;
-  updater-signatur räcker.
+- **Namn:** appen heter **SimMatrix** sedan 0.3.4 (hette "ACC Overlay"). Bytet är
+  medvetet bara kosmetiskt — `identifier` och MSI:ns `upgradeCode` är orörda, se §8.8c
+  innan du rör något namnrelaterat.
+- **Repo:** publikt och heter fortfarande `leog1/RaceRipp_Overlay`. Medvetet: updater-
+  endpointen i redan installerade 0.3.x pekar dit, och ett repo-namnbyte hade gjort dem
+  beroende av GitHubs omdirigering för all framtid. OS-kodsignering (SmartScreen)
+  uppskjuten; updater-signatur räcker.
 - **Settings:** enkel JSON i app-config-mappen (ej LiteDB).
   Ligger i `%APPDATA%\com.accoverlay.app\settings.json`.
 - **FPS (LÖST):** overlay-fönstren är **små och tajt sizade** runt innehållet — INTE ett
@@ -465,6 +470,29 @@ alltid "Ingen referens laddad" även när en låg sparad. Följden var att ett o
 MoTeC-delta varken gick att förklara eller bli av med. Nu hämtas sökvägen med
 `get_globals` vid start och en "Ta bort referens"-knapp anropar `set_reference` med
 tom sträng; motorn ser det i `engine.config.json` och kör `ref.unload()`.
+
+### 8.8c Namnbytet till SimMatrix: två saker som ALDRIG får ändras
+Appen hette "ACC Overlay" fram till 0.3.4. Bytet är med flit **bara kosmetiskt** —
+två fält lämnades orörda, och båda skulle kosta användardata om de rördes:
+
+- **`identifier` i `tauri.conf.json` är kvar som `com.accoverlay.app`.** Den bygger
+  `app_config_dir()`, alltså `%APPDATA%\com.accoverlay.app\settings.json`. Byter man
+  den pekar appen på en tom mapp och alla tappar positioner, skalor, alternativ och
+  referenssökväg — utan felmeddelande, det ser bara ut som en nyinstallation.
+  Identifieraren är osynlig för användaren; det finns ingen vinst som väger upp det.
+  Vill man ändå byta krävs en engångsmigrering av mappen FÖRST.
+- **`bundle.windows.wix.upgradeCode` är låst till `fae11c9e-d58a-5c32-baa1-cb37c81e4136`.**
+  Tauri härleder annars koden ur `productName` (Uuid v5 på `<productName>.exe.app.x64`
+  — står i tauri-utils config.rs). Namnbytet hade alltså gett en NY kod, och Windows
+  ser då utgåvan som en **annan app**: användaren får två installationer sida vid sida
+  i stället för en uppdatering. Koden ovan är den som gällde för "ACC Overlay".
+  Kontrollera med `pnpm tauri inspect wix-upgrade-code` — den skriver ut både den
+  härledda och den låsta, och de SKA skilja sig åt nu.
+
+Internt heter saker fortfarande `acc-*`: Cargo-paketet `acc-overlay`, sidecarn
+`acc-engine`, Python-paketet `acc_engine`. Det är avsiktligt. Att döpa om dem berör
+`externalBin`, `build_sidecar.py`, `verify_sidecar.py`, CI och `lib.rs` — risk utan
+någon vinst för användaren, som aldrig ser namnen.
 
 ### 8.9 websockets-API:t
 Installerat: **16.0**, där `websockets.serve` är den nya asyncio-implementationen.
