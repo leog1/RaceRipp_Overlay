@@ -10,6 +10,7 @@
       "defaultX": 460,
       "defaultY": 40,
       "defaultScale": 0.9,
+      "hz": 30,
       "channels": [
         "delta",
         "sessionBestMs",
@@ -30,6 +31,7 @@
       "defaultX": 40,
       "defaultY": 40,
       "defaultScale": 1.0,
+      "hz": 30,
       "channels": [
         "throttle",
         "brake",
@@ -38,7 +40,9 @@
         "tc"
       ],
       "options": [
-        { "id": "clutch", "label": "Kopplingsstapel", "default": true }
+        { "id": "clutch", "label": "Kopplingsstapel", "default": true },
+        { "id": "window", "type": "float", "label": "Tidsfönster", "unit": " s",
+          "default": 4.5, "min": 2, "max": 10, "step": 0.5 }
       ]
     }
   ]

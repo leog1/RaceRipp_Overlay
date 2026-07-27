@@ -22,13 +22,21 @@ Modulärt overlay-paket för **Assetto Corsa Competizione (ACC)**.
 ```
 Tauri-skal (Rust)  →  skapar transparenta klick-igenom overlay-fönster ur registry,
                       kör kontrollpanel, startar motorn (sidecar), hotkey race/edit
-Python-motor       →  läser ACC (delat minne) el. mock, räknar delta, sänder JSON-ramar
+Python-motor       →  läser ACC (delat minne = din bil, Broadcasting-UDP = de andra)
+                      el. mock, räknar delta, sänder JSON-ramar
 WebSocket (8777)   →  motorn publicerar; overlays PRENUMERERAR (anropar aldrig spelet)
 HTTP (8078)        →  motorn serverar overlay-filerna som OBS browser source
 Overlays (webb)    →  HTML/CSS/SVG/Canvas; en modul per overlay
 ```
 **Kärnkrav:** ny overlay = ny modul + en rad i `registry.json`, **utan att röra kärnan**.
 Overlays är "dumma renderare": DATA från WebSocket, CONFIG (skala/opacitet) från Rust-events.
+
+Det gäller även overlayns EGNA inställningar: `options` i registret är ett deklarativt
+schema (`type`: `bool` | `int` | `float` | `enum` | `color`, plus `min`/`max`/`step`/
+`values`/`unit`), och kontrollpanelen bygger reglaget/väljaren generiskt ur det. Panelen
+känner inte till en enda overlay vid namn. `type` får utelämnas och betyder då `bool`.
+Rust validerar värdet mot schemat innan det sparas eller skickas (§8.3b).
+`hz` i registret sätter overlayns rendertakt (§8.5).
 
 Faktisk processkedja i drift (mätt) — se §8.1, den är inte självklar:
 ```
@@ -43,6 +51,11 @@ acc-overlay.exe → acc-engine.exe (PyInstaller-bootloader) → acc-engine.exe (
   snabbaste hela varvet ur filen (ACC sparar hela sessioner, så utan detta jämförs
   man mot fel data). Saknas `.ldx` behandlas hela filen som ett varv.
 - **Licens:** **MIT**. Vi använder **inte** Race Elements (GPL) kod — bara idéer.
+  Arkitekturjämförelsen mot Race Element som motiverade §8.5:s delade renderloop,
+  det typade optionsschemat och Broadcasting-källan (§8.6d) ligger i
+  `.race-element-notes/findings.md` — **lokalt och gitignorerat**, eftersom det är
+  research om GPL-kod. Finns den inte i din klon är det väntat; den behövs inte för
+  att bygga, bara för att förstå varför de tre sakerna ser ut som de gör.
   `ldparser.py` committas **inte** (GPL) — hämtas lokalt, står i `.gitignore`.
 - **Repo:** publikt (`leog1/RaceRipp_Overlay`). OS-kodsignering (SmartScreen) uppskjuten;
   updater-signatur räcker.
@@ -73,7 +86,7 @@ Renderare per element: **SVG** (gauges/bågar/ikoner), **HTML/CSS** (paneler/tex
 | 1 | **Delta + varvtidsrad** | KLAR (look+funktion+animation), kopplad på bussen | cirkel: 0=topp, grön medurs=snabbare, full båge 180°=1.0 s |
 | 2 | Delta-graf + minisektorer + hörnkarta | **ej byggd** | hörnkarta/kurvnummer/graf är **banberoende, ritas live** — hårdkoda ALDRIG kurvform |
 | 3 | Inputs-HUD (växel/fart/ratt/pedaler) | delvis (inputs-trace KLAR & kopplad) | ratt-vinkel + växel/fart-modul återstår |
-| 4 | Inputs-trace (gas/broms + staplar) | KLAR, kopplad på bussen | ABS=gult trace, TC=blått; Canvas rullande |
+| 4 | Inputs-trace (gas/broms + staplar) | KLAR, kopplad på bussen | ABS=gult trace, TC=blått; Canvas rullande; tidsfönster 2–10 s valbart |
 | 5 | Laptime log | **ej byggd** | röd rail, rubriker i amber, delta grön/röd |
 
 **Nästa naturliga bygge:** en overlay i taget, helt klar (funktion+look+animation) innan nästa.
@@ -82,11 +95,14 @@ Mät referensbilder pixel-exakt FÖRST; bekräfta struktur i EN avstämning inna
 ## 6. Filkarta
 ```
 src/shared/tokens.css      designtokens (enda källan)
-src/shared/bus.js          WsBus (prenumerera på WS) + wireShell (config/edit/drag) + fontsReady
+src/shared/bus.js          WsBus (prenumerera på WS) + wireShell (config/edit/drag)
+                           + fontsReady + startLoop (delad renderloop, §8.5)
 src/overlays/registry.json KATALOG över overlays (kärnan läser denna)
 src/overlays/<id>/index.html  overlay-moduler
 src/control-panel/index.html  kontrollpanelen (inkl. live-preview i iframe)
-engine/acc_engine/         motorn: __main__, bus, http_static, frame, delta, sources/{mock,acc}
+engine/acc_engine/         motorn: __main__, bus, http_static, frame, delta,
+                           sources/{mock,acc,acc_broadcast}
+engine/broadcast_test.py   Broadcasting mot riktiga ACC (kör med spelet igång)
 engine/build_sidecar.py    PyInstaller → src-tauri/binaries/acc-engine-<triple>.exe
 engine/ldparser.py         GPL, gitignorerad, hämtas lokalt
 src-tauri/src/lib.rs       fönstermanager, kommandon, sidecar+Job Object, hotkey, settings
@@ -126,7 +142,13 @@ src-tauri/tauri.conf.json  control-fönster, updater, externalBin, bundle.resour
 - **Riktig ACC-telemetri** — kräver att ACC körs ute på banan. Fältmappningen i
   `sources/acc.py` är skriven mot pyaccsharedmemory-doc men aldrig sedd i drift.
   `engine/acc_test.py` finns för just detta: kör den med ACC igång.
-  Detta är nu det ENDA stora overifierade i datavägen.
+- **Broadcasting-UDP mot riktiga ACC** — samma sak för den andra datakällan
+  (§8.6d). Handskakningen, byte-layouten och entry list-flödet är verifierade mot en
+  falsk server (`tests/broadcast_protocol.py`, allt OK) och mot din riktiga
+  `broadcasting.json` (port 9000, lösenord läses, registrering skickas, motorn står i
+  `connecting` utan att störas) — men inget riktigt paket har någonsin tolkats.
+  Kör `python engine/broadcast_test.py` med en session laddad.
+  Dessa två är nu det som är overifierat i datavägen.
 - **Installation från MSI/NSIS** — installerarna byggs och binärerna är körda ur dem,
   men själva installationen (Program Files-layout, `resource_dir` där) är inte gjord.
 - **DPI-fixen** (§8.2) — användarens skärm kör 100 % skalning, där logiska och
@@ -187,10 +209,13 @@ har `--H:150px` (= skala 1.0), så vid sparad skala 0,6 ritades 558×150 px inne
 ett 360×120 px fönster — det som klipptes bort var nederkanten med traces och
 pedalstaplar, alltså **såg den ut att inte finnas alls**.
 
-Fixen: `lib.rs` injicerar `window.__OVERLAY_INIT__ = {id, scale, opacity, gate}` med
+Fixen: `lib.rs` injicerar
+`window.__OVERLAY_INIT__ = {id, scale, opacity, gate, hz, options}` med
 `initialization_script`, som körs innan dokumentet parsas. `bus.js` läser det
 **synkront** och applicerar direkt; `get_config`/`get_globals` är sedan bara
 bekräftelse. Lägg till nya startvärden HÄR, inte som ett nytt async-anrop.
+`options` hör hit av exakt samma skäl: ett alternativ som påverkar LAYOUT (dold
+kolumn, antal rader, tidsfönster) ritar annars ett frame i fel utseende.
 Saknas INIT (OBS, webbläsare, panelens preview) gäller CSS-defaulten, vilket är rätt
 där — då finns ingen sparad config att vara osynkad med.
 
@@ -204,6 +229,18 @@ och felet loggas.
 (Upptäckt genom att `ConvertTo-Json` i PowerShell 5.1 skrev `0,6` med svensk locale
 när settings redigerades i ett test. **Redigera aldrig JSON med PowerShell här** —
 använd Python, som alltid skriver punkt.)
+
+Det skyddet gäller bara filer som inte går att PARSA. Ett giltigt JSON-dokument med
+orimliga VÄRDEN (`"window": "hej"`, ett tal utanför min/max, en option som tagits bort
+ur registret) slapp igenom och hamnade i overlayn. Nu kör `load_settings` alla options
+genom `sanitize_option` mot registrets schema: fel typ och okända enum-värden faller
+tillbaka på standardvärdet, tal klampas till min/max, okända nycklar städas bort.
+`set_option` gör samma sak, så inte heller IPC:n kan skicka in skräp.
+Rättade inläsningen något skrivs filen tillbaka städad — annars säger panelen och
+disken olika saker och felet återuppstår varje start.
+
+Overlays måste ändå tåla skräpvärden själva: i OBS och i en webbläsare finns ingen
+Rust-validering framför dem.
 
 ### 8.4 `emit` och inte `emit_to` för config/option
 Kontrollpanelens preview kör overlayn i en **iframe inuti "control"-fönstret**, så
@@ -233,6 +270,13 @@ Alla dessa fanns i delta-baren och gav synligt flimmer:
 - **30 Hz-grind på "nu minus förra renderingen".** Minsta jitter sköt en render ett
   helt refresh-intervall. Använd fast deadline: `if(now<nextT)return;
   nextT=Math.max(now,nextT+FRAME_MS)`.
+
+De två sista bodde i en kopia per overlay. De ligger nu i **`bus.js:startLoop(tick,
+{hz, dtCap})`** — skriv ALDRIG en egen rAF-loop i en ny overlay, anropa den. Takten
+kommer ur `hz` i `registry.json` via `__OVERLAY_INIT__` (§8.3), så en sällan-ändrad
+widget kan köra 5 Hz utan att röra kärnan. `tick(dt, now)` får `dt` i sekunder;
+använd det till all utjämning. `tests/overlay-loop.mjs` bevakar loopen och jämför
+mot det trasiga mönstret för att bevisa att mätningen biter.
 
 ### 8.6 Motorn får aldrig dö tyst
 ACC:s delade minne kan försvinna mitt i en session (alt-F4) och kasta. Utan
@@ -278,6 +322,32 @@ filen inte committas i det MIT-licensierade repot ändrar inte vad som gäller f
 själva utgåvan. Det är ett medvetet val (se §3), men värt att veta om releaser börjar
 spridas bredare.
 
+### 8.6d Broadcasting-UDP: fällor i den andra datakällan
+`sources/acc_broadcast.py` läser ACC:s officiella Broadcasting Network (andra bilars
+spline-position, entry list med förarnamn, sessionfas, bandata). Delat minne ger bara
+DIN bil. Fyra saker som inte är självklara:
+
+- **ACC:s config-JSON:er är UTF-16 LE UTAN BOM.** `utf-8-sig` kastar alltså inte — den
+  ger en sträng full av nullbytes, vilket ser ut som en trasig fil långt senare.
+  `read_config()` provar kodningar tills en faktiskt **parsar som JSON**, i stället för
+  att lita på att avkodningen gick igenom.
+- **Ingen portkonflikt av §8.1-typ.** Vi binder inte 9000; vi skickar TILL den från en
+  efemär port. Flera klienter (vi, Race Element, SimHub) kan vara registrerade samtidigt.
+- **Entry list kommer bara på begäran**, och ACC slänger den vid sessionsbyte. En
+  `REALTIME_CAR_UPDATE` för okänd bil måste därför utlösa en omfrågan — men
+  **rate-limitad till 1/s**, annars stormar det när hela startfältet är okänt.
+  Bilar måste dessutom städas ur BÅDE `_cars` och `_entries`: en bil vi sett en
+  positionsuppdatering för men aldrig fått en entry till finns bara i `_cars` och blev
+  annars kvar för evigt (och drev en omfrågan varje sekund). Testet fångade det.
+- **`entries` skickas inte varje ram.** Den är statisk: skickas vid ändring plus var
+  5:e sekund, så en OBS-flik som öppnas mitt i loppet också får förarnamnen. `null`
+  betyder alltså **oförändrad**, inte **borta** — latcha den, som HOLD_MS i §8.5.
+
+Byte-layouten är skriven mot Kunos publika dokumentation men **aldrig sedd mot riktiga
+ACC**. `tests/broadcast_protocol.py` (falsk UDP-server) testar parsern mot vår
+förståelse; bara `engine/broadcast_test.py` med spelet igång testar förståelsen mot
+verkligheten. Se §7.
+
 ### 8.7 ACC:s MoTeC-export har INGEN distanskanal
 55 kanaler, noll med "dist" i namnet. `delta.py` integrerar därför **farten** till
 distans — det är **normalvägen** för ACC-filer, inte ett undantag (felet blev 15 ms
@@ -309,8 +379,9 @@ Handlern tar **ett** argument (`ws`), inte `(ws, path)`.
   commits; en `git filter-repo` + force-push krävs för att verkligen ta bort dem.
 
 ## 9. Så verifierar du utan att gissa
-Det finns tester i `tests/` — läs `tests/README.md`. `pnpm test` kör overlay-testet,
-`python tests/engine_smoke.py` och `python tests/motec_reference.py` de andra.
+Det finns tester i `tests/` — läs `tests/README.md`. `pnpm test` kör de tre
+overlay-testerna, `python tests/engine_smoke.py` och `python tests/motec_reference.py`
+de andra.
 - **Overlay-logik headless:** `tests/lib/overlay-harness.mjs` plockar ut overlayns
   modulskript, stubbar importerna, fejkar DOM:en och låter dig driva tiden frame för
   frame. Det är enda sättet att mäta något som varar ett enda frame.
@@ -319,6 +390,14 @@ Det finns tester i `tests/` — läs `tests/README.md`. `pnpm test` kör overlay
   tror. Och kontrollera att overlayn faktiskt renderade innan du bedömer vad den
   renderade (`assertAlive`), annars passerar testet på en död overlay. Båda de
   misstagen gjordes när testerna skrevs.
+  Bevakar du en REFAKTORERING går regel ett inte att tillämpa — koden har just
+  flyttat. Bevisa tänderna på annat sätt: kör mot revisionen efter fixen men före
+  flytten (ska passera identiskt) och mot en medvetet trasig variant inne i testet
+  (`naivLoop` i `overlay-loop.mjs`).
+  Harnessen fejkar bara det overlays faktiskt använder, och en för slapp stubb ÄR ett
+  tyst testfel: `getComputedStyle` gav samma färg för alla tokens, så en kontroll av
+  att ABS färgar bromstracet gult passerade även på en overlay som ritade allt i en
+  färg. Ge stubbar värden som går att skilja åt.
 - **Motorn:** starta som subprocess, anslut med `websockets.connect`, samla N ramar
   och kontrollera fält/takt/NaN. Starta en andra instans för att testa portkonflikt.
 - **MoTeC:** `Reference().load(path)` mot en riktig `.ld` och skriv ut `lap_ms`,

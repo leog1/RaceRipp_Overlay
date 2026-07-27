@@ -33,3 +33,6 @@ Thumbs.db
 
 # lokala engångs-patchar
 *.patch
+
+# research-anteckningar om Race Element (GPL) — ska aldrig committas
+.race-element-notes/

@@ -114,7 +114,7 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
   </div>
 
 <script type="module">
-import { WsBus, wireShell, fontsReady } from '../../shared/bus.js';
+import { WsBus, wireShell, fontsReady, startLoop } from '../../shared/bus.js';
 
 /* ---- format ---- */
 /* Platshallarna har SAMMA cellbredder som ett riktigt varde (se SPEC nedan):
@@ -165,7 +165,6 @@ function valueArc(delta){let s=-delta*MAXDEG;s=Math.max(-MAXDEG,Math.min(MAXDEG,
 
 /* ---- state, matad av bussen ---- */
 const REDUCED=matchMedia('(prefers-reduced-motion: reduce)').matches;
-const HZ=30,FRAME_MS=1000/HZ;
 /* HOLD_MS: motorn skickar enstaka null-ramar (delta.py:s spikskydd vid mållinjen,
    ACC:s sentinelvärden mellan varv). Utan latch växlar hela overlayn till
    platshållare för ett par frames och tillbaka = flicker. Vi håller senaste
@@ -233,15 +232,11 @@ function render(now=performance.now()){
   if(ps!==lastP){setCells(el.tPred,cP,ps);lastP=ps;}
 }
 
-/* 30 Hz-tak med fast deadline i stället för "nu minus förra renderingen":
-   det senare sköt en render ett helt refresh-intervall framåt vid minsta jitter,
-   vilket syntes som ryck. */
-let lastT=performance.now(),nextT=lastT;
-function frame(now){
-  requestAnimationFrame(frame);
-  if(now<nextT) return;
-  nextT=Math.max(now,nextT+FRAME_MS);
-  const dt=Math.min(0.05,(now-lastT)/1000),tau=REDUCED?0.0001:0.20; lastT=now;
+/* Ett steg i renderloopen. Takten och deadline-mönstret ligger i bus.js:startLoop
+   (§8.5); här stannar bara det som är overlayns eget. dt-taket är 0,05 s: deltan
+   ska glida in mjukt även efter en paus, inte hoppa till målvärdet. */
+function frame(dt,now){
+  const tau=REDUCED?0.0001:0.20;
   state.shown+=(state.target-state.shown)*(1-Math.exp(-dt/tau));
   render(now);
 }
@@ -261,7 +256,7 @@ wireShell(({scale,opacity})=>{
 fontsReady().then(()=>{
   render();
   document.getElementById('ui').classList.add('ready');
-  frame(performance.now());
+  startLoop(frame,{dtCap:0.05});
 });
 </script>
 </body>

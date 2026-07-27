@@ -18,12 +18,42 @@ use tauri_plugin_shell::process::CommandChild;
 // ── Registret (kompileras in; katalog över overlays) ────────────────────────
 const REGISTRY_JSON: &str = include_str!("../../src/overlays/registry.json");
 
+// Ett val i en enum-option: värdet som sparas + etiketten panelen visar.
+#[derive(Deserialize, Serialize, Clone)]
+struct OverlayOptionValue {
+    value: serde_json::Value,
+    label: String,
+}
+
+// Deklarativt schema för en overlays inställning. Kontrollpanelen bygger kontrollen
+// generiskt ur `kind` — en ny overlay lägger till en rad i registry.json och får sin
+// slider/väljare utan att panelen (kärnan) ändras.
 #[derive(Deserialize, Serialize, Clone)]
 struct OverlayOption {
     id: String,
     label: String,
+    // "bool" (standard), "int", "float", "enum", "color". Utelämnad = "bool", så
+    // options som skrevs innan schemat typades fungerar oförändrat.
+    #[serde(rename = "type", default = "default_kind")]
+    kind: String,
     #[serde(default)]
-    default: bool,
+    default: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    min: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    max: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    step: Option<f64>,
+    // Enhet som klistras efter värdet i panelen ("1.00×", "100%", "4.5 s"). Hör hit
+    // och inte i etiketten: etikettkolumnen är smal och "(s)" bröt till egen rad.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    unit: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    values: Vec<OverlayOptionValue>,
+}
+
+fn default_kind() -> String {
+    "bool".into()
 }
 
 #[derive(Deserialize, Clone)]
@@ -39,6 +69,11 @@ struct OverlayDef {
     default_x: i32,
     default_y: i32,
     default_scale: f64,
+    // Renderloopens takt. Utelämnad = bus.js:s standard (30). Sätts per overlay så
+    // en sällan-ändrad widget (varvtidslogg) inte behöver samma takt som ett
+    // rullande canvas-trace.
+    #[serde(default)]
+    hz: Option<f64>,
     #[serde(default)]
     options: Vec<OverlayOption>,
 }
@@ -60,6 +95,55 @@ fn def_of(id: &str) -> Option<&'static OverlayDef> {
     registry().iter().find(|d| d.id == id)
 }
 
+// ── Validering av optionsvärden ─────────────────────────────────────────────
+// Inget värde når en overlay orört. settings.json redigeras för hand (§8.3b visade
+// att det är ett verkligt felläge) och panelen kan skicka vad som helst över IPC:n,
+// så typfel och värden utanför sitt intervall rättas här i stället för att bli
+// `scaleY(NaN)` eller en tom tabell långt inne i en overlay.
+fn sanitize_option(o: &OverlayOption, v: &serde_json::Value) -> serde_json::Value {
+    use serde_json::Value as V;
+    match o.kind.as_str() {
+        "int" | "float" => {
+            let Some(mut n) = v.as_f64() else { return o.default.clone() };
+            if !n.is_finite() {
+                return o.default.clone();
+            }
+            if let Some(min) = o.min { n = n.max(min); }
+            if let Some(max) = o.max { n = n.min(max); }
+            if o.kind == "int" {
+                V::from(n.round() as i64)
+            } else {
+                serde_json::Number::from_f64(n).map(V::Number).unwrap_or_else(|| o.default.clone())
+            }
+        }
+        // Enum: bara värden som faktiskt står i registret släpps igenom.
+        "enum" => {
+            if o.values.iter().any(|c| c.value == *v) { v.clone() } else { o.default.clone() }
+        }
+        // Färg: #rgb eller #rrggbb. Overlays sätter värdet som CSS-variabel, och en
+        // ovaliderad sträng där hade varit ett sätt att injicera CSS.
+        "color" => {
+            if v.as_str().map(is_hex_color).unwrap_or(false) { v.clone() } else { o.default.clone() }
+        }
+        _ => V::Bool(v.as_bool().unwrap_or_else(|| o.default.as_bool().unwrap_or(false))),
+    }
+}
+
+fn is_hex_color(s: &str) -> bool {
+    let b = s.as_bytes();
+    (b.len() == 7 || b.len() == 4) && b[0] == b'#' && b[1..].iter().all(u8::is_ascii_hexdigit)
+}
+
+// Städar en hel optionskarta mot registret: okända nycklar (en option som tagits
+// bort ur registry.json) försvinner, saknade fylls med standardvärdet.
+fn sanitize_options(d: &OverlayDef, opts: &mut HashMap<String, serde_json::Value>) {
+    opts.retain(|k, _| d.options.iter().any(|o| &o.id == k));
+    for o in &d.options {
+        let cur = opts.get(&o.id).cloned().unwrap_or_else(|| o.default.clone());
+        opts.insert(o.id.clone(), sanitize_option(o, &cur));
+    }
+}
+
 // ── Inställningar (runtime; sparas i app-config-mappen) ─────────────────────
 fn default_true() -> bool {
     true
@@ -75,14 +159,14 @@ struct OverlayState {
     #[serde(default = "default_true")]
     always_on_top: bool,
     #[serde(default)]
-    options: HashMap<String, bool>,
+    options: HashMap<String, serde_json::Value>,
 }
 
 // Färskt standardläge för en overlay (position/skala/alternativ ur registret).
 fn default_state_for(d: &OverlayDef) -> OverlayState {
     let mut options = HashMap::new();
     for o in &d.options {
-        options.insert(o.id.clone(), o.default);
+        options.insert(o.id.clone(), o.default.clone());
     }
     OverlayState {
         enabled: true,
@@ -135,7 +219,8 @@ fn load_settings(app: &AppHandle) -> Settings {
                 }
             };
             for d in registry() {
-                s.overlays.entry(d.id.clone()).or_insert_with(|| default_state_for(d));
+                let st = s.overlays.entry(d.id.clone()).or_insert_with(|| default_state_for(d));
+                sanitize_options(d, &mut st.options);
             }
             s
         }
@@ -164,12 +249,14 @@ fn create_overlay(
 ) -> tauri::Result<()> {
     let w = def.base_width * st.scale;
     let h = def.base_height * st.scale;
-    // Skala, opacitet och synk-grinden injiceras FÖRE sidan parsas. Overlayn hämtade
-    // dem tidigare med get_config/get_globals (async) och ritade med CSS-defaulten
-    // tills svaret kom — vilket såg AVKAPAT ut när sparad skala var något annat än
-    // defaulten, och gjorde att grinden "endast när ACC kör" inte hann gälla. Landade
-    // anropet dessutom före app.manage() kom svaret aldrig och overlayn satt kvar i
-    // fel skala tills man rörde reglaget.
+    // Skala, opacitet, grinden, takten OCH alternativen injiceras FÖRE sidan parsas.
+    // Overlayn hämtade dem tidigare med get_config/get_globals (async) och ritade med
+    // CSS-defaulten tills svaret kom — vilket såg AVKAPAT ut när sparad skala var något
+    // annat än defaulten, och gjorde att grinden "endast när ACC kör" inte hann gälla.
+    // Landade anropet dessutom före app.manage() kom svaret aldrig och overlayn satt
+    // kvar i fel skala tills man rörde reglaget.
+    // Alternativen hör hit av samma skäl: ett alternativ som påverkar LAYOUT (antal
+    // rader, dolda kolumner) ritar annars ett frame i fel utseende innan svaret kommer.
     let init = format!(
         "window.__OVERLAY_INIT__={};",
         serde_json::json!({
@@ -177,6 +264,8 @@ fn create_overlay(
             "scale": st.scale,
             "opacity": st.opacity,
             "gate": hide_until_connected,
+            "hz": def.hz,
+            "options": st.options,
         })
     );
     let win = WebviewWindowBuilder::new(app, &def.id, WebviewUrl::App(def.url.clone().into()))
@@ -245,7 +334,7 @@ struct OverlayInfo {
     scale: f64,
     opacity: f64,
     always_on_top: bool,
-    options: HashMap<String, bool>,
+    options: HashMap<String, serde_json::Value>,
     option_defs: Vec<OverlayOption>,
 }
 
@@ -257,9 +346,7 @@ fn get_overlays(state: State<Mutex<Settings>>) -> Vec<OverlayInfo> {
         .map(|d| {
             let st = s.overlays.get(&d.id).cloned().unwrap_or_else(|| default_state_for(d));
             let mut options = st.options.clone();
-            for o in &d.options {
-                options.entry(o.id.clone()).or_insert(o.default);
-            }
+            sanitize_options(d, &mut options);
             OverlayInfo {
                 id: d.id.clone(),
                 title: d.title.clone(),
@@ -292,14 +379,14 @@ struct ConfigPayload {
 struct OptionPayload {
     id: String,
     option: String,
-    value: bool,
+    value: serde_json::Value,
 }
 
 #[derive(Serialize)]
 struct ConfigInit {
     scale: f64,
     opacity: f64,
-    options: HashMap<String, bool>,
+    options: HashMap<String, serde_json::Value>,
 }
 
 // Overlayn hämtar sin config vid start (undviker race mot event-lyssnaren).
@@ -312,9 +399,7 @@ fn get_config(id: String, state: State<Mutex<Settings>>) -> ConfigInit {
         .map(|st| (st.scale, st.opacity, st.options.clone()))
         .unwrap_or((1.0, 1.0, HashMap::new()));
     if let Some(d) = def_of(&id) {
-        for o in &d.options {
-            options.entry(o.id.clone()).or_insert(o.default);
-        }
+        sanitize_options(d, &mut options);
     }
     ConfigInit { scale, opacity, options }
 }
@@ -384,12 +469,23 @@ fn set_always_on_top(app: AppHandle, state: State<Mutex<Settings>>, id: String, 
     if let Some(win) = app.get_webview_window(&id) { let _ = win.set_always_on_top(value); }
 }
 
-// Per-overlay alternativ (visa/dölj delelement). Overlayn läser detta via wireShell.
+// Per-overlay alternativ. Typen står i registry.json; värdet valideras mot den innan
+// det sparas och skickas ut, så en overlay aldrig får ett värde den inte kan hantera.
+// Overlayn läser detta via wireShell (och vid start ur __OVERLAY_INIT__).
 #[tauri::command]
-fn set_option(app: AppHandle, state: State<Mutex<Settings>>, id: String, option: String, value: bool) {
+fn set_option(
+    app: AppHandle,
+    state: State<Mutex<Settings>>,
+    id: String,
+    option: String,
+    value: serde_json::Value,
+) {
+    let Some(def) = def_of(&id) else { return };
+    let Some(opt) = def.options.iter().find(|o| o.id == option) else { return };
+    let value = sanitize_option(opt, &value);
     {
         let mut s = state.lock().unwrap();
-        if let Some(st) = s.overlays.get_mut(&id) { st.options.insert(option.clone(), value); }
+        if let Some(st) = s.overlays.get_mut(&id) { st.options.insert(option.clone(), value.clone()); }
         save_settings(&app, &s);
     }
     let _ = app.emit("option", OptionPayload { id: id.clone(), option, value });
@@ -523,7 +619,18 @@ pub fn run() {
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
+            let before = std::fs::read_to_string(settings_path(&handle)).unwrap_or_default();
             let settings = load_settings(&handle);
+            // Skriv tillbaka om inläsningen rättade något (klampat tal, fel typ, en
+            // option som tagits bort ur registret). Utan detta blir overlayn rätt men
+            // filen ligger kvar med skräpet, så panelen och disken säger olika saker
+            // och felet återuppstår varje start. Skriver bara vid faktisk skillnad.
+            if let Ok(after) = serde_json::to_string_pretty(&settings) {
+                if before.trim() != after.trim() && !before.is_empty() {
+                    println!("[shell] settings.json innehöll värden som rättades — sparar den städade versionen.");
+                    save_settings(&handle, &settings);
+                }
+            }
 
             // Läget för varje overlay plockas ut FÖRE app.manage, och fönstren skapas
             // EFTER — annars hinner en overlay-webview anropa get_config innan

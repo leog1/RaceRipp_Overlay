@@ -12,19 +12,59 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
+// Räknare för att bryta ESM-modulcachen vid varje loadOverlay (se importen nedan).
+let loadCounter = 0;
+
+/* Canvas-2D-stubb som RÄKNAR ritanrop i stället för att rita. Overlays som ritar
+   traces (inputs-trace) har ingen DOM att mäta på — utan detta går de inte att
+   testa alls, och då är den enda kvarvarande verifieringen att titta på skärmen,
+   vilket inte fångar något som varar ett frame. */
+function makeCtx(id, log) {
+  const ctx = {
+    canvas: null,
+    setTransform() {}, save() {}, restore() {}, clip() {},
+    beginPath() { log.push({ el: id, type: 'ctx', key: 'beginPath' }); },
+    clearRect() { log.push({ el: id, type: 'ctx', key: 'clearRect' }); },
+    rect() {}, moveTo() {}, lineTo() { log.push({ el: id, type: 'ctx', key: 'lineTo' }); },
+    stroke() { log.push({ el: id, type: 'ctx', key: 'stroke', value: ctx.strokeStyle }); },
+    lineWidth: 1, lineJoin: 'miter', miterLimit: 10, lineCap: 'butt', strokeStyle: '#000',
+  };
+  return ctx;
+}
+
 /** Fejkat element som loggar allt overlayn skriver till det. */
-function makeEl(id, log) {
+function makeEl(id, log, byId) {
   const classes = new Set();
+  let ctx = null;
   const el = {
     id,
     children: [],
     textContent: '',
     attrs: {},
+    // Layoutmått: overlays räknar canvasstorlek ur dem, och 0 ger division med noll.
+    clientWidth: 600,
+    clientHeight: 150,
+    width: 600,
+    height: 150,
+    getContext() { return (ctx ||= makeCtx(id, log)); },
+    // setProperty måste finnas, inte bara direktskrivning: overlays sätter sin skala
+    // med style.setProperty('--ui-scale', …), och utan detta kastade harnessen —
+    // eller värre, loggade inget och lät ett test passera på omätt kod.
     style: new Proxy({}, {
+      get(t, k) {
+        if (k === 'setProperty') {
+          return (name, v) => { log.push({ el: id, type: 'style', key: name, value: v }); t[name] = v; };
+        }
+        if (k === 'removeProperty') {
+          return (name) => { log.push({ el: id, type: 'style', key: name, value: null }); delete t[name]; };
+        }
+        if (k === 'getPropertyValue') return (name) => (name in t ? t[name] : '');
+        return t[k];
+      },
       set(t, k, v) { log.push({ el: id, type: 'style', key: k, value: v }); t[k] = v; return true; },
     }),
     classList: {
@@ -45,7 +85,15 @@ function makeEl(id, log) {
       log.push({ el: id, type: 'attr', key: k, value: next });
     },
     appendChild(c) { this.children.push(c); return c; },
-    querySelector() { return null; },
+    // '#id' löses upp mot samma element-tabell som getElementById, så
+    // root.querySelector('#trace') och document.getElementById('trace') ger SAMMA
+    // element och testet kan mäta på det. Andra selektorer ('.graph') får ett
+    // stabilt element döpt efter selektorn — vi matchar inte riktig CSS, vi ger
+    // bara overlayn något att hålla i.
+    querySelector(sel) {
+      if (!byId || typeof sel !== 'string') return null;
+      return byId(sel.startsWith('#') ? sel.slice(1) : sel);
+    },
   };
   Object.defineProperty(el, 'innerHTML', { set() { el.children.length = 0; }, get: () => '' });
   return el;
@@ -57,7 +105,10 @@ function makeEl(id, log) {
  * @param {string[]} opts.expose  namn i overlayns modulscope som testet behöver
  * @param {string}   opts.html    läs HTML härifrån i stället (för --old)
  * @param {object}   opts.init    värden att exponera som window.__OVERLAY_INIT__
- * @param {number}   opts.hz      klockans stegtakt (default 30)
+ * @param {number}   opts.hz      klockans stegtakt = fejkad vsync (default 30)
+ * @param {number}   opts.loopHz  overlayns renderloop-takt (default 30). Skild från
+ *                                opts.hz just för att kunna testa Hz-taket: sätt
+ *                                hz:144, loopHz:30 för att mäta att den kapar.
  */
 export async function loadOverlay(id, opts = {}) {
   const file = opts.html || path.join(ROOT, 'src/overlays', id, 'index.html');
@@ -68,7 +119,7 @@ export async function loadOverlay(id, opts = {}) {
   const log = [];
   const els = new Map();
   const byId = (elId) => {
-    if (!els.has(elId)) els.set(elId, makeEl(elId, log));
+    if (!els.has(elId)) els.set(elId, makeEl(elId, log, byId));
     return els.get(elId);
   };
 
@@ -82,27 +133,55 @@ export async function loadOverlay(id, opts = {}) {
   globalThis.matchMedia = () => ({ matches: false });
   globalThis.requestAnimationFrame = (fn) => { rafQueue.push(fn); return rafQueue.length; };
   globalThis.addEventListener = () => {};
-  globalThis.getComputedStyle = () => ({ getPropertyValue: () => '#000000' });
+  // Varje token måste ge en EGEN färg. Returnerade den samma värde för allt gick
+  // det inte att se skillnad på t.ex. --red och --abs, och ett test på att ABS
+  // färgar bromstracet gult passerade även när overlayn ritade allt i en färg.
+  // Värdet är påhittat men stabilt per namn — vi testar färgVAL, inte tokens.css.
+  globalThis.getComputedStyle = () => ({
+    getPropertyValue: (n) => '#' + [...String(n)]
+      .reduce((a, c) => (a * 33 + c.charCodeAt(0)) >>> 0, 5381)
+      .toString(16).padStart(6, '0').slice(-6),
+  });
   globalThis.ResizeObserver = class { observe() {} disconnect() {} };
   globalThis.location = { search: '' };
+  globalThis.window = { devicePixelRatio: 1 };
   globalThis.document = {
     getElementById: byId,
-    createElement: () => makeEl('span', log),
+    createElement: () => makeEl('span', log, byId),
     querySelector: () => null,
-    documentElement: makeEl('documentElement', log),
-    body: makeEl('body', log),
+    documentElement: makeEl('documentElement', log, byId),
+    body: makeEl('body', log, byId),
     fonts: { ready: Promise.resolve() },
   };
   globalThis.__OVERLAY_INIT__ = opts.init || undefined;
   globalThis.__harnessSink = (fn) => { sink = fn; };
 
-  // Importen ersätts av stubbar: vi testar overlayn, inte bussen.
+  // startLoop och wireShell STUBBAS INTE. Båda är det testerna faktiskt bevakar:
+  // renderloopens deadline-logik (§8.5) och att startvärden gäller före första paint
+  // (§8.3). En stubb av dem mäter ingenting — den handskrivna wireShell-stubben som
+  // stod här applicerade t.ex. aldrig alternativ, så ett test på just det passerade
+  // utan att overlayn ens fått värdet.
+  //
+  // bus.js är säker att ladda i Node: den bygger ingen WebSocket vid laddning och rör
+  // bara globaler harnessen redan fejkat (därav att globalerna ovan sätts FÖRE
+  // importen). Frågesträngen bryter ESM:s modulcache så INIT läses om för VARJE
+  // loadOverlay — annars fryses den till det första anropets värden och tester med
+  // olika init påverkar varandra.
+  const busUrl = pathToFileURL(path.join(ROOT, 'src/shared/bus.js')).href;
+  const bus = await import(`${busUrl}?n=${++loadCounter}`);
+  // opts.loopHz sätter takten i test; skild från opts.hz (fejkad vsync) så att
+  // Hz-taket går att mäta. En overlay som anger egen hz vinner.
+  globalThis.__harnessStartLoop = (tick, o = {}) =>
+    bus.startLoop(tick, { ...o, hz: o.hz || opts.loopHz || 30 });
+  globalThis.__harnessWireShell = bus.wireShell;
+
+  // WsBus och fontsReady stubbas: den ena öppnar en riktig socket, den andra bara
+  // väntar. Ingen av dem är det vi mäter.
   let code = m[1].replace(/^import[^\n]*\n/m, `
     class WsBus { subscribe(fn){ __harnessSink(fn); return () => {}; } }
-    const wireShell = (applyConfig) => {
-      if (globalThis.__OVERLAY_INIT__ && applyConfig) applyConfig(globalThis.__OVERLAY_INIT__);
-    };
     const fontsReady = () => Promise.resolve();
+    const startLoop = globalThis.__harnessStartLoop;
+    const wireShell = globalThis.__harnessWireShell;
   `);
   const expose = opts.expose || [];
   if (expose.length) {

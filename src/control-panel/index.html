@@ -113,6 +113,13 @@ body{font-family:var(--font);background:var(--app-bg);color:var(--ink);
 .row.slide input[type=range]{flex:1 1 auto;accent-color:var(--green);height:4px;}
 .row.slide .val{flex:0 0 48px;text-align:right;font-size:12.5px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;}
 
+/* typade alternativ (enum/färg) — bool använder .sw, tal använder .row.slide */
+.osel{flex:0 0 auto;background:var(--track);color:var(--ink);border:1px solid var(--slot-edge);
+  border-radius:8px;padding:6px 10px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;}
+.osel:focus-visible{outline:2px solid var(--green);outline-offset:1px;}
+.ocol{flex:0 0 44px;width:44px;height:26px;padding:2px;background:var(--track);
+  border:1px solid var(--slot-edge);border-radius:8px;cursor:pointer;}
+
 /* toggle */
 .sw{position:relative;width:42px;height:24px;flex:0 0 auto;cursor:pointer;}
 .sw input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer;}
@@ -166,6 +173,9 @@ button.act:hover{background:var(--ctrl-hi);}
       </button>
       <div class="rail-spacer"></div>
       <div class="motor"><span class="dot off" id="dot"></span><span id="statusText">Motor offline</span></div>
+      <!-- Broadcasting (andra bilars data). Dold tills motorn faktiskt försöker —
+           annars ser den ut som ett fel på riggar som inte har ACC installerat. -->
+      <div class="motor" id="bcRow" hidden><span class="dot off" id="bcDot"></span><span id="bcText"></span></div>
     </nav>
 
     <!-- ── mittkolumn: overlay-lista ── -->
@@ -339,25 +349,86 @@ function select(id){
   setPreview(o);
 }
 
+/* Alternativ byggs GENERISKT ur registry.json:s schema — panelen känner inte till
+   en enda overlay vid namn. Ny overlay = ny rad i registret, ingen ändring här.
+   Typen står i d.type; utelämnad betyder "bool", så äldre poster fungerar oförändrat.
+   Rust validerar värdet igen innan det sparas, så kontrollerna här behöver bara vara
+   rimliga, inte vattentäta. */
 function renderOptions(o){
   const wrap = $('optRows'), card = $('cardOptions');
   wrap.innerHTML = '';
   const defs = o.option_defs || [];
   card.style.display = defs.length ? '' : 'none';
+
   for (const d of defs){
     const val = (o.options && d.id in o.options) ? o.options[d.id] : d.default;
-    const row = document.createElement('div'); row.className = 'row';
-    row.innerHTML = `<span class="rlabel"></span><span class="state">${val ? 'På' : 'Av'}</span>`;
-    row.querySelector('.rlabel').textContent = d.label;
-    const sw = document.createElement('label'); sw.className = 'sw';
-    sw.innerHTML = `<input type="checkbox" ${val ? 'checked' : ''}><span class="track"></span><span class="knob"></span>`;
-    sw.querySelector('input').addEventListener('change', async e => {
-      const on = e.target.checked; row.querySelector('.state').textContent = on ? 'På' : 'Av';
-      const cur = ov(o.id); if (cur){ cur.options = cur.options || {}; cur.options[d.id] = on; }
-      try { await invoke('set_option', { id: o.id, option: d.id, value: on }); }
+    const row = document.createElement('div');
+
+    const send = async (v) => {
+      const cur = ov(o.id); if (cur){ cur.options = cur.options || {}; cur.options[d.id] = v; }
+      try { await invoke('set_option', { id: o.id, option: d.id, value: v }); }
       catch(err){ toast('Kunde inte spara alternativ: ' + errMsg(err), true); }
-    });
-    row.appendChild(sw); wrap.appendChild(row);
+    };
+
+    if (d.type === 'int' || d.type === 'float'){
+      // Samma utseende som Skala/Opacitet-reglagen (.row.slide).
+      row.className = 'row slide';
+      const step = d.step != null ? d.step : (d.type === 'int' ? 1 : 0.1);
+      const dec = d.type === 'int' ? 0 : String(step).split('.')[1]?.length || 1;
+      row.innerHTML = `<label></label><input type="range"><span class="val"></span>`;
+      row.querySelector('label').textContent = d.label;
+      const inp = row.querySelector('input'), out = row.querySelector('.val');
+      if (d.min != null) inp.min = d.min;
+      if (d.max != null) inp.max = d.max;
+      inp.step = step; inp.value = val;
+      const show = (v) => out.textContent = v.toFixed(dec) + (d.unit || '');
+      show(Number(val));
+      inp.addEventListener('input', () => {
+        const v = d.type === 'int' ? Math.round(Number(inp.value)) : Number(inp.value);
+        show(v);
+        send(v);
+      });
+
+    } else if (d.type === 'enum'){
+      row.className = 'row';
+      row.innerHTML = `<span class="rlabel"></span>`;
+      row.querySelector('.rlabel').textContent = d.label;
+      const sel = document.createElement('select'); sel.className = 'osel';
+      for (const c of (d.values || [])){
+        const op = document.createElement('option');
+        op.value = JSON.stringify(c.value); op.textContent = c.label;
+        if (c.value === val) op.selected = true;
+        sel.appendChild(op);
+      }
+      // Värdet går genom JSON så en enum kan vara tal lika väl som sträng —
+      // <option>.value är alltid en sträng och hade annars tystat gjort om 30 till "30".
+      sel.addEventListener('change', () => send(JSON.parse(sel.value)));
+      row.appendChild(sel);
+
+    } else if (d.type === 'color'){
+      row.className = 'row';
+      row.innerHTML = `<span class="rlabel"></span>`;
+      row.querySelector('.rlabel').textContent = d.label;
+      const inp = document.createElement('input');
+      inp.type = 'color'; inp.className = 'ocol'; inp.value = val;
+      inp.addEventListener('input', () => send(inp.value));
+      row.appendChild(inp);
+
+    } else {
+      row.className = 'row';
+      row.innerHTML = `<span class="rlabel"></span><span class="state">${val ? 'På' : 'Av'}</span>`;
+      row.querySelector('.rlabel').textContent = d.label;
+      const sw = document.createElement('label'); sw.className = 'sw';
+      sw.innerHTML = `<input type="checkbox" ${val ? 'checked' : ''}><span class="track"></span><span class="knob"></span>`;
+      sw.querySelector('input').addEventListener('change', e => {
+        const on = e.target.checked;
+        row.querySelector('.state').textContent = on ? 'På' : 'Av';
+        send(on);
+      });
+      row.appendChild(sw);
+    }
+
+    wrap.appendChild(row);
   }
 }
 
@@ -453,11 +524,38 @@ $('checkUpd').addEventListener('click', async () => {
 (function statusLoop(){
   let ws;
   const set = (cls, txt) => { $('dot').className = 'dot ' + cls; $('statusText').textContent = txt; };
+
+  /* Broadcasting-status. Utan den är fel connectionPassword helt osynligt: ACC
+     avvisar registreringen tyst och inga andra bilar dyker någonsin upp. */
+  const BC = {
+    connecting: ['mock', 'Broadcasting väntar'],
+    live:       ['live', 'Broadcasting ansluten'],
+    error:      ['off',  'Broadcasting fel'],
+  };
+  let lastBc = null;
+  function setBroadcast(status, err){
+    const key = status + '|' + (err || '');
+    if (key === lastBc) return;                 // skriv bara vid ändring (40 ggr/s in)
+    lastBc = key;
+    const row = $('bcRow');
+    const spec = BC[status];
+    if (!spec){ row.hidden = true; return; }
+    row.hidden = false;
+    $('bcDot').className = 'dot ' + spec[0];
+    $('bcText').textContent = spec[1];
+    // Felet får inte plats i den smala listen — lägg det i tooltipen.
+    row.title = err ? `Broadcasting: ${err}` : '';
+  }
+
   function connect(){
     set('off', 'Motor offline');
     try { ws = new WebSocket('ws://127.0.0.1:8777'); } catch { return setTimeout(connect, 1500); }
-    ws.onmessage = e => { try { const f = JSON.parse(e.data); set(f.connected ? 'live' : 'mock', f.connected ? 'ACC ansluten' : 'Mock-data'); } catch {} };
-    ws.onclose = () => { set('off', 'Motor offline'); setTimeout(connect, 1500); };
+    ws.onmessage = e => { try {
+      const f = JSON.parse(e.data);
+      set(f.connected ? 'live' : 'mock', f.connected ? 'ACC ansluten' : 'Mock-data');
+      setBroadcast(f.broadcast, f.broadcastError);
+    } catch {} };
+    ws.onclose = () => { set('off', 'Motor offline'); setBroadcast(null); setTimeout(connect, 1500); };
     ws.onerror = () => { try { ws.close(); } catch {} };
   }
   connect();

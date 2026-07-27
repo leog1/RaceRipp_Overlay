@@ -36,8 +36,11 @@ async def collect(n: int) -> list[dict]:
 
 
 async def main() -> int:
+    # --broadcast off: röktestet ska mäta baskällan. Med "auto" hade resultatet
+    # berott på om maskinen råkar ha en broadcasting.json, vilket gör testet olika
+    # på utvecklarmaskinen och i CI.
     engine = subprocess.Popen(
-        [sys.executable, "-m", "acc_engine", "--root", str(SRC)],
+        [sys.executable, "-m", "acc_engine", "--root", str(SRC), "--broadcast", "off"],
         cwd=str(ENGINE_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace",
     )
@@ -63,6 +66,17 @@ async def main() -> int:
         missing = expected - set(frames[0])
         check("ramschemat komplett", not missing, f"saknar {sorted(missing)}" if missing else f"{len(frames[0])} fält")
 
+        # Broadcasting-fälten ska finnas men vara None när den är av — annars kan ett
+        # tillägg där tyst ändra vad befintliga overlays ser.
+        bc_fields = {"cars", "entries", "sessionPhase", "focusedCarIndex",
+                     "trackName", "trackMeters", "broadcast", "broadcastError"}
+        bc_missing = bc_fields - set(frames[0])
+        bc_set = {k for f in frames for k in bc_fields if f.get(k) is not None}
+        check("Broadcasting-fälten finns och är tomma med --broadcast off",
+              not bc_missing and not bc_set,
+              f"saknar {sorted(bc_missing)}" if bc_missing else
+              (f"oväntat satta: {sorted(bc_set)}" if bc_set else "alla None"))
+
         # NaN är klistrigt i overlays (scaleY(NaN) fastnar för alltid).
         nan = [k for f in frames for k, v in f.items()
                if isinstance(v, float) and v != v]
@@ -78,7 +92,7 @@ async def main() -> int:
 
         # Andra instans: ska logga tydligt och avsluta, inte krascha.
         second = subprocess.run(
-            [sys.executable, "-m", "acc_engine", "--root", str(SRC)],
+            [sys.executable, "-m", "acc_engine", "--root", str(SRC), "--broadcast", "off"],
             cwd=str(ENGINE_DIR), capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=60,
         )

@@ -15,6 +15,17 @@
 //   lastLapMs  int|null
 //   driverName string
 //   position   0..1      normalizedCarPosition
+//
+// Broadcasting (ACC:s UDP-API, andra bilar). Alla null när det är av:
+//   cars       array|null   per bil {i, spline, pos, laps, loc, kmh, deltaMs, bestMs …}
+//   entries    obj|null     carIndex → {num, name, team, cls}. SE NEDAN.
+//   sessionPhase focusedCarIndex trackName trackMeters
+//   broadcast  'connecting'|'live'|'error'|null   broadcastError string|null
+//
+// VIKTIGT om `entries`: den är statisk och skickas bara när den ÄNDRATS, plus var
+// 5:e sekund (så en OBS-flik som öppnas mitt i loppet också får den). `null` betyder
+// alltså OFÖRÄNDRAD, inte BORTA — latcha senaste värdet, precis som HOLD_MS-mönstret
+// i §8.5. `cars` skickas varje ram.
 
 export const WS_URL = 'ws://127.0.0.1:8777';
 
@@ -58,9 +69,9 @@ let _lastConnected = false;
 let _gateHidden = null;                 // senast skrivna läge (null = aldrig skrivet)
 
 // ── Startvärden från skalet ───────────────────────────────────────────────────
-// lib.rs injicerar {id, scale, opacity, gate} med initialization_script, alltså
-// INNAN sidan parsas. Det gör att skala/opacitet och grinden gäller redan vid
-// första paint. Hämtades de bara med get_config/get_globals (async) ritade overlayn
+// lib.rs injicerar {id, scale, opacity, gate, hz, options} med initialization_script,
+// INNAN sidan parsas. Det gör att skala/opacitet, grinden, takten och alternativen
+// gäller redan vid första paint. Hämtades de bara med get_config/get_globals (async) ritade overlayn
 // med CSS-defaulten tills svaret kom — såg avkapat ut när sparad skala var något
 // annat — och blev anropet av med (t.ex. innan staten var registrerad) satt den kvar
 // i fel skala tills man rörde skalreglaget.
@@ -73,6 +84,44 @@ export const INIT = (() => {
 // Körs vi i kontrollpanelens förhandsvisning? Där ska grinden inte slå till —
 // annars blir previewn blank när ACC inte kör och ser trasig ut.
 const IN_PREVIEW = (() => { try { return window.self !== window.top; } catch { return true; } })();
+
+// ── Renderloop ───────────────────────────────────────────────────────────────
+/** Startar en overlays renderloop med Hz-tak. Returnerar en stop()-funktion.
+ *
+ *  Loopen ägs HÄR och inte i varje overlay, för mönstret nedan är litet men lätt
+ *  att få subtilt fel — två av flicker-buggarna i CLAUDE.md §8.5 satt i exakt de
+ *  här raderna, i två kopior:
+ *
+ *  • Fast deadline, inte "nu minus förra renderingen". Det senare sköt en render
+ *    ett helt refresh-intervall framåt vid minsta jitter, vilket syntes som ryck.
+ *    Därför `nextT = Math.max(now, nextT + FRAME_MS)`.
+ *  • `dt` skickas till tick så utjämning kan vara TIDSBASERAD (1-exp(-dt/tau)).
+ *    En per-frame-lerp går 2,4× snabbare på 144 Hz än på 60 Hz.
+ *  • `dtCap` klipper dt när fliken/fönstret varit pausat, annars hoppar allt
+ *    utjämnat till målvärdet i ett enda skutt vid återkomsten.
+ *
+ *  Utan tak ritades canvasen om vid varje vsync (144 Hz på en gamingskärm) på ett
+ *  transparent always-on-top-fönster — det var en del av FPS-tappet (§3).
+ *
+ *  @param {(dt:number, now:number)=>void} tick  dt i sekunder, now = rAF-tiden (ms)
+ *  @param {{hz?:number, dtCap?:number}} [opts]  hz: explicit → INIT.hz → 30
+ */
+export function startLoop(tick, opts = {}) {
+  const hz = opts.hz || (INIT && INIT.hz) || 30;
+  const FRAME_MS = 1000 / hz;
+  const dtCap = typeof opts.dtCap === 'number' ? opts.dtCap : 0.25;
+  let lastT = performance.now(), nextT = lastT, live = true;
+  function step(now) {
+    if (!live) return;
+    requestAnimationFrame(step);
+    if (now < nextT) return;
+    nextT = Math.max(now, nextT + FRAME_MS);
+    const dt = Math.min(dtCap, (now - lastT) / 1000); lastT = now;
+    tick(dt, now);
+  }
+  requestAnimationFrame(step);
+  return () => { live = false; };
+}
 
 function _applyGate() {
   const hidden = !IN_PREVIEW && _hideUntilConnected && !_lastConnected;
@@ -101,10 +150,17 @@ export function fontsReady(timeoutMs = 1500) {
 // alternativ som overlayn deklarerat i registry.json. Fungerar även utan Tauri
 // (t.ex. i OBS eller vanlig webbläsare) — då händer bara inget.
 export function wireShell(applyConfig, applyOption) {
-  // Injicerad skala/opacitet appliceras FÖRST och synkront, före allt async —
-  // annars hinner overlayn ritas i CSS-defaultens skala och ser avkapad ut.
+  // Injicerad skala/opacitet/alternativ appliceras FÖRST och synkront, före allt
+  // async — annars hinner overlayn ritas i CSS-defaultens skala och ser avkapad ut.
+  // Alternativen hör hit av samma skäl: ett alternativ som påverkar layout (dold
+  // kolumn, antal rader) hade annars ritat ett frame i fel utseende.
   // Ligger utanför Tauri-kontrollen nedan så det gäller även om event-API:t saknas.
-  if (INIT) applyConfig({ scale: INIT.scale, opacity: INIT.opacity });
+  if (INIT) {
+    applyConfig({ scale: INIT.scale, opacity: INIT.opacity });
+    if (applyOption && INIT.options) {
+      for (const [k, v] of Object.entries(INIT.options)) applyOption(k, v);
+    }
+  }
 
   const T = globalThis.__TAURI__;
   if (!T || !T.event) return;

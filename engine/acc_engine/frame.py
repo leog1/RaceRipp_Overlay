@@ -1,7 +1,7 @@
 """Telemetriramens schema — en gemensam dict alla overlays läser."""
 from __future__ import annotations
-from dataclasses import dataclass, asdict
-from typing import Optional
+from dataclasses import dataclass, field, asdict
+from typing import Optional, Any
 
 
 @dataclass
@@ -24,5 +24,23 @@ class Frame:
     driverName: str = ""
     position: float = 0.0            # normalizedCarPosition 0..1
 
+    # ── Broadcasting (andra bilar). Alla None när Broadcasting är av, så inga
+    # befintliga overlays påverkas — de läser bara de fält de deklarerat.
+    cars: Optional[list] = None      # per bil: {i, spline, pos, laps, loc, kmh, …}
+    entries: Optional[dict] = None   # carIndex → {num, name, team, cls}. SE NEDAN.
+    sessionPhase: Optional[str] = None
+    focusedCarIndex: Optional[int] = None
+    trackName: Optional[str] = None
+    trackMeters: Optional[int] = None
+    broadcast: Optional[str] = None      # off | connecting | live | error
+    broadcastError: Optional[str] = None
+
     def to_dict(self) -> dict:
         return asdict(self)
+
+# KONTRAKT för `entries`: den är statisk och skickas bara när den ÄNDRATS, plus var
+# 5:e sekund så en sent ansluten klient (OBS-flik som öppnas mitt i loppet) får den.
+# `None` betyder alltså OFÖRÄNDRAD, inte BORTA — konsumenten måste latcha senaste
+# värdet, precis som HOLD_MS-mönstret i CLAUDE.md §8.5. `cars` skickas varje ram
+# (~1,4 kB för 20 bilar, oproblematiskt på loopback).
+

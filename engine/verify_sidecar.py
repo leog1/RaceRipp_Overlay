@@ -18,8 +18,10 @@ HERE = Path(__file__).resolve().parent
 DEFAULT = HERE.parent / "src-tauri" / "binaries" / "acc-engine-x86_64-pc-windows-msvc.exe"
 
 # Moduler som MÅSTE ligga i arkivet. ldparser = MoTeC-referens (delta),
-# pyaccsharedmemory = ACC-telemetri, numpy = resampling i delta.py.
-REQUIRED = ["acc_engine", "ldparser", "pyaccsharedmemory", "numpy", "websockets"]
+# pyaccsharedmemory = ACC-telemetri, numpy = resampling i delta.py,
+# acc_broadcast = Broadcasting-UDP (andra bilar; egen modul, egen chans att tappas).
+REQUIRED = ["acc_engine", "acc_broadcast", "ldparser", "pyaccsharedmemory",
+            "numpy", "websockets"]
 
 
 def verify(exe: Path) -> int:

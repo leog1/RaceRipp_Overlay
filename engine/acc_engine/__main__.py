@@ -23,6 +23,7 @@ from .frame import Frame
 from .delta import Reference
 from .sources.mock import MockSource
 from .sources.acc import AccSource
+from .sources.acc_broadcast import AccBroadcast, find_config
 
 
 def parse_args():
@@ -36,7 +37,19 @@ def parse_args():
                     help="mapp som HTTP-servern serverar (overlay-filerna)")
     ap.add_argument("--ref", default="", help="MoTeC .ld referensvarv")
     ap.add_argument("--config", default="", help="JSON som kontrollpanelen skriver (t.ex. ref-path)")
+    ap.add_argument("--broadcast", choices=["auto", "on", "off"], default="auto",
+                    help="ACC Broadcasting-UDP (andra bilars data). auto = på när "
+                         "broadcasting.json finns och källan inte är mock")
+    ap.add_argument("--broadcast-config", default="",
+                    help="explicit sökväg till broadcasting.json (annars ACC:s Config-mapp)")
+    ap.add_argument("--broadcast-ms", type=int, default=100,
+                    help="ACC:s uppdateringsintervall för Broadcasting (ms)")
     return ap.parse_args()
+
+
+# entries är statisk; skicka om den så här ofta även när den inte ändrats, så en
+# klient som ansluter mitt i loppet (ny OBS-flik) inte blir utan förarnamn.
+ENTRIES_RESEND_S = 5.0
 
 
 async def run():
@@ -82,10 +95,27 @@ async def run():
               f"acc-engine.exe i Aktivitetshanteraren). Avslutar.")
         return
 
+    # Broadcasting-UDP: andra bilars data. Startas EFTER att bussen bundit — den är
+    # ett tillägg, inte en förutsättning, och får aldrig hindra motorn från att köra.
+    bc = None
+    want_bc = args.broadcast == "on" or (
+        args.broadcast == "auto" and args.source != "mock" and find_config(args.broadcast_config))
+    if want_bc:
+        try:
+            bc = AccBroadcast(update_ms=args.broadcast_ms, config_path=args.broadcast_config)
+            if not await bc.start():
+                bc = None if bc.status == "off" else bc   # "off" = ej konfigurerat, inget fel
+        except Exception as e:
+            print(f"[engine] Broadcasting kunde ej startas: {e} (fortsätter utan)")
+            bc = None
+    elif args.broadcast == "auto":
+        print("[engine] Broadcasting av (broadcasting.json saknas eller källan är mock)")
+
     try:
         print(f"[engine] WebSocket → ws://{args.host}:{args.ws_port}  (källa: {args.source})")
         period = 1.0 / args.hz
         last_cfg_check = 0.0
+        last_entries_sent = 0.0
         acc_errs = 0
         while True:
             t = time.perf_counter()
@@ -126,6 +156,27 @@ async def run():
             if frame is None:
                 frame = mock.read() if mock else Frame(connected=False)
 
+            # Broadcasting läggs PÅ ramen, den ersätter inget. Samma inkapsling som
+            # ACC-läsningen: en bugg här får inte ta ner motorn (§8.6).
+            if bc is not None:
+                try:
+                    snap = bc.snapshot()
+                    frame.broadcast = snap["status"]
+                    frame.broadcastError = snap["error"] or None
+                    frame.cars = snap["cars"] or None
+                    frame.sessionPhase = snap["session"].get("phase")
+                    frame.focusedCarIndex = snap["session"].get("focusedCarIndex")
+                    frame.trackName = snap["track"].get("name")
+                    frame.trackMeters = snap["track"].get("meters")
+                    # entries är statisk: skicka vid ändring, annars var 5:e sekund så
+                    # en sent ansluten klient också får den. None = OFÖRÄNDRAD (frame.py).
+                    if snap["entriesDirty"] or t - last_entries_sent > ENTRIES_RESEND_S:
+                        frame.entries = snap["entries"] or None
+                        last_entries_sent = t
+                        bc.mark_entries_sent()
+                except Exception as e:
+                    print("[engine] Broadcasting-fel:", e)
+
             await bus.broadcast(frame.to_dict())
 
             # Minst en riktig yield: annars kan loopen spinna på 100 % av en kärna
@@ -134,6 +185,8 @@ async def run():
     finally:
         server.close()
         await server.wait_closed()
+        if bc:
+            bc.close()           # avregistrera hos ACC + stäng UDP-socketen
         if acc:
             acc.close()          # stäng ACC:s delade minne-handtag
 
