@@ -57,7 +57,16 @@ export class WsBus {
     ws.onopen    = () => { this.connected = true; };
     ws.onmessage = (e) => { try { this._emit(JSON.parse(e.data)); } catch {} };
     ws.onerror   = () => { try { ws.close(); } catch {} };
-    ws.onclose   = () => { this.connected = false; setTimeout(() => this._connect(), 1000); };
+    ws.onclose   = () => {
+      this.connected = false;
+      // Grinden utvärderas annars bara när en ram kommer in — dör motorn helt slutar
+      // ramarna, och då hade nedräkningen aldrig gått klart och overlayn blivit
+      // hängande synlig på sin sista bild.
+      _lastConnected = false;
+      _applyGate();
+      setTimeout(_applyGate, GATE_HOLD_MS + 50);
+      setTimeout(() => this._connect(), 1000);
+    };
   }
 }
 
@@ -123,8 +132,22 @@ export function startLoop(tick, opts = {}) {
   return () => { live = false; };
 }
 
+// Hur länge `connected:false` måste hålla i sig innan grinden döljer overlayn.
+// Grinden slog till på ETT enda frame förut, och det räckte för att båda overlays
+// skulle blinka synligt med några sekunders mellanrum under körning. Att visa igen
+// sker däremot direkt — man ska aldrig behöva vänta på att overlayn kommer tillbaka.
+const GATE_HOLD_MS = 1500;
+let _disconnectedAt = 0;
+
 function _applyGate() {
-  const hidden = !IN_PREVIEW && _hideUntilConnected && !_lastConnected;
+  let hidden = false;
+  if (!IN_PREVIEW && _hideUntilConnected && !_lastConnected) {
+    const now = Date.now();
+    if (!_disconnectedAt) _disconnectedAt = now;
+    hidden = (now - _disconnectedAt) >= GATE_HOLD_MS;
+  } else {
+    _disconnectedAt = 0;
+  }
   if (hidden === _gateHidden) return;   // skriv bara vid ändring (_emit körs 40 ggr/s)
   _gateHidden = hidden;
   document.documentElement.style.visibility = hidden ? 'hidden' : '';

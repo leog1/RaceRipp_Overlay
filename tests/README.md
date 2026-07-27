@@ -7,7 +7,10 @@ Inget testramverk — bara skript som går att köra direkt och som slutar med e
 node tests/overlay-delta-bar.mjs      # flicker i delta-baren (kärnan)
 node tests/overlay-inputs-trace.mjs   # canvas-traces: Hz-tak, tidsbaserad utjämning
 node tests/overlay-loop.mjs           # renderloopens takt under jitter
+node tests/overlay-gate.mjs           # synk-grinden: blinkar overlayn?
 node tests/overlay-options.mjs        # typade alternativ, före första paint
+python tests/acc_source.py            # "ingen ny data" != frånkopplad, ut-varv
+python tests/delta_source.py          # vilken referens deltat kommer från
 python tests/engine_smoke.py          # motorn: ramschema, takt, portkonflikt
 python tests/motec_reference.py       # MoTeC-delta mot en riktig .ld
 python tests/broadcast_protocol.py    # Broadcasting-UDP mot en falsk ACC-server
@@ -92,6 +95,37 @@ i ett enda frame. Testet kontrollerar också att registrets scheman är välform
 så ett fel där ger ingen byggvarning utan en app som dör vid start), att tal kommer
 fram som tal och inte strängar, och att overlayn överlever skräpvärden — OBS och
 webbläsare har ingen Rust-validering framför sig.
+
+## overlay-gate.mjs
+Synk-grinden ("Endast när ACC kör"). I 0.3.0 blinkade båda overlays var tredje–fjärde
+sekund under körning, eftersom grinden dolde dem så fort EN ram hade
+`connected:false`. Grundorsaken låg i motorn (se `acc_source.py`), men grinden ska
+ändå inte vara så nervös.
+
+**Lärdom värd att upprepa:** första versionen av det här testet tittade bara på
+SLUTtillståndet och passerade därför mot den buggiga koden — overlayn hann ju komma
+tillbaka. Blinket syns bara om man räknar hur många gånger overlayn *dolts*. Kör
+testet mot `git stash`:ad kod för att se att det biter (3 kontroller ska falla).
+
+## acc_source.py
+Grundorsaken till både blinket och hacken i traces i 0.3.0.
+`read_shared_memory()` returnerar `None` när fysikpaketet inte hunnit uppdateras —
+"ingen ny data", inte "ACC är borta". Källan tolkade det som frånkoppling och motorn
+föll då tillbaka på MOCK-data för det framet.
+
+Ett fejkat delat minne låter testet styra exakt när `None` kommer, vilket är omöjligt
+mot riktiga ACC. `--old` återskapar felet så man ser att kontrollerna biter (3 ska
+falla). Täcker också ut-varvsregeln, inklusive att det avgörande är om man är i
+depåfilen när mållinjen passeras.
+
+## delta_source.py
+Vilken referens deltat kommer från. I 0.3.0 skrev MoTeC-filen alltid över ACC:s eget
+delta, så overlayn visade ett referensdelta direkt ur depån och mot fel bana.
+
+Kontrollerar valet, inte matematiken — **utom** en syntetisk referens utan filberoende.
+Den finns av ett konkret skäl: `Reference.delta()` bröts helt under arbetet med 0.3.1
+och alla andra tester passerade ändå, eftersom fejkreferensen här skuggade metoden och
+`motec_reference.py` hoppar över sig själv utan en `.ld` (alltså alltid i CI).
 
 ## engine_smoke.py
 Startar motorn som subprocess och prenumererar på bussen. Utöver ramschema och takt

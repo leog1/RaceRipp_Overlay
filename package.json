@@ -1,6 +1,6 @@
 {
   "name": "acc-overlay",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "//type": "src/shared/bus.js är vår enda .js och den är en ES-modul. Utan detta läser Node om den som CommonJS först och varnar vid varje testkörning — brus i CI-loggen som döljer det man faktiskt vill se.",
   "type": "module",
@@ -8,7 +8,7 @@
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",
-    "test": "node tests/overlay-delta-bar.mjs && node tests/overlay-inputs-trace.mjs && node tests/overlay-loop.mjs && node tests/overlay-options.mjs"
+    "test": "node tests/overlay-delta-bar.mjs && node tests/overlay-inputs-trace.mjs && node tests/overlay-loop.mjs && node tests/overlay-gate.mjs && node tests/overlay-options.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

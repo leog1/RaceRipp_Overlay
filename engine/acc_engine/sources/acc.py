@@ -1,8 +1,15 @@
 """ACC-källa via pyaccsharedmemory. Fältnamn verifierade mot paketets doc (v1.0.0).
 Om biblioteket saknas eller ACC ej är live → connected=False (motorn kör då mock)."""
 from __future__ import annotations
+import time
+from typing import Optional
 from .base import Source
 from ..frame import Frame
+
+# Hur länge senaste giltiga ram får återanvändas när delade minnet inte har något
+# NYTT att ge. Vid 40 Hz är det 80 ramar — långt mer än de enstaka som normalt
+# hoppas över, men kort nog att en riktig frånkoppling (alt-F4) märks snabbt.
+STALE_S = 2.0
 
 try:
     from pyaccsharedmemory import accSharedMemory  # type: ignore
@@ -17,12 +24,32 @@ class AccSource(Source):
 
     def __init__(self):
         self._sm = accSharedMemory() if _AVAILABLE else None
+        self._last: Optional[Frame] = None
+        self._last_t = 0.0
+        # Sessionen börjar i depån, så första varvet är alltid ett ut-varv.
+        self._out_lap = True
+        self._pit_seen = True
+        self._laps: Optional[int] = None
 
     def read(self) -> Frame:
         if not self._sm:
             return Frame(connected=False)
         sm = self._sm.read_shared_memory()
         if sm is None:
+            # `None` betyder "INGEN NY DATA", inte "ACC är borta": pyaccsharedmemory
+            # returnerar None så fort fysikpaketets id inte hunnit ändras sedan förra
+            # läsningen, och vi pollar snabbare än ACC alltid hinner skriva.
+            #
+            # Att returnera Frame(connected=False) här var en riktig bugg i drift:
+            # __main__ föll då tillbaka på MOCK-data för just det framet. Följden var
+            # två symptom som såg helt olika ut men var samma sak — overlays BLINKADE
+            # (synk-grinden "endast när ACC kör" dolde dem ett frame) och traces fick
+            # HACK av främmande mock-värden mitt i riktig telemetri.
+            #
+            # Håll senaste giltiga ram i stället. Först när det varit tyst i STALE_S
+            # är ACC faktiskt borta.
+            if self._last is not None and (time.monotonic() - self._last_t) < STALE_S:
+                return self._last
             return Frame(connected=False)
         p, g, s = sm.Physics, sm.Graphics, sm.Static
 
@@ -43,7 +70,26 @@ class AccSource(Source):
         # (vid stillastående ~95% eftersom kopplingen då faktiskt är urkopplad).
         clutch = 1.0 - float(getattr(p, "clutch", 1.0))
 
-        return Frame(
+        # Ut-varv: varvet som körs NU startade från depån (eller från sessionsstart).
+        # Ett referensdelta mot ett flygande varv är meningslöst då — man startade
+        # inte på mållinjen. Det var exakt vad användaren såg direkt ut ur depån.
+        # Regeln är "har depån berörts under det varv som körs NU" — inte under det
+        # förra. Vid mållinjen avgör alltså om vi är i depåfilen just då: på de flesta
+        # banor ligger depåutfarten EFTER linjen, så varvräknaren tickar medan man
+        # fortfarande rullar i depån, och varvet som börjar är ett ut-varv. Kommer man
+        # ut före linjen är nästa varv ett riktigt flygande varv.
+        laps = int(getattr(g, "completed_lap", 0) or 0)
+        in_pit = bool(getattr(g, "is_in_pit_lane", False)) or bool(getattr(g, "is_in_pit", False))
+        if self._laps is None:
+            self._laps = laps
+        elif laps != self._laps:                 # mållinjen passerad
+            self._laps = laps
+            self._out_lap = in_pit
+        if in_pit:
+            self._out_lap = True                 # depån berörd → varvet är förbrukat
+        out_lap = self._out_lap or laps < 1
+
+        frame = Frame(
             connected=connected,
             throttle=throttle,
             brake=float(getattr(p, "brake", 0.0)),
@@ -59,8 +105,16 @@ class AccSource(Source):
             curLapMs=_ms(getattr(g, "current_time", None)),
             driverName=_name(getattr(s, "player_name", "")),
             position=float(getattr(g, "normalized_car_position", 0.0)),
-            delta=delta,  # ACC-delta; skrivs över av MoTeC-referens om laddad
+            delta=delta,  # ACC:s eget delta mot session-bästa (kan bytas mot MoTeC)
+            trackId=_name(getattr(s, "track", "")),
+            outLap=out_lap,
+            inPitLane=in_pit,
+            completedLaps=laps,
         )
+        if frame.connected:
+            self._last = frame
+            self._last_t = time.monotonic()
+        return frame
 
     def close(self):
         if self._sm:

@@ -23,6 +23,12 @@ class Frame:
     refTotalMs: Optional[int] = None # referensvarvets totaltid (om MoTeC laddad)
     driverName: str = ""
     position: float = 0.0            # normalizedCarPosition 0..1
+    trackId: str = ""                # ACC:s bannamn — MoTeC-referensen måste matcha
+    outLap: bool = False             # varvet startade i depån → referensdelta ogiltigt
+    inPitLane: bool = False
+    completedLaps: int = 0
+    # Vilken referens deltat faktiskt kommer från. None = inget delta att visa.
+    deltaSource: Optional[str] = None   # "motec" | "acc" | None
 
     # ── Broadcasting (andra bilar). Alla None när Broadcasting är av, så inga
     # befintliga overlays påverkas — de läser bara de fält de deklarerat.

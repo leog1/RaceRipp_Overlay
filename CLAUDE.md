@@ -349,6 +349,30 @@ filen inte committas i det MIT-licensierade repot ändrar inte vad som gäller f
 själva utgåvan. Det är ett medvetet val (se §3), men värt att veta om releaser börjar
 spridas bredare.
 
+### 8.6e "Ingen ny data" är INTE "ACC är borta" — mock-inblandningen
+Rapporterat från riktig körning i 0.3.0: overlays **blinkade** var tredje–fjärde
+sekund, och inputs-trace fick **små hack** i graferna. Två symptom som såg helt olika
+ut, en enda orsak.
+
+`accSharedMemory.read_shared_memory()` returnerar `None` så fort fysikpaketets id inte
+hunnit ändras sedan förra läsningen (den jämför `packed_id` och hela structen). Vi
+pollar 40 Hz och ACC skriver i sin egen takt, så det händer regelbundet. `acc.py`
+tolkade `None` som `Frame(connected=False)`, och då föll `__main__` tillbaka på
+**MOCK-källan för just det framet**:
+- mock-telemetri hamnade mitt i den riktiga → hacken i traces,
+- `connected:false` → synk-grinden dolde båda overlays ett ögonblick → blinket.
+
+`AccSource` håller nu senaste giltiga ram i `STALE_S` (2 s) i stället. Först därefter
+rapporteras frånkoppling. **Motorn får aldrig blanda mock och riktig telemetri i samma
+ström** — en overlay har ingen chans att se skillnad.
+
+Grinden i `bus.js` fick samtidigt hysteres (`GATE_HOLD_MS`, 1,5 s): den döljer först
+när `connected:false` hållit i sig, men visar igen omedelbart. En enstaka tappad ram
+ska aldrig kunna släcka en overlay mitt i en kurva. `tests/overlay-gate.mjs` mäter det.
+Notera att den första versionen av det testet såg bara på SLUTtillståndet och
+passerade därför mot den buggiga koden — blinket syns bara om man räknar antalet
+gånger overlayn dolts.
+
 ### 8.6d Broadcasting-UDP: fällor i den andra datakällan
 `sources/acc_broadcast.py` läser ACC:s officiella Broadcasting Network (andra bilars
 spline-position, entry list med förarnamn, sessionfas, bandata). Delat minne ger bara
@@ -391,6 +415,31 @@ Nordschleife) är en äkta delta på tiotals sekunder både möjlig och intressa
 användaren vill se hela den. Overlayns siffra får växa till 6–7 tecken då; det är
 avsiktligt.
 
+### 8.8b MoTeC-referensen får inte användas bara för att den är laddad
+Också rapporterat från 0.3.0: delta-overlayn visade ett referensdelta **direkt vid
+utfart ur depån**, före första varvet, och mot en fil som inte hörde till banan som
+kördes. Orsaken var en rad: `if ref.loaded:` skrev ALLTID över ACC:s eget delta.
+
+Två villkor till krävs, och båda kommer ur riktiga fel:
+- **Rätt bana.** `.ld`-huvudet har `venue` ("Spa"); jämför med ACC:s `Static.track`.
+  Utan det ger en Spa-referens ett fullt rimligt utseende delta på Monza — position
+  0..1 matchar ju alltid något. Jämförelsen är medvetet **slapp** (gemener, bara
+  alfanumeriskt, delsträng åt båda håll) och **släpper igenom när något namn saknas**:
+  ett falskt negativt hade tyst stängt av en referens som fungerar, vilket är värre.
+- **Inte ut-varv.** Ett varv som börjat i depån kan inte jämföras med ett flygande
+  varv. Regeln är "har depån berörts under det varv som körs NU" — vid mållinjen
+  avgör om man är i depåfilen just då, eftersom depåutfarten på de flesta banor ligger
+  EFTER linjen.
+
+Faller något villkor behålls **ACC:s eget delta mot session-bästa**, vilket är precis
+vad man vill se när ingen fil är vald. `deltaSource` i ramen säger vilken som gäller
+(`"motec"` / `"acc"` / `null`). Skälet till att en referens inte används loggas en
+gång per skäl — annars är det osynligt varför siffran plötsligt byter innebörd.
+
+Ett undantag att inte råka bryta: när en giltig referens ger `None` (spikskyddet vid
+mållinjen, §8.8) ska **inget** delta visas, inte ACC:s. Att växla mellan två olika
+referenser mellan ramar får siffran att hoppa.
+
 ### 8.9 websockets-API:t
 Installerat: **16.0**, där `websockets.serve` är den nya asyncio-implementationen.
 `await websockets.serve(...)` ger ett `Server` med `close()`/`wait_closed()` — det
@@ -426,6 +475,13 @@ de andra.
   tyst testfel: `getComputedStyle` gav samma färg för alla tokens, så en kontroll av
   att ABS färgar bromstracet gult passerade även på en overlay som ritade allt i en
   färg. Ge stubbar värden som går att skilja åt.
+- **Ett test som hoppar över sig själv skyddar ingenting i CI.**
+  `motec_reference.py` kräver en `.ld` och hoppar därför alltid över sig själv på en
+  runner. Under arbetet med 0.3.1 bröts `Reference.delta()` helt (en hjälpfunktion
+  hamnade mitt i klassen och gjorde metoden till död kod) och **alla andra tester
+  passerade ändå** — `delta_source.py` använde en fejkreferens som skuggade metoden.
+  Har du ett test som kan hoppa över sig själv, se till att kärnlogiken också täcks av
+  ett test utan filberoende (syntetisk referens i `delta_source.py`).
 - **Motorn:** starta som subprocess, anslut med `websockets.connect`, samla N ramar
   och kontrollera fält/takt/NaN. Starta en andra instans för att testa portkonflikt.
 - **MoTeC:** `Reference().load(path)` mot en riktig `.ld` och skriv ut `lap_ms`,

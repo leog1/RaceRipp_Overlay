@@ -24,6 +24,7 @@ class Reference:
         self.loaded = False
         self.path = ""
         self.lap_ms = None        # referensvarvets totaltid (ms)
+        self.venue = ""           # banan filen spelades in på (ur .ld-huvudet)
 
     def _clear(self):
         """Nollar allt referensläge. Utan detta låg gamla varvets distans/tid-kurva
@@ -33,12 +34,20 @@ class Reference:
         self.loaded = False
         self.path = ""
         self.lap_ms = None
+        self.venue = ""
 
     def load(self, path: str) -> bool:
         self._clear()
         try:
             from ldparser import ldData
             ld = ldData.fromfile(path)
+            # Banan står i .ld-huvudet ("Spa"). Utan den kan en referens från en annan
+            # bana användas rakt av och ge ett delta som ser rimligt ut men är rent
+            # nonsens — det hände i drift.
+            try:
+                self.venue = str(getattr(ld.head, "venue", "") or "").strip()
+            except Exception:
+                self.venue = ""
             chans = {c.name.lower(): c for c in ld.channs}   # ld.channs = lista av kanaler
 
             def find(*keys):
@@ -91,7 +100,8 @@ class Reference:
             self.loaded = True
             self.path = path
             print(f"[delta] referens laddad: {os.path.basename(path)}  varvtid≈{self.lap_ms/1000:.3f}s  "
-                  f"({'distans' if is_dist else 'fart-integrerad'}, {len(self._pos)} punkter)")
+                  f"({'distans' if is_dist else 'fart-integrerad'}, {len(self._pos)} punkter, "
+                  f"bana {self.venue or 'okänd'})")
             return True
         except Exception as e:
             print("[delta] load-fel:", e)
@@ -105,6 +115,22 @@ class Reference:
 
     def total_ms(self) -> Optional[int]:
         return self.lap_ms if self.loaded else None
+
+    def matches_track(self, track_id: str) -> bool:
+        """Är referensen inspelad på den bana som körs nu?
+
+        Ett Spa-varv använt på Monza ger ett delta som ser rimligt ut men är rent
+        nonsens — position 0..1 matchar ju alltid något. Det inträffade i drift.
+
+        Medvetet SLAPP jämförelse: ACC:s `Static.track` och MoTeC-huvudets `venue`
+        stavar inte likadant ("spa" mot "Spa", ibland med suffix). Vet vi inte
+        (någotdera tomt) SLÄPPER vi igenom — en matchning som ger falskt negativt
+        skulle tyst stänga av en referens som fungerar, vilket är värre.
+        """
+        a, b = _norm_track(self.venue), _norm_track(track_id)
+        if not a or not b:
+            return True
+        return a in b or b in a
 
     def delta(self, norm_pos: float, cur_lap_ms: Optional[int]) -> Optional[float]:
         """delta = din_varvtid − t_ref(position). Negativ = snabbare."""
@@ -125,6 +151,11 @@ class Reference:
         if self.lap_ms and abs(d) > 0.8 * (self.lap_ms / 1000.0):
             return None
         return d
+
+
+def _norm_track(s: str) -> str:
+    """Bannamn utan skiljetecken och skiftläge, för den slappa jämförelsen ovan."""
+    return "".join(c for c in str(s or "").lower() if c.isalnum())
 
 
 def _fastest_lap(ld_path, freq, n):

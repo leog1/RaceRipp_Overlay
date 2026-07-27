@@ -51,6 +51,41 @@ def parse_args():
 # klient som ansluter mitt i loppet (ny OBS-flik) inte blir utan förarnamn.
 ENTRIES_RESEND_S = 5.0
 
+# Varför en referens inte används loggas EN gång per skäl. Utan det är det osynligt
+# varför deltat plötsligt kommer från ACC i stället för filen man valt.
+_ref_notice: set = set()
+
+
+def apply_reference(f: Frame, ref: Reference) -> None:
+    """Väljer vilken referens deltat ska komma från och märker ramen med källan.
+
+    Ordningen är hela poängen. MoTeC-referensen skrev tidigare ALLTID över ACC:s eget
+    delta så fort en fil var laddad — även på fel bana och även på ut-varvet direkt ur
+    depån, där siffran är rent nonsens. Den kommer nu bara till användning när den
+    faktiskt är giltig; annars behålls ACC:s eget delta mot session-bästa, vilket är
+    precis vad man vill se när ingen fil är vald.
+    """
+    if ref.loaded and not ref.matches_track(f.trackId):
+        key = ("track", ref.venue, f.trackId)
+        if key not in _ref_notice:
+            _ref_notice.add(key)
+            print(f"[delta] referensen är inspelad på {ref.venue!r} men banan är "
+                  f"{f.trackId!r} — använder ACC:s eget delta mot session-bästa i stället.")
+    elif ref.loaded and f.outLap:
+        if "outlap" not in _ref_notice:
+            _ref_notice.add("outlap")
+            print("[delta] ut-varv (startade i depån) — referensdelta hoppas över "
+                  "tills du passerat mållinjen.")
+    elif ref.loaded:
+        # Giltig referens: den vinner över ACC:s. `delta()` kan ge None vid mållinjen
+        # (spikskyddet, §8.8) — då ska INGET delta visas, inte ACC:s. Att växla mellan
+        # två olika referenser mellan ramar hade fått siffran att hoppa.
+        f.delta = ref.delta(f.position, f.curLapMs)
+        f.refTotalMs = ref.total_ms()
+        f.deltaSource = "motec" if f.delta is not None else None
+        return
+    f.deltaSource = "acc" if f.delta is not None else None
+
 
 async def run():
     args = parse_args()
@@ -130,7 +165,14 @@ async def run():
                         data = json.loads(cfg_path.read_text(encoding="utf-8"))
                         rp = data.get("reference_ld", "")
                         if rp and rp != ref.path:
+                            _ref_notice.clear()   # ny fil → nya skäl får loggas igen
                             print(f"[engine] ny referens: {rp} → {'OK' if ref.load(rp) else 'MISSLYCKADES'}")
+                        elif not rp and ref.loaded:
+                            # Referensen bortvald i panelen: sluta använda den. Utan
+                            # detta låg den kvar tills motorn startades om.
+                            _ref_notice.clear()
+                            ref._clear()
+                            print("[engine] referensen bortvald — delta kommer nu från ACC:s session-bästa")
                 except FileNotFoundError:
                     pass
                 except Exception as e:
@@ -144,9 +186,7 @@ async def run():
                 try:
                     f = acc.read()
                     if f.connected:
-                        if ref.loaded:
-                            f.delta = ref.delta(f.position, f.curLapMs)
-                            f.refTotalMs = ref.total_ms()
+                        apply_reference(f, ref)
                         frame = f
                     acc_errs = 0
                 except Exception as e:
