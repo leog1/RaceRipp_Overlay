@@ -111,18 +111,30 @@ src-tauri/tauri.conf.json  control-fönster, updater, externalBin, bundle.resour
   Enda felet är sista steget: updater-signering kräver `TAURI_SIGNING_PRIVATE_KEY`,
   som bara finns som GitHub-secret — förväntat lokalt, CI sätter den.
 
+- **Updater-kedjan hela vägen** (v0.2.5): tagg → CI → `latest.json` på
+  `releases/latest/download/` med signatur för alla tre plattformsnycklar →
+  nedladdningsbara artefakter. Den PUBLICERADE sidecarn är dessutom uppackad ur MSI:n
+  och körd: MoTeC-referensen laddas (`varvtid≈136.250s → OK`), WS ger 17 fält, OBS-HTTP
+  svarar 200, och loggen syns medan processen lever.
+  **Verifiera alltid den publicerade artefakten, inte bara att CI blev grön** — 0.2.4
+  var grön och trasig (§8.6c). Packa upp MSI:n med 7-Zip och kör
+  `python engine/verify_sidecar.py <exe>`.
+  Obs: starta den frysta exen via `Start-Process`, inte med `&` + omdirigering i Git
+  Bash — det senare gav tyst ingen output och såg ut som att binären var trasig.
+
 **Kvar att verifiera:**
 - **Riktig ACC-telemetri** — kräver att ACC körs ute på banan. Fältmappningen i
   `sources/acc.py` är skriven mot pyaccsharedmemory-doc men aldrig sedd i drift.
   `engine/acc_test.py` finns för just detta: kör den med ACC igång.
+  Detta är nu det ENDA stora overifierade i datavägen.
+- **Installation från MSI/NSIS** — installerarna byggs och binärerna är körda ur dem,
+  men själva installationen (Program Files-layout, `resource_dir` där) är inte gjord.
 - **DPI-fixen** (§8.2) — användarens skärm kör 100 % skalning, där logiska och
   fysiska pixlar är identiska, så buggen kan inte reproduceras lokalt. Kräver en
   skärm på 125/150 %.
-- **Updater end-to-end** — pubkey finns i configen, men flödet tagg → `latest.json`
-  → "Sök uppdatering" är aldrig körd hela vägen. Kräver en riktig tagg + CI-körning.
-- **Installation från MSI/NSIS** — installerarna byggs och release-exen fungerar från
-  `target/release`, men själva installationen (Program Files-layout, resource_dir där)
-  är inte körd.
+- **"Sök uppdatering"-knappen i appen** — endpointen, signaturerna och artefakterna är
+  verifierade (se ovan), men själva knappen i panelen är aldrig klickad, så
+  nedladdning + installation genom `T.updater` är otestad.
 
 ## 8. Fällor som redan kostat tid — LÄS DENNA
 ### 8.1 Sidecarn: `child.kill()` räcker INTE på Windows
