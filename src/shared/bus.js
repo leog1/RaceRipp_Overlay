@@ -57,6 +57,19 @@ let _hideUntilConnected = false;
 let _lastConnected = false;
 let _gateHidden = null;                 // senast skrivna läge (null = aldrig skrivet)
 
+// ── Startvärden från skalet ───────────────────────────────────────────────────
+// lib.rs injicerar {id, scale, opacity, gate} med initialization_script, alltså
+// INNAN sidan parsas. Det gör att skala/opacitet och grinden gäller redan vid
+// första paint. Hämtades de bara med get_config/get_globals (async) ritade overlayn
+// med CSS-defaulten tills svaret kom — såg avkapat ut när sparad skala var något
+// annat — och blev anropet av med (t.ex. innan staten var registrerad) satt den kvar
+// i fel skala tills man rörde skalreglaget.
+// Saknas INIT (OBS, webbläsare, panelens preview) gäller CSS-defaulten, vilket är
+// rätt där: då finns ingen sparad config att vara osynkad med.
+export const INIT = (() => {
+  try { return globalThis.__OVERLAY_INIT__ || null; } catch { return null; }
+})();
+
 // Körs vi i kontrollpanelens förhandsvisning? Där ska grinden inte slå till —
 // annars blir previewn blank när ACC inte kör och ser trasig ut.
 const IN_PREVIEW = (() => { try { return window.self !== window.top; } catch { return true; } })();
@@ -66,6 +79,12 @@ function _applyGate() {
   if (hidden === _gateHidden) return;   // skriv bara vid ändring (_emit körs 40 ggr/s)
   _gateHidden = hidden;
   document.documentElement.style.visibility = hidden ? 'hidden' : '';
+}
+
+// Grinden sätts direkt vid modulladdning, inte först när get_globals svarar.
+if (INIT && typeof INIT.gate === 'boolean') {
+  _hideUntilConnected = INIT.gate;
+  _applyGate();
 }
 
 // ── Fontgrind ────────────────────────────────────────────────────────────────
@@ -82,14 +101,19 @@ export function fontsReady(timeoutMs = 1500) {
 // alternativ som overlayn deklarerat i registry.json. Fungerar även utan Tauri
 // (t.ex. i OBS eller vanlig webbläsare) — då händer bara inget.
 export function wireShell(applyConfig, applyOption) {
+  // Injicerad skala/opacitet appliceras FÖRST och synkront, före allt async —
+  // annars hinner overlayn ritas i CSS-defaultens skala och ser avkapad ut.
+  // Ligger utanför Tauri-kontrollen nedan så det gäller även om event-API:t saknas.
+  if (INIT) applyConfig({ scale: INIT.scale, opacity: INIT.opacity });
+
   const T = globalThis.__TAURI__;
   if (!T || !T.event) return;
 
   // Denna overlays id (så vi kan filtrera config som gäller andra overlays).
-  // ?id= vinner över fönstrets label: i kontrollpanelens förhandsvisning körs
-  // overlayn i en iframe inuti "control"-fönstret, och då är labeln fel.
-  let label = null;
-  try { label = new URLSearchParams(location.search).get('id'); } catch {}
+  // INIT.id vinner, sedan ?id=: i kontrollpanelens förhandsvisning körs overlayn i
+  // en iframe inuti "control"-fönstret, och då är fönstrets label fel.
+  let label = (INIT && INIT.id) || null;
+  try { if (!label) label = new URLSearchParams(location.search).get('id'); } catch {}
   if (!label) { try { label = T.window.getCurrentWindow().label; } catch {} }
 
   // Global grind: visa overlays först när ACC är ansluten ("Endast när ACC kör").

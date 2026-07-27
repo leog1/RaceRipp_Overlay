@@ -153,10 +153,45 @@ netstat -ano | Select-String ':8777|:8078'          # ska vara tomt
 allt utom 100 % skalning. `save_positions()` konverterar med
 `to_logical(scale_factor())`. Verifierat i tauri 2.11.5-källan, inte gissat.
 
-### 8.3 `app.manage()` måste ske FÖRE fönstren skapas
-Overlay-webviewarna anropar `get_config` så fort de laddar. Är `Mutex<Settings>`
-inte managed ännu svarar kommandot med fel, `bus.js` sväljer det (`.catch`) och
-overlayn ritas med **standardskala i stället för sparad** — helt tyst.
+### 8.3 Startvärden får inte hämtas async — de måste finnas vid första paint
+Detta gav två rapporterade buggar i 0.2.3 som såg helt olika ut men hade samma orsak.
+
+Overlay-webviewarna anropade `get_config` och `get_globals` så fort de laddade. Två
+problem med det:
+1. `app.manage()` kördes EFTER fönsterskapandet, så anropen kunde landa innan
+   `Mutex<Settings>` fanns. Kommandot svarade med fel, `bus.js` svalde det
+   (`.catch`) — och då kom svaret **aldrig**.
+2. Även när anropet lyckas är det async, så det finns alltid ett fönster där
+   overlayn ritar med CSS-defaulten.
+
+Symptomen: overlayn ritas i CSS-defaultens skala i ett fönster som skapats för den
+**sparade** skalan → ser **avkapat** ut (och "löser sig" när man rör skalreglaget,
+för det skickar ett `config`-event som faktiskt kommer fram). Och grinden "endast när
+ACC kör" gäller aldrig → overlayn visas fast den ska vara dold.
+
+Notera hur olika det kan se ut: delta-baren har `--ui-scale:0.9` hårdkodat i CSS, så
+den råkade se rätt ut vid sparad skala 0,9 men avkapad vid allt annat. inputs-trace
+har `--H:150px` (= skala 1.0), så vid sparad skala 0,6 ritades 558×150 px innehåll i
+ett 360×120 px fönster — det som klipptes bort var nederkanten med traces och
+pedalstaplar, alltså **såg den ut att inte finnas alls**.
+
+Fixen: `lib.rs` injicerar `window.__OVERLAY_INIT__ = {id, scale, opacity, gate}` med
+`initialization_script`, som körs innan dokumentet parsas. `bus.js` läser det
+**synkront** och applicerar direkt; `get_config`/`get_globals` är sedan bara
+bekräftelse. Lägg till nya startvärden HÄR, inte som ett nytt async-anrop.
+Saknas INIT (OBS, webbläsare, panelens preview) gäller CSS-defaulten, vilket är rätt
+där — då finns ingen sparad config att vara osynkad med.
+
+### 8.3b Trasig settings.json fick tyst radera layouten
+`load_settings` gjorde `unwrap_or_else(default_settings)` på parse-fel, och nästa
+sparning skrev över filen med standardvärden. Ett avbrutet skrivpass eller en manuell
+redigering med fel decimaltecken räckte för att alla positioner och skalor skulle
+försvinna utan ett ord. Nu döps den trasiga filen om till `settings.corrupt.json`
+och felet loggas.
+
+(Upptäckt genom att `ConvertTo-Json` i PowerShell 5.1 skrev `0,6` med svensk locale
+när settings redigerades i ett test. **Redigera aldrig JSON med PowerShell här** —
+använd Python, som alltid skriver punkt.)
 
 ### 8.4 `emit` och inte `emit_to` för config/option
 Kontrollpanelens preview kör overlayn i en **iframe inuti "control"-fönstret**, så

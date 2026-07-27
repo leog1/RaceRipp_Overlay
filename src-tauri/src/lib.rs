@@ -117,9 +117,23 @@ fn settings_path(app: &AppHandle) -> std::path::PathBuf {
     dir.join("settings.json")
 }
 fn load_settings(app: &AppHandle) -> Settings {
-    match std::fs::read_to_string(settings_path(app)) {
+    let path = settings_path(app);
+    match std::fs::read_to_string(&path) {
         Ok(txt) => {
-            let mut s: Settings = serde_json::from_str(&txt).unwrap_or_else(|_| default_settings());
+            let mut s: Settings = match serde_json::from_str(&txt) {
+                Ok(s) => s,
+                Err(e) => {
+                    // Tyst fallback till standardvärden skrev över hela layouten vid
+                    // minsta parse-fel (avbrutet skrivpass, manuell redigering med fel
+                    // decimaltecken). Lägg den trasiga filen åt sidan i stället, så
+                    // positioner och skalor går att rädda för hand.
+                    let keep = path.with_extension("corrupt.json");
+                    eprintln!("[shell] settings.json kunde ej läsas ({e}). Sparar den som {} och använder standardvärden.",
+                              keep.display());
+                    let _ = std::fs::rename(&path, &keep);
+                    default_settings()
+                }
+            };
             for d in registry() {
                 s.overlays.entry(d.id.clone()).or_insert_with(|| default_state_for(d));
             }
@@ -142,11 +156,32 @@ fn overlay_ids() -> &'static Vec<String> {
 }
 
 // ── Fönsterhantering ────────────────────────────────────────────────────────
-fn create_overlay(app: &AppHandle, def: &OverlayDef, st: &OverlayState) -> tauri::Result<()> {
+fn create_overlay(
+    app: &AppHandle,
+    def: &OverlayDef,
+    st: &OverlayState,
+    hide_until_connected: bool,
+) -> tauri::Result<()> {
     let w = def.base_width * st.scale;
     let h = def.base_height * st.scale;
+    // Skala, opacitet och synk-grinden injiceras FÖRE sidan parsas. Overlayn hämtade
+    // dem tidigare med get_config/get_globals (async) och ritade med CSS-defaulten
+    // tills svaret kom — vilket såg AVKAPAT ut när sparad skala var något annat än
+    // defaulten, och gjorde att grinden "endast när ACC kör" inte hann gälla. Landade
+    // anropet dessutom före app.manage() kom svaret aldrig och overlayn satt kvar i
+    // fel skala tills man rörde reglaget.
+    let init = format!(
+        "window.__OVERLAY_INIT__={};",
+        serde_json::json!({
+            "id": def.id,
+            "scale": st.scale,
+            "opacity": st.opacity,
+            "gate": hide_until_connected,
+        })
+    );
     let win = WebviewWindowBuilder::new(app, &def.id, WebviewUrl::App(def.url.clone().into()))
         .title(&def.title)
+        .initialization_script(&init)
         .inner_size(w, h)
         .position(st.x as f64, st.y as f64)
         .decorations(false)
@@ -294,8 +329,13 @@ fn set_enabled(app: AppHandle, state: State<Mutex<Settings>>, id: String, enable
     if let Some(win) = app.get_webview_window(&id) {
         if enabled { let _ = win.show(); } else { let _ = win.hide(); }
     } else if enabled {
-        let st = { state.lock().unwrap().overlays.get(&id).cloned() };
-        if let (Some(def), Some(st)) = (def_of(&id), st) { let _ = create_overlay(&app, def, &st); }
+        let (st, gate) = {
+            let s = state.lock().unwrap();
+            (s.overlays.get(&id).cloned(), s.hide_until_connected)
+        };
+        if let (Some(def), Some(st)) = (def_of(&id), st) {
+            let _ = create_overlay(&app, def, &st, gate);
+        }
     }
 }
 
@@ -500,12 +540,13 @@ pub fn run() {
                     (d, st)
                 })
                 .collect();
+            let gate = settings.hide_until_connected;
 
             app.manage(Mutex::new(settings));
             start_engine(&handle);
 
             for (def, st) in plan {
-                if let Err(e) = create_overlay(&handle, def, &st) {
+                if let Err(e) = create_overlay(&handle, def, &st, gate) {
                     eprintln!("[shell] kunde ej skapa overlay {}: {e}", def.id);
                 }
             }
