@@ -161,6 +161,19 @@ check("syntetisk referens går genom apply_reference",
       f.deltaSource == "motec" and abs(f.delta - 2.0) < 1e-6,
       f"källa={f.deltaSource} delta={f.delta}")
 
+# ── 9b. Bortvald referens ska sluta gälla direkt ──────────────────────────
+# Panelen kunde tidigare bara LÄGGA TILL en referens, aldrig ta bort den. Nu finns
+# knappen, och då måste motorn faktiskt släppa filen.
+synth.unload()
+check("unload() släpper referensen", not synth.loaded and synth.venue == "",
+      f"loaded={synth.loaded} venue={synth.venue!r}")
+_ref_notice.clear()
+f = acc_frame()
+apply_reference(f, synth)
+check("efter unload kommer deltat från ACC igen",
+      f.deltaSource == "acc" and f.refTotalMs is None,
+      f"källa={f.deltaSource} refTotalMs={f.refTotalMs}")
+
 # ── 10. Banmatchningen mot en RIKTIG .ld ──────────────────────────────────
 real = Reference()
 ld = Path(r"C:\Users\leo\Downloads\2.16.265_Spa_296_MoTeC-1"

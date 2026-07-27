@@ -248,7 +248,10 @@ button.act:hover{background:var(--ctrl-hi);}
             <div class="card">
               <h3>MoTeC-referens</h3>
               <button class="act" id="loadRef">Ladda MoTeC .ld …</button>
-              <div class="refpath" id="refpath">Ingen referens laddad — delta visas som platshållare.</div>
+              <!-- Utan detta gick en referens att lägga till men aldrig att ta bort:
+                   den låg kvar i settings.json och gav ett delta även på andra banor. -->
+              <button class="act" id="clearRef" hidden>Ta bort referens</button>
+              <div class="refpath" id="refpath">Ingen referens laddad — delta mot session-bästa.</div>
             </div>
           </div>
         </div>
@@ -497,13 +500,29 @@ $('aotSwitch').querySelector('input').addEventListener('change', async e => {
 });
 
 /* ── referens (MoTeC) ── */
+const NO_REF = 'Ingen referens laddad — delta mot session-bästa.';
+function showRef(path){
+  $('refpath').textContent = path || NO_REF;
+  $('clearRef').hidden = !path;
+}
+// Visa vad som FAKTISKT är laddat vid start. Utan detta stod det "ingen referens"
+// trots att en låg sparad i settings.json — vilket är precis varför ett oväntat
+// MoTeC-delta kunde dyka upp utan att man förstod varför.
+(async () => {
+  try { showRef((await invoke('get_globals'))?.reference_ld || ''); } catch {}
+})();
+
 $('loadRef').addEventListener('click', async () => {
   try {
     const path = await T.dialog.open({ multiple: false, filters: [{ name: 'MoTeC', extensions: ['ld'] }] });
     if (!path) return;
     await invoke('set_reference', { path });
-    $('refpath').textContent = path;
+    showRef(path);
   } catch(err){ $('refpath').textContent = 'Kunde inte öppna filen: ' + errMsg(err); }
+});
+$('clearRef').addEventListener('click', async () => {
+  try { await invoke('set_reference', { path: '' }); showRef(''); }
+  catch(err){ toast('Kunde inte ta bort referensen: ' + errMsg(err), true); }
 });
 
 /* ── uppdatering ── */

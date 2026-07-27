@@ -171,7 +171,7 @@ async def run():
                             # Referensen bortvald i panelen: sluta använda den. Utan
                             # detta låg den kvar tills motorn startades om.
                             _ref_notice.clear()
-                            ref._clear()
+                            ref.unload()
                             print("[engine] referensen bortvald — delta kommer nu från ACC:s session-bästa")
                 except FileNotFoundError:
                     pass

@@ -118,6 +118,31 @@ for _ in range(40):
 check("40 tappade frames i rad (1 s) håller fortfarande connected",
       last.connected, f"connected={last.connected}")
 
+# ── 2b. Den hållna ramen får inte bära med sig anroparens ändringar ────────
+# __main__ MUTERAR ramen efter read(): apply_reference skriver om delta,
+# refTotalMs och deltaSource. Sparade källan samma objekt som den lämnade ut skrev
+# de ändringarna rakt in i cachen, och nästa hållna ram kom tillbaka med ett
+# MoTeC-delta märkt som ACC:s. Cachen ska vara orörd av vad anroparen gör.
+src_b, sm_b = make_source()
+sm_b.gas = 0.7
+live = src_b.read()
+acc_delta = live.delta
+live.delta = -9.99                        # som apply_reference gör
+live.deltaSource = "motec"
+live.refTotalMs = 136250
+sm_b.script = [False]
+held = src_b.read()
+check("hållen ram bär inte anroparens muterade delta",
+      held.delta == acc_delta, f"höll {held.delta}, ACC gav {acc_delta}")
+check("hållen ram bär inte anroparens deltaSource/refTotalMs",
+      held.deltaSource is None and held.refTotalMs is None,
+      f"källa={held.deltaSource} refTotalMs={held.refTotalMs}")
+held.delta = -1.23                        # mutera ÄVEN den hållna ramen
+sm_b.script = [False]
+held2 = src_b.read()
+check("nästa hållna ram är inte heller smittad",
+      held2.delta == acc_delta, f"höll {held2.delta}, ACC gav {acc_delta}")
+
 # ── 3. Men en RIKTIG frånkoppling måste märkas ─────────────────────────────
 import acc_engine.sources.acc as accsrc   # noqa: E402
 src._last_t -= accsrc.STALE_S + 1.0

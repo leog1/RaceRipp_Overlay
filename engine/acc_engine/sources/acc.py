@@ -2,6 +2,7 @@
 Om biblioteket saknas eller ACC ej är live → connected=False (motorn kör då mock)."""
 from __future__ import annotations
 import time
+from dataclasses import replace
 from typing import Optional
 from .base import Source
 from ..frame import Frame
@@ -28,7 +29,6 @@ class AccSource(Source):
         self._last_t = 0.0
         # Sessionen börjar i depån, så första varvet är alltid ett ut-varv.
         self._out_lap = True
-        self._pit_seen = True
         self._laps: Optional[int] = None
 
     def read(self) -> Frame:
@@ -49,7 +49,7 @@ class AccSource(Source):
             # Håll senaste giltiga ram i stället. Först när det varit tyst i STALE_S
             # är ACC faktiskt borta.
             if self._last is not None and (time.monotonic() - self._last_t) < STALE_S:
-                return self._last
+                return replace(self._last)
             return Frame(connected=False)
         p, g, s = sm.Physics, sm.Graphics, sm.Static
 
@@ -112,7 +112,12 @@ class AccSource(Source):
             completedLaps=laps,
         )
         if frame.connected:
-            self._last = frame
+            # KOPIA, inte samma objekt. __main__ muterar ramen efter read()
+            # (apply_reference skriver om delta/refTotalMs/deltaSource), och delade de
+            # objekt skrevs de ändringarna rakt in i cachen — nästa hållna ram kom då
+            # tillbaka med ett MoTeC-delta märkt som ACC:s. Cachen ska vara orörd av
+            # vad anroparen gör, och den utlämnade ramen orörd av cachen.
+            self._last = replace(frame)
             self._last_t = time.monotonic()
         return frame
 

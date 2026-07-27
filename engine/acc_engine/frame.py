@@ -1,7 +1,7 @@
 """Telemetriramens schema — en gemensam dict alla overlays läser."""
 from __future__ import annotations
-from dataclasses import dataclass, field, asdict
-from typing import Optional, Any
+from dataclasses import dataclass, asdict
+from typing import Optional
 
 
 @dataclass

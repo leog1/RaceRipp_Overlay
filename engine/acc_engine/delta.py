@@ -36,6 +36,11 @@ class Reference:
         self.lap_ms = None
         self.venue = ""
 
+    def unload(self) -> None:
+        """Släpp referensen (användaren tog bort den i panelen). Publik motsvarighet
+        till _clear() så anroparen inte behöver peta i privata delar."""
+        self._clear()
+
     def load(self, path: str) -> bool:
         self._clear()
         try:

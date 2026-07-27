@@ -366,6 +366,13 @@ tolkade `None` som `Frame(connected=False)`, och då föll `__main__` tillbaka p
 rapporteras frånkoppling. **Motorn får aldrig blanda mock och riktig telemetri i samma
 ström** — en overlay har ingen chans att se skillnad.
 
+Den cachade ramen sparas och lämnas ut som **kopia** (`dataclasses.replace`). Första
+versionen delade objekt, och eftersom `__main__` MUTERAR ramen efter `read()`
+(`apply_reference` skriver om `delta`/`refTotalMs`/`deltaSource`) skrevs de ändringarna
+rakt in i cachen — nästa hållna ram kom tillbaka med ett MoTeC-delta märkt som ACC:s.
+Den buggen låg i den publicerade 0.3.1 och hittades vid en granskning, inte av testerna:
+lägg alltid till en kontroll av att cachen är orörd av vad anroparen gör.
+
 Grinden i `bus.js` fick samtidigt hysteres (`GATE_HOLD_MS`, 1,5 s): den döljer först
 när `connected:false` hållit i sig, men visar igen omedelbart. En enstaka tappad ram
 ska aldrig kunna släcka en overlay mitt i en kurva. `tests/overlay-gate.mjs` mäter det.
@@ -439,6 +446,12 @@ gång per skäl — annars är det osynligt varför siffran plötsligt byter inn
 Ett undantag att inte råka bryta: när en giltig referens ger `None` (spikskyddet vid
 mållinjen, §8.8) ska **inget** delta visas, inte ACC:s. Att växla mellan två olika
 referenser mellan ramar får siffran att hoppa.
+
+Panelen kunde dessutom bara LÄGGA TILL en referens, aldrig ta bort den, och visade
+alltid "Ingen referens laddad" även när en låg sparad. Följden var att ett oväntat
+MoTeC-delta varken gick att förklara eller bli av med. Nu hämtas sökvägen med
+`get_globals` vid start och en "Ta bort referens"-knapp anropar `set_reference` med
+tom sträng; motorn ser det i `engine.config.json` och kör `ref.unload()`.
 
 ### 8.9 websockets-API:t
 Installerat: **16.0**, där `websockets.serve` är den nya asyncio-implementationen.

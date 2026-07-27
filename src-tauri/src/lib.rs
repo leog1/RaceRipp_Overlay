@@ -553,12 +553,19 @@ fn set_reference(app: AppHandle, state: State<Mutex<Settings>>, path: String) {
 #[derive(Serialize, Clone)]
 struct GlobalsPayload {
     hide_until_connected: bool,
+    // Panelen visade "ingen referens laddad" även när en låg sparad, så ett oväntat
+    // MoTeC-delta kunde dyka upp utan att man kunde se varför — eller ta bort det.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    reference_ld: String,
 }
 
 #[tauri::command]
 fn get_globals(state: State<Mutex<Settings>>) -> GlobalsPayload {
     let s = state.lock().unwrap();
-    GlobalsPayload { hide_until_connected: s.hide_until_connected }
+    GlobalsPayload {
+        hide_until_connected: s.hide_until_connected,
+        reference_ld: s.reference_ld.clone(),
+    }
 }
 
 // Visa overlays först när motorn är ansluten till ACC. Skickas till alla fönster;
@@ -570,7 +577,12 @@ fn set_hide_until_connected(app: AppHandle, state: State<Mutex<Settings>>, value
         s.hide_until_connected = value;
         save_settings(&app, &s);
     }
-    let _ = app.emit("globals", GlobalsPayload { hide_until_connected: value });
+    // reference_ld är tom här med flit: eventet gäller grinden. bus.js läser bara
+    // hide_until_connected, och panelen hämtar sökvägen med get_globals.
+    let _ = app.emit("globals", GlobalsPayload {
+        hide_until_connected: value,
+        reference_ld: String::new(),
+    });
 }
 
 // ── App-uppstart ────────────────────────────────────────────────────────────
