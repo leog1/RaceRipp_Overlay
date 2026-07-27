@@ -248,7 +248,7 @@ button.act:hover{background:var(--ctrl-hi);}
       <div class="pane" id="pane-om">
         <div class="titleband">
           <h2>ACC Overlay</h2>
-          <p id="omVer">v0.1.0</p>
+          <p id="omVer">—</p>
         </div>
         <div class="controls">
           <div class="cards single">
@@ -362,9 +362,12 @@ function renderOptions(o){
 }
 
 /* ── live-preview (overlayn laddas app-relativt, samma bundle) ── */
+// ?id= säger åt bus.js vilken overlay detta är: iframen kör inuti "control"-
+// fönstret, så fönstrets label hade gett fel id och previewn hade aldrig fått
+// rätt sparad skala/opacitet eller reagerat på config/option-event.
 function setPreview(o){
   const pv = $('pv');
-  const src = '../' + o.url;                 // src/control-panel → src/overlays/…
+  const src = '../' + o.url + '?id=' + encodeURIComponent(o.id);
   if (pv.dataset.src !== src){ pv.dataset.src = src; pv.src = src; }
   fitPreview();
 }
@@ -373,9 +376,12 @@ function fitPreview(){
   const box = $('previewBox'), pv = $('pv');
   const bw = box.clientWidth - 30, bh = box.clientHeight - 30;
   if (bw <= 0 || bh <= 0) return;
-  const s = Math.min(bw / o.base_width, bh / o.base_height, 1);
-  pv.style.width = o.base_width + 'px';
-  pv.style.height = o.base_height + 'px';
+  // Iframen får samma storlek som det riktiga fönstret (base × skala) så previewn
+  // visar exakt det overlayn gör; sedan krymps den för att passa i rutan.
+  const w = o.base_width * (o.scale || 1), h = o.base_height * (o.scale || 1);
+  const s = Math.min(bw / w, bh / h, 1);
+  pv.style.width = w + 'px';
+  pv.style.height = h + 'px';
   pv.style.transform = `translate(-50%,-50%) scale(${s})`;
 }
 addEventListener('resize', () => { if (selectedId) fitPreview(); });
@@ -402,7 +408,7 @@ $('btnReset').addEventListener('click', async () => {
 /* ── skala / opacitet / alltid överst ── */
 $('scale').addEventListener('input', async () => {
   const v = parseFloat($('scale').value); $('scaleVal').textContent = v.toFixed(2) + '×';
-  const o = ov(selectedId); if (o) o.scale = v;
+  const o = ov(selectedId); if (o){ o.scale = v; fitPreview(); }
   try { await invoke('set_scale', { id: selectedId, scale: v }); }
   catch(e){ toast('set_scale: ' + errMsg(e), true); }
 });
@@ -475,7 +481,10 @@ async function loadGlobals(){
   } catch {}
 }
 
-document.fonts.ready.then(() => { loadOverlays(); loadGlobals(); });
+/* Fonten hämtas över nätet — vänta in den, men aldrig i evighet: panelen får inte
+   bli tom bara för att riggen är offline. */
+Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 1500))])
+  .then(() => { loadOverlays(); loadGlobals(); });
 </script>
 </body>
 </html>

@@ -75,10 +75,16 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent
   </div>
 
 <script type="module">
-import { WsBus, wireShell } from '../../shared/bus.js';
+import { WsBus, wireShell, fontsReady } from '../../shared/bus.js';
 
 const prefersReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const Clock = { now(){ return performance.now(); } };   // scroll-tid (lokal)
+const HZ = 30, FRAME_MS = 1000 / HZ;                    // samma tak som delta-bar
+const TAU = 0.05;                                       // s, utjämning av pedalstaplar
+
+/* Ramen kan sakna fält (delvis ram, ovänligt data) — utan detta blir disp NaN och
+   NaN är klistrigt: stapeln fastnar på scaleY(NaN) och etiketten visar "NaN". */
+const num01 = v => (typeof v === 'number' && isFinite(v)) ? (v < 0 ? 0 : v > 1 ? 1 : v) : 0;
 
 class InputsTrace{
   constructor(bus, root){
@@ -90,11 +96,15 @@ class InputsTrace{
               clutch:[root.querySelector('#f-clutch'),root.querySelector('#v-clutch')] };
     this.samples=[]; this.latest={throttle:0,brake:0,clutch:0,abs:false,tc:false};
     this.disp={throttle:0,brake:0,clutch:0};
-    this.VISIBLE_MS=4500; this.HISTORY_MS=8000;
+    // Bara 500 ms marginal utöver det synliga fönstret: allt äldre strokeades ändå
+    // varje frame bara för att klippas bort.
+    this.VISIBLE_MS=4500; this.HISTORY_MS=5000;
     this.col=this._readColors(); this._resize();
     new ResizeObserver(()=>this._resize()).observe(this.graph);
     bus.subscribe(f=>this._onFrame(f));
-    requestAnimationFrame(()=>this._render());
+    this._tick=this._tick.bind(this);
+    this._lastT=Clock.now(); this._nextT=this._lastT;
+    requestAnimationFrame(this._tick);
   }
   _readColors(){const cs=getComputedStyle(document.documentElement),g=n=>cs.getPropertyValue(n).trim();
     return {green:g('--green'),red:g('--red'),tc:g('--tc'),abs:g('--abs')};}
@@ -104,9 +114,12 @@ class InputsTrace{
     this.ctx.setTransform(dpr,0,0,dpr,0,0);
     this.traceW=Math.max(2,Math.round(this.ch*0.018));
     this.plotTop=Math.round(this.ch*0.06);this.plotBot=this.ch-Math.round(this.traceW/2);}
-  _onFrame(f){this.latest=f;
-    this.samples.push({t:Clock.now(),throttle:f.throttle,brake:f.brake,abs:f.abs,tc:f.tc});
-    const cutoff=Clock.now()-this.HISTORY_MS-200;
+  _onFrame(f){
+    const s={t:Clock.now(),throttle:num01(f.throttle),brake:num01(f.brake),
+             clutch:num01(f.clutch),abs:!!f.abs,tc:!!f.tc};
+    this.latest=s;
+    this.samples.push(s);
+    const cutoff=s.t-this.HISTORY_MS-200;
     while(this.samples.length&&this.samples[0].t<cutoff)this.samples.shift();}
   _yOf(v){return this.plotBot-v*(this.plotBot-this.plotTop);}
   _drawLine(now,key,flag,base,alt,pxPerMs){
@@ -118,7 +131,17 @@ class InputsTrace{
       ctx.beginPath();ctx.moveTo(X(s[k]),this._yOf(s[k][key]));ctx.lineTo(X(s[k+1]),this._yOf(s[k+1][key]));
       let m=k+1;while(m<n-1&&((s[m][flag]||s[m+1][flag])===segAlt)){ctx.lineTo(X(s[m+1]),this._yOf(s[m+1][key]));m++;}
       ctx.stroke();k=m;}}
-  _render(){
+  /* 30 Hz-tak med fast deadline. Utan taket ritades canvasen om vid varje vsync
+     (144 Hz på en gamingskärm) på ett transparent always-on-top-fönster, och
+     per-frame-lerpen gjorde dessutom staplarna 2,4× snabbare än på 60 Hz. */
+  _tick(now){
+    requestAnimationFrame(this._tick);
+    if(now<this._nextT) return;
+    this._nextT=Math.max(now,this._nextT+FRAME_MS);
+    const dt=Math.min(0.25,(now-this._lastT)/1000); this._lastT=now;
+    this._render(dt);
+  }
+  _render(dt){
     const ctx=this.ctx,now=Clock.now(),col=this.col;
     ctx.clearRect(0,0,this.cw,this.ch);ctx.save();
     ctx.beginPath();ctx.rect(0,0,this.cw,this.ch);ctx.clip();
@@ -127,12 +150,13 @@ class InputsTrace{
     this._drawLine(now,'brake','abs',col.red,col.abs,pxPerMs);
     this._drawLine(now,'throttle','tc',col.green,col.tc,pxPerMs);
     ctx.restore();
-    const a=prefersReduced?1:0.28;
+    const a=prefersReduced?1:(1-Math.exp(-dt/TAU));   // tidsbaserad, oberoende av Hz
     for(const key of ['throttle','brake','clutch']){
       this.disp[key]+=(this.latest[key]-this.disp[key])*a;const v=this.disp[key];
       const [fill,label]=this.el[key];fill.style.transform=`scaleY(${v.toFixed(4)})`;
-      const pct=Math.round(v*100);label.textContent=pct;label.classList.toggle('active',pct>=2);}
-    requestAnimationFrame(()=>this._render());
+      const pct=Math.round(v*100);
+      if(label.textContent!==String(pct))label.textContent=pct;
+      label.classList.toggle('active',pct>=2);}
   }
 }
 
@@ -141,11 +165,12 @@ new InputsTrace(bus, document.getElementById('overlay'));
 
 wireShell(({scale,opacity})=>{
   if(typeof scale==='number') document.documentElement.style.setProperty('--H',(150*scale)+'px');
-  if(typeof opacity==='number') document.getElementById('ui').style.opacity=opacity;
+  if(typeof opacity==='number') document.getElementById('ui').style.opacity=String(opacity);
 },(opt,val)=>{
   if(opt==='clutch'){ const c=document.getElementById('col-clutch'); if(c) c.style.display = val ? '' : 'none'; }
 });
-document.fonts.ready.then(()=>document.getElementById('overlay').classList.add('ready'));
+// Väntar in fonten men aldrig i evighet (riggen kan vara offline).
+fontsReady().then(()=>document.getElementById('overlay').classList.add('ready'));
 </script>
 </body>
 </html>

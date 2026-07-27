@@ -36,7 +36,8 @@ export class WsBus {
     this._last = f;
     _lastConnected = !!(f && f.connected);
     _applyGate();
-    for (const fn of this._subs) fn(f);
+    // Isolera prenumeranter: en som kastar får inte sluka framen för de andra.
+    for (const fn of this._subs) { try { fn(f); } catch (e) { console.error('[bus]', e); } }
   }
   _connect() {
     let ws;
@@ -54,9 +55,26 @@ export class WsBus {
 // är grinden av → overlayn syns alltid.
 let _hideUntilConnected = false;
 let _lastConnected = false;
+let _gateHidden = null;                 // senast skrivna läge (null = aldrig skrivet)
+
+// Körs vi i kontrollpanelens förhandsvisning? Där ska grinden inte slå till —
+// annars blir previewn blank när ACC inte kör och ser trasig ut.
+const IN_PREVIEW = (() => { try { return window.self !== window.top; } catch { return true; } })();
+
 function _applyGate() {
-  const hidden = _hideUntilConnected && !_lastConnected;
+  const hidden = !IN_PREVIEW && _hideUntilConnected && !_lastConnected;
+  if (hidden === _gateHidden) return;   // skriv bara vid ändring (_emit körs 40 ggr/s)
+  _gateHidden = hidden;
   document.documentElement.style.visibility = hidden ? 'hidden' : '';
+}
+
+// ── Fontgrind ────────────────────────────────────────────────────────────────
+/** Väntar in webbfonten innan overlayn visas (undviker synligt fontbyte), men
+ *  ALDRIG längre än timeout: fonten hämtas över nätet och en spelrigg kan vara
+ *  offline — då får overlayn inte bli hängande osynlig. */
+export function fontsReady(timeoutMs = 1500) {
+  const ready = (document.fonts && document.fonts.ready) || Promise.resolve();
+  return Promise.race([ready, new Promise(r => setTimeout(r, timeoutMs))]);
 }
 
 // ── Skal-integration: lyssna på kontrollpanelens config + edit-läge ──────────
@@ -67,9 +85,12 @@ export function wireShell(applyConfig, applyOption) {
   const T = globalThis.__TAURI__;
   if (!T || !T.event) return;
 
-  // Denna overlays fönster-id (så vi kan filtrera config som gäller andra overlays).
+  // Denna overlays id (så vi kan filtrera config som gäller andra overlays).
+  // ?id= vinner över fönstrets label: i kontrollpanelens förhandsvisning körs
+  // overlayn i en iframe inuti "control"-fönstret, och då är labeln fel.
   let label = null;
-  try { label = T.window.getCurrentWindow().label; } catch {}
+  try { label = new URLSearchParams(location.search).get('id'); } catch {}
+  if (!label) { try { label = T.window.getCurrentWindow().label; } catch {} }
 
   // Global grind: visa overlays först när ACC är ansluten ("Endast när ACC kör").
   try {
@@ -86,7 +107,7 @@ export function wireShell(applyConfig, applyOption) {
 
   // Hämta sparad skala/opacitet/alternativ direkt vid start (undviker fel look först).
   try {
-    T.core.invoke('get_config', { id: label }).then(cfg => {
+    if (label) T.core.invoke('get_config', { id: label }).then(cfg => {
       applyConfig(cfg || {});
       if (applyOption && cfg && cfg.options) {
         for (const [k, v] of Object.entries(cfg.options)) applyOption(k, v);
@@ -108,7 +129,9 @@ export function wireShell(applyConfig, applyOption) {
     document.body.classList.toggle('edit-mode', e.payload === true);
   });
   // I edit-läge: dra overlayn för att positionera (flyttar OS-fönstret).
+  // Aldrig i previewn — där hade det dragit kontrollpanelens fönster.
   addEventListener('mousedown', (ev) => {
+    if (IN_PREVIEW) return;
     if (!document.body.classList.contains('edit-mode')) return;
     if (ev.button !== 0) return;
     try { T.window.getCurrentWindow().startDragging(); } catch {}

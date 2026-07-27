@@ -19,9 +19,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;}
 body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased;}
 
 /* skalbart, positionerbart rot-element — window:t är tajt runt detta */
+/* Opaciteten från kontrollpanelen ligger i --ui-opacity, inte som inline style:
+   annars kör den över opacity:0 och overlayn blir synlig innan första render. */
 #ui{position:absolute;top:34px;left:30px;transform:scale(var(--ui-scale));transform-origin:top left;
   opacity:0;transition:opacity .3s ease;will-change:transform,opacity;}
-#ui.ready{opacity:1;}
+#ui.ready{opacity:var(--ui-opacity,1);}
 .delta-row{display:flex;align-items:center;}
 
 /* ---- CIRKEL ---- */
@@ -112,22 +114,34 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
   </div>
 
 <script type="module">
-import { WsBus, wireShell } from '../../shared/bus.js';
+import { WsBus, wireShell, fontsReady } from '../../shared/bus.js';
 
 /* ---- format ---- */
-const DASH_D = '\u2013.\u2013\u2013';          // –.––   (delta saknas)
+/* Platshallarna har SAMMA cellbredder som ett riktigt varde (se SPEC nedan):
+   annars krymper delta-siffran till en tredjedel av bredden sa fort vardet
+   saknas ett enda frame, vilket syns som ett hopp. */
+const DASH_D = '\u2013\u2013.\u2013\u2013';   // ––.––  (delta saknas)
 const DASH_L = '\u2013\u2013:\u2013\u2013.\u2013\u2013\u2013'; // ––:––.––– (varvtid saknas)
-function fmtDelta(s){return (s>=0?'+':'-')+Math.abs(s).toFixed(2);}
+/* Tecknet kommer från det latchade läget (se signAhead), inte från s självt —
+   annars flimrar '+'/'-' fram och tillbaka när delta ligger och vaggar kring noll. */
+function fmtDelta(s,ahead){return (ahead?'-':'+')+Math.abs(s).toFixed(2);}
 function fmtLap(ms){ms=Math.max(0,Math.round(ms));const m=(ms/60000)|0,se=((ms%60000)/1000)|0,mm=ms%1000;
   return `${String(m).padStart(2,'0')}:${String(se).padStart(2,'0')}.${String(mm).padStart(3,'0')}`;}
 
 /* fasta teckenceller (byggs en gång; vi rör bara textContent) */
-function specFor(str){return [...str].map(ch => ch>='0'&&ch<='9'?'d':(ch==='-'||ch==='+')?'m':'s');}
-function buildCells(el,str){el.innerHTML='';return [...str].map((ch,i)=>{const s=document.createElement('span');
-  s.className='ch '+specFor(str)[i];s.textContent=ch;el.appendChild(s);return s;});}
+/* Platshållarna får explicit cell-spec så de mäter EXAKT som ett riktigt värde
+   ("+0.12" resp. "02:18.120"); annars hoppar bredden när ett värde saknas. */
+const SPEC={
+  [DASH_D]:['m','d','s','d','d'],
+  [DASH_L]:['d','d','s','d','d','s','d','d','d'],
+};
+function specFor(str){return SPEC[str] ||
+  [...str].map(ch => ch>='0'&&ch<='9'?'d':(ch==='-'||ch==='+')?'m':'s');}
+function buildCells(el,str,cls){el.innerHTML='';return [...str].map((ch,i)=>{const s=document.createElement('span');
+  s.className='ch '+cls[i];s.textContent=ch;el.appendChild(s);return s;});}
 function setCells(el,cache,str){
-  if(cache.n!==str.length){cache.nodes=buildCells(el,str);cache.n=str.length;cache.cls=specFor(str);return;}
   const cls=specFor(str);
+  if(cache.n!==str.length){cache.nodes=buildCells(el,str,cls);cache.n=str.length;cache.cls=cls;return;}
   for(let i=0;i<str.length;i++){const nd=cache.nodes[i];
     if(cache.cls[i]!==cls[i]){nd.className='ch '+cls[i];cache.cls[i]=cls[i];}
     if(nd.textContent!==str[i])nd.textContent=str[i];}
@@ -144,69 +158,111 @@ const R=120,MAXDEG=180;
 function polar(a){const r=(a-90)*Math.PI/180;return [140+R*Math.cos(r),140+R*Math.sin(r)];}
 function arcPath(a1){const[sx,sy]=polar(0),[ex,ey]=polar(a1),large=Math.abs(a1)>180?1:0,sw=a1>=0?1:0;
   return `M ${sx.toFixed(2)} ${sy.toFixed(2)} A ${R} ${R} 0 ${large} ${sw} ${ex.toFixed(2)} ${ey.toFixed(2)}`;}
-function valueArc(delta){let s=-delta*MAXDEG;s=Math.max(-MAXDEG,Math.min(MAXDEG,s));return Math.abs(s)<0.6?'':arcPath(s);}
+/* Ingen tomsträng vid små värden: det slog ut bågen HELT i ett frame varje gång
+   delta passerade noll (|delta| < 3.3 ms räckte) — det var blinket. En nollång
+   båge ritar ändå ingenting eftersom stroke-linecap är butt. */
+function valueArc(delta){let s=-delta*MAXDEG;s=Math.max(-MAXDEG,Math.min(MAXDEG,s));return arcPath(s);}
 
 /* ---- state, matad av bussen ---- */
 const REDUCED=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const HZ=30,FRAME_MS=1000/HZ;
-const state={hasDelta:false,target:0,shown:0,bestMs:null,refMs:null,driver:''};
+/* HOLD_MS: motorn skickar enstaka null-ramar (delta.py:s spikskydd vid mållinjen,
+   ACC:s sentinelvärden mellan varv). Utan latch växlar hela overlayn till
+   platshållare för ett par frames och tillbaka = flicker. Vi håller senaste
+   giltiga värde så länge, sedan faller vi tillbaka på platshållaren. */
+const HOLD_MS=700;
+/* DEADBAND: under detta behåller vi föregående tecken, så färg och '+'/'-' inte
+   vänder fram och tillbaka när delta ligger och vaggar kring noll. */
+const DEADBAND=0.02;
+const state={target:0,shown:0,bestMs:null,refMs:null,driver:'',
+             deltaAt:-Infinity,bestAt:-Infinity,refAt:-Infinity};
+let signAhead=null;                      // latchat tecken (true = snabbare/grönt)
 
 const bus=new WsBus();
 bus.subscribe(f=>{
-  state.hasDelta = typeof f.delta === 'number';
-  if(state.hasDelta) state.target=f.delta;
-  state.bestMs = (typeof f.sessionBestMs==='number') ? f.sessionBestMs : null;  // rensa gammalt värde när ACC saknar bästa varv
-  state.refMs  = (typeof f.refTotalMs==='number') ? f.refTotalMs : null;         // referensvarvets totaltid (MoTeC)
+  const now=performance.now();
+  if(typeof f.delta==='number'){
+    // Första värdet snappas in — annars lerpar vi från 0 och tecknet hinner
+    // visas fel i ett par frames innan det landar.
+    if(state.deltaAt===-Infinity){state.shown=f.delta;signAhead=f.delta<0;}
+    state.target=f.delta;state.deltaAt=now;}
+  if(typeof f.sessionBestMs==='number'){state.bestMs=f.sessionBestMs;state.bestAt=now;}
+  if(typeof f.refTotalMs==='number'){state.refMs=f.refTotalMs;state.refAt=now;}   // referensvarvets totaltid (MoTeC)
   if(f.driverName && f.driverName!==state.driver){state.driver=f.driverName;el.driver.textContent=f.driverName;}
 });
 
 /* render — skriv till DOM bara vid ändring, i 30 Hz-tak */
-let lastArc='',lastAhead=null,lastD='',lastB='',lastP='';
-function render(){
-  // best/ref-tid
-  const b = state.bestMs!=null ? fmtLap(state.bestMs) : DASH_L;
-  if(b!==lastB){setCells(el.tBest,cB,b);setCells(el.tRef,cR,b);lastB=b;
-    el.tBest.classList.toggle('faint',state.bestMs==null);el.tRef.classList.toggle('faint',state.bestMs==null);}
+let lastArc='',lastAhead=null,lastD='',lastB='',lastP='',lastFaintD=null,lastFaintB=null,lastFaintP=null;
+function aheadOf(d){                     // hysteres kring noll
+  if(d<-DEADBAND) return true;
+  if(d> DEADBAND) return false;
+  return signAhead===null ? d<0 : signAhead;
+}
+function render(now=performance.now()){
+  // Latch: värden räknas som giltiga HOLD_MS efter senaste ram som hade dem.
+  const hasDelta = (now-state.deltaAt) < HOLD_MS;
+  const bestMs   = (now-state.bestAt)  < HOLD_MS ? state.bestMs : null;
+  const refMs    = (now-state.refAt)   < HOLD_MS ? state.refMs  : null;
 
-  if(!state.hasDelta){
+  // best/ref-tid
+  const b = bestMs!=null ? fmtLap(bestMs) : DASH_L;
+  if(b!==lastB){setCells(el.tBest,cB,b);setCells(el.tRef,cR,b);lastB=b;}
+  if((bestMs==null)!==lastFaintB){lastFaintB=(bestMs==null);
+    el.tBest.classList.toggle('faint',lastFaintB);el.tRef.classList.toggle('faint',lastFaintB);}
+
+  const pbase = refMs!=null ? refMs : bestMs;
+
+  if(!hasDelta){
     if(lastArc!==''){el.arc.setAttribute('d','');lastArc='';}
-    if(lastD!==DASH_D){setCells(el.deltaVal,cD,DASH_D);el.deltaVal.classList.add('faint');lastD=DASH_D;}
-    const pbase = state.refMs!=null ? state.refMs : state.bestMs;
+    if(lastD!==DASH_D){setCells(el.deltaVal,cD,DASH_D);lastD=DASH_D;}
+    if(lastFaintD!==true){lastFaintD=true;el.deltaVal.classList.add('faint');}
     const p = pbase!=null ? fmtLap(pbase) : DASH_L;
-    if(lastP!==p){setCells(el.tPred,cP,p);el.tPred.classList.add('faint');lastP=p;}
+    if(lastP!==p){setCells(el.tPred,cP,p);lastP=p;}
+    if(lastFaintP!==true){lastFaintP=true;el.tPred.classList.add('faint');}
     return;
   }
-  el.deltaVal.classList.remove('faint');el.tPred.classList.remove('faint');
-  const d=state.shown,ahead=d<0;
+  if(lastFaintD!==false){lastFaintD=false;el.deltaVal.classList.remove('faint');}
+  if(lastFaintP!==false){lastFaintP=false;el.tPred.classList.remove('faint');}
+  const d=state.shown,ahead=aheadOf(d); signAhead=ahead;
   const path=valueArc(d); if(path!==lastArc){el.arc.setAttribute('d',path);lastArc=path;}
-  if(ahead!==lastAhead){const col=ahead?'var(--green)':'var(--red)';
+  if(ahead!==lastAhead){
     el.arc.style.stroke=ahead?'#0DE622':'#FF3B3B';el.deltaVal.style.color=el.arc.style.stroke;
     el.cellPred.toggleAttribute('data-slow',!ahead);lastAhead=ahead;}
-  const ds=fmtDelta(d); if(ds!==lastD){setCells(el.deltaVal,cD,ds);lastD=ds;}
-  const pbase = state.refMs!=null ? state.refMs : state.bestMs;
+  const ds=fmtDelta(d,ahead); if(ds!==lastD){setCells(el.deltaVal,cD,ds);lastD=ds;}
   const ps = pbase!=null ? fmtLap(pbase+d*1000) : DASH_L;
   if(ps!==lastP){setCells(el.tPred,cP,ps);lastP=ps;}
 }
 
-let lastT=performance.now();
+/* 30 Hz-tak med fast deadline i stället för "nu minus förra renderingen":
+   det senare sköt en render ett helt refresh-intervall framåt vid minsta jitter,
+   vilket syntes som ryck. */
+let lastT=performance.now(),nextT=lastT;
 function frame(now){
   requestAnimationFrame(frame);
-  const dtMs=now-lastT; if(dtMs<FRAME_MS) return; lastT=now;
-  const dt=Math.min(0.05,dtMs/1000),tau=REDUCED?0.0001:0.20;
+  if(now<nextT) return;
+  nextT=Math.max(now,nextT+FRAME_MS);
+  const dt=Math.min(0.05,(now-lastT)/1000),tau=REDUCED?0.0001:0.20; lastT=now;
   state.shown+=(state.target-state.shown)*(1-Math.exp(-dt/tau));
-  render();
+  render(now);
 }
 
 /* skal: skala/opacitet från kontrollpanelen, edit-läge/drag, alternativ */
 wireShell(({scale,opacity})=>{
-  if(typeof scale==='number') document.documentElement.style.setProperty('--ui-scale',scale);
-  if(typeof opacity==='number') document.getElementById('ui').style.opacity=opacity;
+  if(typeof scale==='number') document.documentElement.style.setProperty('--ui-scale',String(scale));
+  // Via variabel, inte inline opacity: annars kör den över opacity:0 och overlayn
+  // blir synlig innan första render (tomma sifferceller) och sedan poppar texten in.
+  if(typeof opacity==='number') document.documentElement.style.setProperty('--ui-opacity',String(opacity));
 },(opt,val)=>{
   if(opt==='predicted') el.cellPred.style.display = val ? '' : 'none';
 });
 
-document.fonts.ready.then(()=>{document.getElementById('ui').classList.add('ready');
-  render();frame(performance.now());});
+// Rita FÖRST, visa sedan. fontsReady väntar in Montserrat men aldrig i evighet —
+// fonten hämtas över nätet och riggen kan vara offline.
+fontsReady().then(()=>{
+  render();
+  document.getElementById('ui').classList.add('ready');
+  frame(performance.now());
+});
 </script>
 </body>
 </html>
