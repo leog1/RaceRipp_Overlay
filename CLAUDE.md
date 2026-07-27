@@ -136,6 +136,16 @@ src-tauri/tauri.conf.json  control-fönster, updater, externalBin, bundle.resour
   Enda felet är sista steget: updater-signering kräver `TAURI_SIGNING_PRIVATE_KEY`,
   som bara finns som GitHub-secret — förväntat lokalt, CI sätter den.
 
+- **Utgåva 0.3.0 verifierad ur den PUBLICERADE MSI:n** (inte bara grön CI, §8.6c).
+  Alla 12 CI-steg gröna inklusive de nya testsstegen; release har MSI + NSIS + båda
+  `.sig` + `latest.json` med signatur för alla tre plattformsnycklar. MSI:n uppackad
+  med 7-Zip: `verify_sidecar.py` hittar alla sex modulerna i den 21,2 MB stora
+  CI-sidecarn (mindre än lokalbygget är normalt, §8.6c). Binären körd: MoTeC-referensen
+  laddas (`varvtid≈136.250s → OK`), WS ger 25 fält utan NaN, telemetrin rör sig,
+  Broadcasting registrerar, och OBS-HTTP:n svarar 200 på alla fem overlay-filerna.
+  Obs: `refTotalMs` är `None` i den körningen — den sätts först när ACC är ansluten,
+  så det är själva INLÄSNINGEN av referensen som är verifierad här, inte delta-vägen.
+
 - **Updater-kedjan hela vägen** (v0.2.5): tagg → CI → `latest.json` på
   `releases/latest/download/` med signatur för alla tre plattformsnycklar →
   nedladdningsbara artefakter. Den PUBLICERADE sidecarn är dessutom uppackad ur MSI:n
