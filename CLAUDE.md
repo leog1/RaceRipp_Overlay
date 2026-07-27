@@ -246,6 +246,19 @@ disken olika saker och felet återuppstår varje start.
 Overlays måste ändå tåla skräpvärden själva: i OBS och i en webbläsare finns ingen
 Rust-validering framför dem.
 
+**Bakåtkompatibilitet går åt BÅDA håll — och den ena riktningen missades.** Att ny kod
+läser gamla filer verifierades (en `bool` är ett giltigt `Value`). Att **gammal kod inte
+kan läsa nya filer** gjordes det inte: 0.2.5:s `HashMap<String, bool>` kvävs på
+`"window": 4.5`, och då slår §8.3b:s skydd till precis som det ska — filen döps om till
+`settings.corrupt.json` och allt går till standardvärden. Layout, skalor OCH
+`reference_ld` försvinner alltså tyst om man kör en äldre build efter 0.3.0.
+
+Det hände på riktigt under utvecklingen av 0.3.0. Räddningen är att inget är förlorat:
+`settings.corrupt.json` ÄR den gamla filen, med referenssökväg och positioner intakta.
+Lägg därför aldrig till ett fält i settings som en äldre version inte kan
+deserialisera utan att tänka igenom nedgraderingsvägen — och kolla efter en
+`settings.corrupt.json` innan du tror att någon tappat sina inställningar.
+
 ### 8.4 `emit` och inte `emit_to` för config/option
 Kontrollpanelens preview kör overlayn i en **iframe inuti "control"-fönstret**, så
 `emit_to("delta-bar", …)` når den aldrig. Därför skickas `config`/`option` till alla

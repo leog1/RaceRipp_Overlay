@@ -192,12 +192,20 @@ async def run():
 
 
 def main():
-    # Som sidecar är stdout en pipe, inte en terminal, och då blockbuffrar Python.
-    # Följden är att ingenting av loggningen når fram medan motorn lever — vilket gör
-    # hela diagnostiken värdelös just när man behöver den. Tvinga radbuffring.
+    # Som sidecar är stdout en pipe, inte en terminal. Två följder, båda åtgärdade här:
+    #
+    # 1. Python BLOCKBUFFRAR mot en pipe, så ingenting av loggningen når fram medan
+    #    motorn lever — diagnostiken blir värdelös just när man behöver den (§8.6b).
+    # 2. Python väljer LOCALE-kodning mot en pipe, inte UTF-8. Loggen innehåller "→"
+    #    och "≈", som inte finns i cp1252 — på ett Windows utan UTF-8-läge dör motorn
+    #    då på sin FÖRSTA utskrift, innan bussen ens startat. Den frysta sidecarn
+    #    slipper det (PyInstaller kör UTF-8-läge), men `python -m acc_engine` gör inte
+    #    det, vilket är exakt hur utvecklare och CI kör motorn.
+    #    errors="replace" i stället för att kasta: en logg med frågetecken är alltid
+    #    bättre än en död motor.
     for stream in (sys.stdout, sys.stderr):
         try:
-            stream.reconfigure(line_buffering=True)
+            stream.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
         except Exception:
             pass
     try:

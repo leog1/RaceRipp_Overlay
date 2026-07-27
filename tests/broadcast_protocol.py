@@ -15,6 +15,15 @@ from __future__ import annotations
 import asyncio, os, struct, sys, socket
 from pathlib import Path
 
+# Utskrifterna innehåller tecken som inte finns i cp1252 ("→", "≈"). Mot en pipe
+# väljer Python locale-kodning, så på ett Windows utan UTF-8-läge (t.ex. en
+# GitHub-runner) dör testet på sin egen utskrift i stället för att rapportera.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "engine"))
 from acc_engine.sources import acc_broadcast as B   # noqa: E402
 
