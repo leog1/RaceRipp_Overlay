@@ -30,5 +30,12 @@ def main():
     shutil.copy2(exe, dst)
     print("Sidecar klar:", dst)
 
+    # Bygget "lyckas" även om en modul saknas — PyInstaller varnar bara för ett
+    # --hidden-import som inte hittas. Så här släpptes 0.2.4 utan ldparser, alltså
+    # tyst trasig MoTeC-delta.
+    from verify_sidecar import verify
+    if verify(dst) != 0:
+        raise SystemExit(1)
+
 if __name__ == "__main__":
     main()

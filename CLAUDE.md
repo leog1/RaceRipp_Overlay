@@ -232,6 +232,40 @@ Samma sak för `AccSource()`-konstruktorn och för portbindningar.
 (minimerad OBS, strypt browserflik) stallade hela 40 Hz-loopen. Nu skickas parallellt
 och en klient som ligger efter hoppar framen.
 
+### 8.6b Sidecarns loggning nådde aldrig fram (stdout blockbuffras)
+Som sidecar är stdout en **pipe**, inte en terminal, och då blockbuffrar Python. All
+diagnostik i §8.6 var därför osynlig så länge motorn levde — den kom fram först när
+processen dog. `main()` tvingar nu radbuffring med `reconfigure(line_buffering=True)`.
+Lägg aldrig till loggning i motorn utan att kontrollera att den faktiskt syns i en
+körande process, inte bara efter avslut.
+
+### 8.6c CI byggde en trasig sidecar och rapporterade success
+0.2.4 släpptes med en sidecar **utan ldparser**, alltså tyst avstängd MoTeC-delta.
+Tre fel förstärkte varandra:
+- `pip install git+https://github.com/gotzl/ldparser` **kan inte fungera** — repot har
+  varken `setup.py` eller `pyproject.toml`, det är en enda fil. Hämta den råa filen
+  till `engine/` i stället; PyInstaller hittar den via `--paths engine`.
+- `shell: pwsh` stoppar **inte** på ett misslyckat native-kommando, och bara SISTA
+  kommandots exitkod avgör om steget lyckades. pip-felet svaldes. Alla pwsh-steg
+  sätter nu `$ErrorActionPreference = 'Stop'` och
+  `$PSNativeCommandUseErrorActionPreference = $true`.
+- PyInstaller **varnar bara** för ett `--hidden-import` som inte hittas. Bygget
+  lyckas alltså med en modul mindre.
+
+`engine/verify_sidecar.py` kontrollerar nu att arkivet innehåller acc_engine,
+ldparser, pyaccsharedmemory, numpy och websockets. Den körs både av
+`build_sidecar.py` och som eget CI-steg. **Lita aldrig på att ett grönt CI-bygge
+betyder en fungerande sidecar** — verifiera innehållet.
+
+En storleksskillnad är en ledtråd: CI:s sidecar är ~21 MB (ren miljö, bara
+requirements.txt) mot ~58 MB lokalt (utvecklingsmiljön drar med tunga paket). Att den
+är mindre är alltså normalt — men kontrollera vad som saknas, inte bara storleken.
+
+Notera också: ldparser är **GPL-3.0** och bakas in i den distribuerade binären. Att
+filen inte committas i det MIT-licensierade repot ändrar inte vad som gäller för
+själva utgåvan. Det är ett medvetet val (se §3), men värt att veta om releaser börjar
+spridas bredare.
+
 ### 8.7 ACC:s MoTeC-export har INGEN distanskanal
 55 kanaler, noll med "dist" i namnet. `delta.py` integrerar därför **farten** till
 distans — det är **normalvägen** för ACC-filer, inte ett undantag (felet blev 15 ms

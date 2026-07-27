@@ -14,7 +14,7 @@ Kör fristående (utan appen):
   python -m acc_engine --root ../src
 """
 from __future__ import annotations
-import argparse, asyncio, json, time
+import argparse, asyncio, json, sys, time
 from pathlib import Path
 
 from .bus import Bus
@@ -139,6 +139,14 @@ async def run():
 
 
 def main():
+    # Som sidecar är stdout en pipe, inte en terminal, och då blockbuffrar Python.
+    # Följden är att ingenting av loggningen når fram medan motorn lever — vilket gör
+    # hela diagnostiken värdelös just när man behöver den. Tvinga radbuffring.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(line_buffering=True)
+        except Exception:
+            pass
     try:
         asyncio.run(run())
     except KeyboardInterrupt:

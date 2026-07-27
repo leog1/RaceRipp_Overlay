@@ -37,13 +37,34 @@ jobs:
       - name: Bygg Python-motorn (sidecar)
         shell: pwsh
         run: |
+          # UTAN dessa två rader svalde steget fel mitt i skriptet: i pwsh stoppar
+          # inte ett misslyckat native-kommando körningen, och bara SISTA kommandots
+          # exitkod avgör om steget lyckades. Så byggde 0.2.4 en sidecar utan
+          # ldparser medan CI rapporterade success.
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+
           python -m pip install --upgrade pip pyinstaller
           pip install -r engine/requirements.txt
-          pip install git+https://github.com/gotzl/ldparser
+
+          # ldparser är EN fil, inte ett pip-paket: repot har varken setup.py eller
+          # pyproject.toml, så `pip install git+...` kan inte fungera. Hämta filen dit
+          # PyInstaller hittar den via --paths engine. (GPL-3.0, committas ej i repot.)
+          Invoke-WebRequest -UseBasicParsing `
+            -Uri https://raw.githubusercontent.com/gotzl/ldparser/master/ldparser.py `
+            -OutFile engine/ldparser.py
+
           pyinstaller --onefile --name acc-engine --paths engine --collect-submodules acc_engine --hidden-import ldparser engine/run_engine.py
           New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
           # Tauri kräver target-triple-suffix på externalBin:
           Copy-Item dist/acc-engine.exe src-tauri/binaries/acc-engine-x86_64-pc-windows-msvc.exe -Force
+
+      - name: Verifiera att sidecarn har allt
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          python engine/verify_sidecar.py src-tauri/binaries/acc-engine-x86_64-pc-windows-msvc.exe
 
       - name: Bygg & publicera (Tauri)
         uses: tauri-apps/tauri-action@v0
