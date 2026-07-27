@@ -62,23 +62,23 @@ Motorns HTTP-server serverar overlays direkt. Lägg en **Browser Source** mot t.
 Samma WS-data driver både appen och OBS.
 
 ## MoTeC-referens (delta)
-Klicka **Ladda MoTeC .ld** i panelen. Motorn resamplar referensvarvet till ett jämnt
-distansrutnät (distans→tid) och beräknar `delta = din_varvtid − t_ref(din_position)`,
-alltid jämfört i distans. `.ldx`-varvmarkörer hanteras ej — anta en `.ld` = ett varv.
+Klicka **Ladda MoTeC .ld** i panelen. Motorn läser sido-`.ldx` för varvmarkörer och
+väljer **snabbaste hela varvet** ur filen (ACC sparar hela sessioner), resamplar det
+till ett jämnt distansrutnät (distans→tid) och beräknar
+`delta = din_varvtid − t_ref(din_position)`, alltid jämfört i distans. Saknas `.ldx`
+behandlas hela filen som ett varv. ACC:s export har ingen distanskanal, så farten
+integreras till distans (mätt fel: 15 ms över ett varv på Spa).
 
 ## Bygga & paketera (Windows)
 ```
 cd engine && python build_sidecar.py     # PyInstaller → src-tauri/binaries/acc-engine-<triple>.exe
-```
-Lägg sedan tillbaka sidecar-raden i `src-tauri/tauri.conf.json` under `bundle` (den är
-borttagen så dev kör utan att motorn byggts):
-```
-"externalBin": ["binaries/acc-engine"],
-```
-Bygg sedan:
-```
 pnpm tauri build                          # installer i src-tauri/target/release/bundle/
 ```
+`externalBin` ligger kvar i `src-tauri/tauri.conf.json`, så sidecarn måste vara byggd
+minst en gång även för `pnpm tauri dev` — och dev **startar den automatiskt**. Kör
+därför inte motorn manuellt samtidigt; båda vill binda port 8777 och den som förlorar
+avslutar med ett meddelande i loggen. Bygg om sidecarn efter varje ändring i `engine/`,
+annars kör du gammal motorkod.
 
 ## Auto-update via GitHub
 1. Publikt repo. Byt `OWNER/REPO` i `src-tauri/tauri.conf.json` → `plugins.updater.endpoints`.

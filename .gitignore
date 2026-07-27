@@ -15,6 +15,11 @@ __pycache__/
 engine/build/
 engine/dist/
 engine/*.spec
+# PyInstaller lägger sin output i CWD — körs build_sidecar/CI från repo-roten
+# hamnar den här. Ska aldrig committas (≈140 MB).
+/build/
+/dist/
+/*.spec
 .venv/
 venv/
 # MoTeC .ld-parser (GPL-3.0) — hålls lokalt, committas ej i detta MIT-repo

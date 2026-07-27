@@ -3,6 +3,12 @@
 > **Till en ny AI-assistent:** Läs denna fil + `README.md` + `src/shared/tokens.css`
 > så har du hela bilden. Detta är ett pågående bygge; nedan står vad som är gjort,
 > vad som är kvar, och vilka beslut som redan är fattade (ändra dem inte utan skäl).
+>
+> **§8 är den viktigaste sektionen.** Där står fällor som redan har kostat tid att
+> upptäcka. Läs den innan du rör sidecarn, fönsterpositioner eller en overlays
+> renderloop — flera av dem syns INTE i `cargo check` eller i en webbläsare.
+>
+> Denna fil är enda sanningskällan för projektkontexten. `CONTEXT.md` pekar hit.
 
 ## 1. Vad projektet är
 Modulärt overlay-paket för **Assetto Corsa Competizione (ACC)**.
@@ -10,6 +16,7 @@ Modulärt overlay-paket för **Assetto Corsa Competizione (ACC)**.
 - **Visuellt** som **RaceLab**: mörkt, polerat, animerat, premium.
 - Kvalitetsribban är hög och användaren är detaljpetig ner till pixelnivå.
   Leverera aldrig platshållar-fulhet. Oklart designmässigt → **fråga, gissa inte**.
+- Användaren kör svenska. Kod och kommentarer i repot är på svenska.
 
 ## 2. Arkitektur (frikopplad)
 ```
@@ -23,15 +30,24 @@ Overlays (webb)    →  HTML/CSS/SVG/Canvas; en modul per overlay
 **Kärnkrav:** ny overlay = ny modul + en rad i `registry.json`, **utan att röra kärnan**.
 Overlays är "dumma renderare": DATA från WebSocket, CONFIG (skala/opacitet) från Rust-events.
 
+Faktisk processkedja i drift (mätt) — se §8.1, den är inte självklar:
+```
+acc-overlay.exe → acc-engine.exe (PyInstaller-bootloader) → acc-engine.exe (motorn, äger portarna)
+```
+
 ## 3. Teknikval & beslut (redan fattade)
 - **Skal:** Tauri 2 (WebView2) — låg RAM/GPU, pålitlig transparent + klick-igenom + always-on-top. Inte Electron.
 - **Motor:** Python, `pyaccsharedmemory` (ACC delat minne, publik Kunos-SDK), `websockets`, `numpy`.
 - **Referensvarv (delta):** MoTeC `.ld` via `gotzl/ldparser` (**en enda fil**, ej pip-paket, **GPL-3.0**).
-  `.ldx`-varvmarkörer hanteras ej — anta en `.ld` = ett varv.
+  `.ldx`-varvmarkörer **hanteras** — `delta.py:_fastest_lap()` läser dem och väljer
+  snabbaste hela varvet ur filen (ACC sparar hela sessioner, så utan detta jämförs
+  man mot fel data). Saknas `.ldx` behandlas hela filen som ett varv.
 - **Licens:** **MIT**. Vi använder **inte** Race Elements (GPL) kod — bara idéer.
   `ldparser.py` committas **inte** (GPL) — hämtas lokalt, står i `.gitignore`.
-- **Repo:** publikt. OS-kodsignering (SmartScreen) uppskjuten; updater-signatur räcker.
+- **Repo:** publikt (`leog1/RaceRipp_Overlay`). OS-kodsignering (SmartScreen) uppskjuten;
+  updater-signatur räcker.
 - **Settings:** enkel JSON i app-config-mappen (ej LiteDB).
+  Ligger i `%APPDATA%\com.accoverlay.app\settings.json`.
 - **FPS (LÖST):** overlay-fönstren är **små och tajt sizade** runt innehållet — INTE ett
   fullskärms transparent fönster (det tvingar DWM att komponera hela skärmen varje frame).
   Dessutom: inga backdrop-blur över spelet (`--glass:none`), DOM-skrivningar bara vid
@@ -45,6 +61,7 @@ till i tokens FÖRST. **Färg = betydelse, inte dekoration:**
 - `--purple #C869FF` session/overall best · `--rail #D10404` brand-rail
 - `--abs #ECC328` (broms-trace vid ABS) · `--tc #29A3FF` (gas-trace vid TC) · `--clutch #0000FF`
 - Text: `--ink` primär, `--dim` etiketter, `--faint` saknat värde (grå streckad platshållare)
+
 Typografi: **Montserrat**, SemiBold (600) primär; siffror alltid **tabular** (hoppar ej).
 Animation: mjuk lerp mot målvärde; respektera `prefers-reduced-motion`.
 Renderare per element: **SVG** (gauges/bågar/ikoner), **HTML/CSS** (paneler/text/staplar),
@@ -65,42 +82,184 @@ Mät referensbilder pixel-exakt FÖRST; bekräfta struktur i EN avstämning inna
 ## 6. Filkarta
 ```
 src/shared/tokens.css      designtokens (enda källan)
-src/shared/bus.js          WsBus (prenumerera på WS) + wireShell (config/edit/drag)
+src/shared/bus.js          WsBus (prenumerera på WS) + wireShell (config/edit/drag) + fontsReady
 src/overlays/registry.json KATALOG över overlays (kärnan läser denna)
 src/overlays/<id>/index.html  overlay-moduler
-src/control-panel/index.html  kontrollpanelen
+src/control-panel/index.html  kontrollpanelen (inkl. live-preview i iframe)
 engine/acc_engine/         motorn: __main__, bus, http_static, frame, delta, sources/{mock,acc}
-src-tauri/src/lib.rs        fönstermanager, kommandon, sidecar, hotkey, settings
-src-tauri/tauri.conf.json   control-fönster + updater + externalBin (sidecar)
+engine/build_sidecar.py    PyInstaller → src-tauri/binaries/acc-engine-<triple>.exe
+engine/ldparser.py         GPL, gitignorerad, hämtas lokalt
+src-tauri/src/lib.rs       fönstermanager, kommandon, sidecar+Job Object, hotkey, settings
+src-tauri/tauri.conf.json  control-fönster, updater, externalBin, bundle.resources
 .github/workflows/release.yml  CI: bygg Windows-installer + latest.json vid tagg
 ```
 
-## 7. Status: verifierat vs kvar
-**Verifierat på användarens Windows:** motorn kör, WS sänder, OBS-HTTP serverar,
-båda overlays animeras i webbläsaren mot mock-data. (Datavägen är grön.)
-**Kvar att verifiera:** `pnpm tauri dev` (multi-fönster/sidecar/hotkey/drag), riktig
-ACC-telemetri (fältmappning i `sources/acc.py`), MoTeC-delta mot en riktig `.ld`
-(`delta.py` — ldparser-API/kanalnamn), samt updater end-to-end.
+## 7. Status: verifierat vs kvar  (uppdaterad 2026-07-27)
+**Verifierat genom att faktiskt köra:**
+- Motorn: 39 Hz, alla 17 ramfält, inga NaN; WS + OBS-HTTP serverar; två samtidiga
+  instanser avslutar snyggt med tydligt portmeddelande i stället för traceback.
+- `pnpm tauri dev`: kontrollpanel + båda overlay-fönstren skapas ur registret,
+  sidecarn startar automatiskt, panelens preview renderar overlayn korrekt.
+- **Sidecarn dödas** vid stängd panel OCH vid `taskkill /F` på appen (se §8.1).
+- **MoTeC-deltan mot en riktig `.ld`** (Spa, Ferrari 296 GT3): `.ldx`-varvvalet ger
+  136,250 s mot filnamnets 2:16.265 — 15 ms fel över ett helt varv (0,01 %).
+  `ldData.fromfile` + kanalnamn fungerar.
+- **`pnpm tauri build`**: MSI + NSIS-installer byggs. `bundle.resources` lägger de 6
+  overlay-filerna i `web/` vid exen, `lib.rs` skickar `--root <resource_dir>/web` till
+  sidecarn, och OBS-HTTP:n svarar 200 på `/overlays/delta-bar/index.html` m.fl. i
+  release. Sidecarn städas upp även i release-bygget.
+  Enda felet är sista steget: updater-signering kräver `TAURI_SIGNING_PRIVATE_KEY`,
+  som bara finns som GitHub-secret — förväntat lokalt, CI sätter den.
 
-## 8. Kända troliga justeringar (första riktiga bygget)
-- Tauri-2 **capability** för egna kommandon om panelen ej kan anropa `get_overlays` m.fl.
-- **sidecar/externalBin:** `externalBin` är borttagen ur config så DEV kör direkt.
-  Lägg tillbaka den + bygg sidecar (`build_sidecar.py`) endast vid paketering; namnet måste vara `acc-engine-<target-triple>.exe`.
-- **updater-pubkey** tom tills `pnpm tauri signer generate` körts.
-- `sources/acc.py`: `pyaccsharedmemory`-fältnamn kan skilja mellan versioner (samlade på ett ställe).
-- `delta.py`: verifiera `ldData.fromfile` + kanalnamn (distans/speed) mot en riktig `.ld`.
+**Kvar att verifiera:**
+- **Riktig ACC-telemetri** — kräver att ACC körs ute på banan. Fältmappningen i
+  `sources/acc.py` är skriven mot pyaccsharedmemory-doc men aldrig sedd i drift.
+  `engine/acc_test.py` finns för just detta: kör den med ACC igång.
+- **DPI-fixen** (§8.2) — användarens skärm kör 100 % skalning, där logiska och
+  fysiska pixlar är identiska, så buggen kan inte reproduceras lokalt. Kräver en
+  skärm på 125/150 %.
+- **Updater end-to-end** — pubkey finns i configen, men flödet tagg → `latest.json`
+  → "Sök uppdatering" är aldrig körd hela vägen. Kräver en riktig tagg + CI-körning.
+- **Installation från MSI/NSIS** — installerarna byggs och release-exen fungerar från
+  `target/release`, men själva installationen (Program Files-layout, resource_dir där)
+  är inte körd.
 
-## 9. Så återupptar du i en ny chatt
-1. Ge assistenten detta repo (eller åtminstone `CONTEXT.md` + `README.md` + `tokens.css`).
-2. Säg vilken overlay/uppgift som står näst (t.ex. "bygg overlay 5, Laptime log").
-3. Bifoga referensbild(er) rakt framifrån (transparent + mörk bakgrund; 2–3 tillstånd
-   för element som ändrar färg/fyllning) — assistenten mäter pixel-exakt innan kod.
-4. Håll principen: mät först, bekräfta struktur, en overlay i taget, ändra ej kärnan.
+## 8. Fällor som redan kostat tid — LÄS DENNA
+### 8.1 Sidecarn: `child.kill()` räcker INTE på Windows
+PyInstaller `--onefile` kör en bootloader som packar upp och startar den riktiga
+motorn som ett **eget barn**. Tauris `CommandChild::kill()` gör `TerminateProcess`
+på bara den direkta barnprocessen, och Windows dödar inte efterkommande. Resultat:
+bootloadern dog, **motorn låg kvar och höll port 8777/8078** — och nästa appstart
+fick en sidecar som inte kunde binda och dog tyst.
+
+Lösningen i `lib.rs:confine_engine()` är ett **Job Object** med
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. Handtaget läcks medvetet: OS:et stänger det
+när appen dör *hur som helst*, vilket dödar hela trädet även vid krasch/taskkill.
+Jobbet måste tilldelas **direkt efter spawn** — barn ärver jobbet vid skapandet, så
+en sen tilldelning missar bootloaderns barn.
+
+**Detta syns inte i `cargo check`.** Verifiera alltid så här:
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='acc-engine.exe' OR Name='acc-overlay.exe'" |
+  Select ProcessId, ParentProcessId, Name          # ska visa 3 processer i kedja
+# stäng panelen, vänta 3 s, kör igen → ska vara tomt
+netstat -ano | Select-String ':8777|:8078'          # ska vara tomt
+```
+
+### 8.2 Tauri: logiska vs fysiska pixlar
+`WebviewWindowBuilder::position(x,y)` och `set_position(LogicalPosition)` tar
+**logiska** pixlar. `outer_position()` returnerar **fysiska**. Att spara det ena och
+återställa det andra får fönstren att vandra med skalfaktorn vid varje omstart på
+allt utom 100 % skalning. `save_positions()` konverterar med
+`to_logical(scale_factor())`. Verifierat i tauri 2.11.5-källan, inte gissat.
+
+### 8.3 `app.manage()` måste ske FÖRE fönstren skapas
+Overlay-webviewarna anropar `get_config` så fort de laddar. Är `Mutex<Settings>`
+inte managed ännu svarar kommandot med fel, `bus.js` sväljer det (`.catch`) och
+overlayn ritas med **standardskala i stället för sparad** — helt tyst.
+
+### 8.4 `emit` och inte `emit_to` för config/option
+Kontrollpanelens preview kör overlayn i en **iframe inuti "control"-fönstret**, så
+`emit_to("delta-bar", …)` når den aldrig. Därför skickas `config`/`option` till alla
+fönster och filtreras på payloadens `id` i `bus.js`. Previewen får sitt id via
+`?id=<overlay>` i iframe-URL:en, eftersom fönstrets label där är `control`.
+
+### 8.5 Flicker-mönster att aldrig upprepa
+Alla dessa fanns i delta-baren och gav synligt flimmer:
+- **Tröskel som slår ut ett element helt.** `valueArc()` returnerade `''` när
+  vinkeln var < 0,6°, vilket tömde bågens `d` i exakt ett frame vid varje
+  nollpassage. Rita hellre alltid — en nollång båge med `stroke-linecap:butt`
+  ritar ändå ingenting, men *poppar* inte.
+- **Tecken/färg direkt ur ett utjämnat värde.** Ge det ett dödband (`DEADBAND`,
+  ±0,02 s) och latcha föregående tecken, annars vänder grönt/rött fram och
+  tillbaka kring noll.
+- **Platshållare med annan bredd än värdet.** `–.––` var 1,20em mot värdets
+  2,72em. Ge platshållaren explicit cell-spec (`SPEC` i delta-baren) så bredden
+  är identisk.
+- **Ingen latch på fält som kan saknas.** Motorn skickar enstaka `null`
+  (mållinjeskyddet i `delta.py`, ACC:s sentinelvärden). Håll senaste giltiga värde
+  i `HOLD_MS` (700 ms) innan du faller tillbaka på platshållaren.
+- **DOM-skrivning varje ram utan ändringskontroll.** `_applyGate()` skrev
+  `documentElement.style.visibility` 40 ggr/s.
+- **Per-frame-lerp i stället för tidsbaserad.** `x += (mål-x)*0.28` går 2,4×
+  snabbare på 144 Hz än 60 Hz. Använd `1-Math.exp(-dt/tau)`.
+- **30 Hz-grind på "nu minus förra renderingen".** Minsta jitter sköt en render ett
+  helt refresh-intervall. Använd fast deadline: `if(now<nextT)return;
+  nextT=Math.max(now,nextT+FRAME_MS)`.
+
+### 8.6 Motorn får aldrig dö tyst
+ACC:s delade minne kan försvinna mitt i en session (alt-F4) och kasta. Utan
+try/except runt källäsningen dog hela processen och varje overlay frös på sista
+ramen — utan synligt fel, för sidecarns stderr syns inte i release.
+Samma sak för `AccSource()`-konstruktorn och för portbindningar.
+
+`bus.broadcast()` får inte awaita klienterna i tur och ordning: en trög klient
+(minimerad OBS, strypt browserflik) stallade hela 40 Hz-loopen. Nu skickas parallellt
+och en klient som ligger efter hoppar framen.
+
+### 8.7 ACC:s MoTeC-export har INGEN distanskanal
+55 kanaler, noll med "dist" i namnet. `delta.py` integrerar därför **farten** till
+distans — det är **normalvägen** för ACC-filer, inte ett undantag (felet blev 15 ms
+över ett varv). Kanalmatchningen provar exakt namn före delsträng, för både `SPEED`
+och `WHEEL_SPEED_LF` innehåller "speed".
+
+### 8.8 Delta-spikskyddet är proportionellt mot varvlängden
+Vid mållinjen kan position (wrappar till 0) och varvtid (nollställs) vara ur synk ett
+frame → falsk spik med magnitud ≈ 0,99 × varvet. Tröskeln är **0,8 × varvtiden**, inte
+en absolut sekundgräns: den skalar då själv mellan Spa (109 s) och Nordschleife
+(388 s). **Klampa inte deltan och sätt ingen fast gräns** — på långa banor (24h
+Nordschleife) är en äkta delta på tiotals sekunder både möjlig och intressant, och
+användaren vill se hela den. Overlayns siffra får växa till 6–7 tecken då; det är
+avsiktligt.
+
+### 8.9 websockets-API:t
+Installerat: **16.0**, där `websockets.serve` är den nya asyncio-implementationen.
+`await websockets.serve(...)` ger ett `Server` med `close()`/`wait_closed()` — det
+fungerar på både legacy (12–13) och nya (14–16), så `Bus.start()` är versionsneutral.
+Handlern tar **ett** argument (`ws`), inte `(ws, path)`.
+
+### 8.10 Öppna frågor / medvetna skulder
+- **Fonten hämtas från Google Fonts** i alla tre HTML-filerna. `fontsReady()` gör att
+  starten inte hänger utan nät, men en offline-rigg ritar i fallback-font och
+  designen bryts. Rätt fix: vendorera Montserrat WOFF2 till `src/shared/fonts/`
+  och lägga in `@font-face`. Kräver binärfilerna.
+- `dist/` och `build/` (PyInstaller-output, ~140 MB) låg committade i historiken fram
+  till 2026-07-27 och är nu avspårade + gitignorerade. Blobbarna finns kvar i äldre
+  commits; en `git filter-repo` + force-push krävs för att verkligen ta bort dem.
+
+## 9. Så verifierar du utan att gissa
+- **Overlay-logik headless:** plocka ut `<script type="module">` ur HTML-filen, byt
+  importraden mot stubbar för `WsBus`/`wireShell`/`fontsReady`, fejka
+  `document`/`performance`/`requestAnimationFrame` och driv `frame(now)` manuellt i
+  node. Då kan man mäta saker per frame — t.ex. att bågens `d` aldrig blir `''`. Kör
+  samma harness mot `git show HEAD:<fil>` för att bevisa att den fångar buggen.
+- **Motorn:** starta som subprocess, anslut med `websockets.connect`, samla N ramar
+  och kontrollera fält/takt/NaN. Starta en andra instans för att testa portkonflikt.
+- **MoTeC:** `Reference().load(path)` mot en riktig `.ld` och skriv ut `lap_ms`,
+  `t_at()` vid några distanser samt `delta()` för både äkta värden och
+  mållinje-artefakten (`pos=0.999, cur_lap≈0`).
+- **Rust-API:er:** läs källan i `~/.cargo/registry/src/*/tauri-2.11.5/` i stället för
+  att lita på minnet. Logisk/fysisk-buggen (§8.2) hittades så.
+- **Appen:** skärmdump med `System.Drawing.Graphics.CopyFromScreen`, och stäng
+  kontrollpanelen med `WM_CLOSE` till rätt hwnd (appens `MainWindow` kan vara ett
+  overlay-fönster, så enumerera fönster och matcha på titeln "Control").
 
 ## 10. Kör/bygg (kort)
 ```
 # Motor (egen terminal):  cd engine && pip install -r requirements.txt && python -m acc_engine --root ../src
 # App:                    pnpm install && pnpm tauri dev
-# MoTeC senare:           (i engine\)  hämta ldparser.py  →  lägg i .gitignore
+# MoTeC:                  (i engine\) hämta ldparser.py från gotzl/ldparser (gitignorerad)
 # Paketera (Windows):     cd engine && python build_sidecar.py  &&  cd .. && pnpm tauri build
 ```
+`externalBin` **ligger kvar** i `tauri.conf.json`, så `pnpm tauri dev` kräver att
+sidecarn är byggd en gång — och dev startar den automatiskt. Kör därför **inte**
+motorn manuellt samtidigt: de krigar om port 8777 (den andra avslutar snyggt, men du
+vet inte vilken som vann). Bygg om sidecarn efter varje ändring i `engine/`, annars
+testar du gammal motorkod.
+
+## 11. Så återupptar du i en ny chatt
+1. Ge assistenten detta repo (CLAUDE.md läses automatiskt av Claude Code).
+2. Säg vilken overlay/uppgift som står näst (t.ex. "bygg overlay 5, Laptime log").
+3. Bifoga referensbild(er) rakt framifrån (transparent + mörk bakgrund; 2–3 tillstånd
+   för element som ändrar färg/fyllning) — assistenten mäter pixel-exakt innan kod.
+4. Håll principen: mät först, bekräfta struktur, en overlay i taget, ändra ej kärnan.
