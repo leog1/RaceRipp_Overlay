@@ -43,6 +43,16 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent
   border:1px solid var(--slot-edge);border-radius:var(--bar-r);overflow:hidden;}
 .bar-fill{position:absolute;left:0;right:0;bottom:0;top:0;transform-origin:bottom center;transform:scaleY(0);}
 .bar-fill.clutch{background:var(--clutch);} .bar-fill.brake{background:var(--red);} .bar-fill.throttle{background:var(--green);}
+/* Referensmärke på stapeln: tunn linje vid referensvarvets värde just här på banan.
+   Vit och halvgenomskinlig med flit — den ska läsas som "inte du" utan att lägga
+   beslag på grönt/rött, som redan betyder kanal.
+   Positioneras med transform och inte med bottom i procent: värdet ändras 30 ggr/s
+   under körning, och bottom hade tvingat omlayout varje gång. §3 säger animera bara
+   transform/opacity. --m är andelen 0..1 och sätts från JS. */
+.bar-mark{position:absolute;left:-1px;right:-1px;height:2px;bottom:0;
+  background:rgba(255,255,255,.72);box-shadow:0 0 0 1px rgba(0,0,0,.55);
+  pointer-events:none;display:none;will-change:transform;
+  transform:translateY(calc(var(--bar-h) * -1 * var(--m, 0)));}
 
 .edit-mode #ui{outline:2px dashed var(--amber);outline-offset:8px;border-radius:8px;cursor:move;}
 .edit-badge{position:fixed;top:8px;left:8px;display:none;gap:8px;padding:6px 10px;border-radius:8px;
@@ -68,8 +78,8 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent
       </div>
       <div class="bars">
         <div class="bar-col" id="col-clutch"><div class="bar-value" id="v-clutch">0</div><div class="bar-slot"><div class="bar-fill clutch" id="f-clutch"></div></div></div>
-        <div class="bar-col"><div class="bar-value" id="v-brake">0</div><div class="bar-slot"><div class="bar-fill brake" id="f-brake"></div></div></div>
-        <div class="bar-col"><div class="bar-value" id="v-throttle">0</div><div class="bar-slot"><div class="bar-fill throttle" id="f-throttle"></div></div></div>
+        <div class="bar-col"><div class="bar-value" id="v-brake">0</div><div class="bar-slot"><div class="bar-fill brake" id="f-brake"></div><div class="bar-mark" id="m-brake"></div></div></div>
+        <div class="bar-col"><div class="bar-value" id="v-throttle">0</div><div class="bar-slot"><div class="bar-fill throttle" id="f-throttle"></div><div class="bar-mark" id="m-throttle"></div></div></div>
       </div>
     </div>
   </div>
@@ -80,6 +90,12 @@ import { WsBus, wireShell, fontsReady, startLoop } from '../../shared/bus.js';
 const prefersReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const Clock = { now(){ return performance.now(); } };   // scroll-tid (lokal)
 const TAU = 0.05;                                       // s, utjämning av pedalstaplar
+/* Spökspårets nedtoning. 0.38 är valt så referensen går att följa men aldrig
+   konkurrerar med din egen insats — den ska läsas som djup, inte som en andra linje. */
+const GHOST_ALPHA = 0.38;
+/* Samma latch-princip som HOLD_MS i delta-baren (§8.5): motorn skickar null enstaka
+   ramar vid mållinjen, och utan hållning fick spökspåret hål som syns som blink. */
+const REF_HOLD_MS = 700;
 
 /* Ramen kan sakna fält (delvis ram, ovänligt data) — utan detta blir disp NaN och
    NaN är klistrigt: stapeln fastnar på scaleY(NaN) och etiketten visar "NaN". */
@@ -93,8 +109,10 @@ class InputsTrace{
     this.el={ throttle:[root.querySelector('#f-throttle'),root.querySelector('#v-throttle')],
               brake:[root.querySelector('#f-brake'),root.querySelector('#v-brake')],
               clutch:[root.querySelector('#f-clutch'),root.querySelector('#v-clutch')] };
-    this.samples=[]; this.latest={throttle:0,brake:0,clutch:0,abs:false,tc:false};
+    this.marks={ throttle:root.querySelector('#m-throttle'), brake:root.querySelector('#m-brake') };
+    this.samples=[]; this.latest={throttle:0,brake:0,clutch:0,abs:false,tc:false,rThrottle:null,rBrake:null};
     this.disp={throttle:0,brake:0,clutch:0};
+    this.ghost=true; this._ref=null;
     this.setWindow(4.5);
     this.col=this._readColors(); this._resize();
     new ResizeObserver(()=>this._resize()).observe(this.graph);
@@ -119,12 +137,50 @@ class InputsTrace{
     this.traceW=Math.max(2,Math.round(this.ch*0.018));
     this.plotTop=Math.round(this.ch*0.06);this.plotBot=this.ch-Math.round(this.traceW/2);}
   _onFrame(f){
-    const s={t:Clock.now(),throttle:num01(f.throttle),brake:num01(f.brake),
-             clutch:num01(f.clutch),abs:!!f.abs,tc:!!f.tc};
+    const now=Clock.now();
+    /* Referensvarvets pedaler sparas i SAMMA sampel som dina egna. Motorn skickar
+       värdet för nuvarande position, så spöket hamnar automatiskt i linje med det
+       aktiva spåret — trots att x-axeln här är TID och referensen är indexerad på
+       POSITION. Overlayn behöver alltså ingen egen positionsbokföring.
+       Latch enligt §8.5: motorn skickar null enstaka ramar (mållinjens spikskydd),
+       och utan hållning hade spökspåret fått hål som syns som blink i en linje. */
+    const rt=typeof f.refThrottle==='number'?num01(f.refThrottle):null;
+    const rb=typeof f.refBrake==='number'?num01(f.refBrake):null;
+    if(rt!==null||rb!==null){ this._ref={t:now,throttle:rt,brake:rb}; }
+    const held=(this._ref&&(now-this._ref.t)<REF_HOLD_MS)?this._ref:null;
+    const s={t:now,throttle:num01(f.throttle),brake:num01(f.brake),
+             clutch:num01(f.clutch),abs:!!f.abs,tc:!!f.tc,
+             rThrottle:held?held.throttle:null, rBrake:held?held.brake:null};
     this.latest=s;
     this.samples.push(s);
     const cutoff=s.t-this.HISTORY_MS-200;
     while(this.samples.length&&this.samples[0].t<cutoff)this.samples.shift();}
+  /* Spökspår: referensvarvet i samma kulör som ditt eget, men tunnare och nedtonat,
+     ritat UNDER. Samma grepp som MoTeC i2 och RaceLab använder för jämförelsevarv —
+     det inför inget nytt färgspråk, så "grönt = gas" håller. ABS/TC färgar med flit
+     bara ditt eget spår; referensens vore bara brus. */
+  _drawGhost(now,key,color,pxPerMs){
+    if(!this.ghost)return;
+    const s=this.samples,n=s.length; if(n<2)return; const ctx=this.ctx;
+    const X=smp=>Math.round(this.cw-(now-smp.t)*pxPerMs);
+    ctx.save();
+    ctx.globalAlpha=GHOST_ALPHA;
+    ctx.strokeStyle=color;
+    ctx.lineWidth=Math.max(1,Math.round(this.traceW*0.6));
+    ctx.lineJoin='miter';ctx.miterLimit=12;ctx.lineCap='butt';
+    let started=false,any=false;
+    ctx.beginPath();
+    for(let k=0;k<n;k++){
+      const v=s[k][key];
+      if(typeof v!=='number'||!isFinite(v)){started=false;continue;}  // hål = ingen referens där
+      const x=X(s[k]),y=this._yOf(v);
+      if(started){ctx.lineTo(x,y);any=true;} else {ctx.moveTo(x,y);started=true;}
+    }
+    // Stroke bara om vi faktiskt la till geometri. Utan detta anropades stroke() på
+    // en tom path 60 ggr/s så fort ingen referens fanns — gratis arbete, och det
+    // gjorde dessutom ritanropen omöjliga att mäta i testet.
+    if(any)ctx.stroke();
+    ctx.restore();}
   _yOf(v){return this.plotBot-v*(this.plotBot-this.plotTop);}
   _drawLine(now,key,flag,base,alt,pxPerMs){
     const s=this.samples,n=s.length; if(n<2)return; const ctx=this.ctx;
@@ -140,7 +196,10 @@ class InputsTrace{
     ctx.clearRect(0,0,this.cw,this.ch);ctx.save();
     ctx.beginPath();ctx.rect(0,0,this.cw,this.ch);ctx.clip();
     const pxPerMs=this.cw/this.VISIBLE_MS;
-    // Fast ritordning: broms under, gas överst → baslinjen flimrar inte färg vid vila.
+    // Ritordningen är hela poängen: spöket underst, sedan broms, sedan gas överst.
+    // Din egen insats får aldrig hamna bakom referensens.
+    this._drawGhost(now,'rBrake',col.red,pxPerMs);
+    this._drawGhost(now,'rThrottle',col.green,pxPerMs);
     this._drawLine(now,'brake','abs',col.red,col.abs,pxPerMs);
     this._drawLine(now,'throttle','tc',col.green,col.tc,pxPerMs);
     ctx.restore();
@@ -151,6 +210,21 @@ class InputsTrace{
       const pct=Math.round(v*100);
       if(label.textContent!==String(pct))label.textContent=pct;
       label.classList.toggle('active',pct>=2);}
+    this._markBars();
+  }
+  /* Referensmärke på pedalstaplarna: en tunn linje tvärs stapeln vid referensens
+     värde just här på banan. Ligger märket ovanför din fyllnad gav referensen mer.
+     Skrivs bara vid ändring — _render kör 30 ggr/s (§8.5). */
+  _markBars(){
+    for(const [key,refKey] of [['throttle','rThrottle'],['brake','rBrake']]){
+      const mark=this.marks[key]; if(!mark)continue;
+      const v=this.ghost?this.latest[refKey]:null;
+      const show=(typeof v==='number');
+      if(show!==mark._shown){mark._shown=show;mark.style.display=show?'':'none';}
+      if(!show)continue;
+      const m=v.toFixed(4);
+      if(mark._at!==m){mark._at=m;mark.style.setProperty('--m',m);}
+    }
   }
 }
 
@@ -163,6 +237,7 @@ wireShell(({scale,opacity})=>{
 },(opt,val)=>{
   if(opt==='clutch'){ const c=document.getElementById('col-clutch'); if(c) c.style.display = val ? '' : 'none'; }
   if(opt==='window') trace.setWindow(val);
+  if(opt==='ghost') trace.ghost = !!val;
 });
 // Väntar in fonten men aldrig i evighet (riggen kan vara offline).
 fontsReady().then(()=>document.getElementById('overlay').classList.add('ready'));

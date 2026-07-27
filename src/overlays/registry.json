@@ -18,7 +18,11 @@
         "driverName"
       ],
       "options": [
-        { "id": "predicted", "label": "Predicted-kolumn", "default": true }
+        {
+          "id": "predicted",
+          "label": "Predicted-kolumn",
+          "default": true
+        }
       ]
     },
     {
@@ -40,9 +44,26 @@
         "tc"
       ],
       "options": [
-        { "id": "clutch", "label": "Kopplingsstapel", "default": true },
-        { "id": "window", "type": "float", "label": "Tidsfönster", "unit": " s",
-          "default": 4.5, "min": 2, "max": 10, "step": 0.5 }
+        {
+          "id": "clutch",
+          "label": "Kopplingsstapel",
+          "default": true
+        },
+        {
+          "id": "window",
+          "type": "float",
+          "label": "Tidsfönster",
+          "unit": " s",
+          "default": 4.5,
+          "min": 2,
+          "max": 10,
+          "step": 0.5
+        },
+        {
+          "id": "ghost",
+          "label": "Referensspår (ghost)",
+          "default": true
+        }
       ]
     }
   ]

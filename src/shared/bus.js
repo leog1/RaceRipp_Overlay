@@ -25,6 +25,12 @@
 //   outLap     bool      varvet startade i depån → referensdelta är meningslöst
 //   inPitLane  bool
 //   completedLaps int
+//   refThrottle refBrake  0..1|null   referensvarvets pedaler VID NUVARANDE POSITION
+//              — spökspåren i inputs-trace. Satta bara när deltaSource === 'motec'.
+//              Motorn skickar dem per ram just för att overlayn inte ska behöva
+//              hålla reda på position: spara dem i samma sampel som dina egna värden
+//              så ligger spöket i linje med det aktiva spåret, trots att trace-axeln
+//              är TID och referensen är indexerad på POSITION.
 //
 // Broadcasting (ACC:s UDP-API, andra bilar). Alla null när det är av:
 //   cars       array|null   per bil {i, spline, pos, laps, loc, kmh, deltaMs, bestMs …}

@@ -91,7 +91,7 @@ Renderare per element: **SVG** (gauges/bågar/ikoner), **HTML/CSS** (paneler/tex
 | 1 | **Delta + varvtidsrad** | KLAR (look+funktion+animation), kopplad på bussen | cirkel: 0=topp, grön medurs=snabbare, full båge 180°=1.0 s |
 | 2 | Delta-graf + minisektorer + hörnkarta | **ej byggd** | hörnkarta/kurvnummer/graf är **banberoende, ritas live** — hårdkoda ALDRIG kurvform |
 | 3 | Inputs-HUD (växel/fart/ratt/pedaler) | delvis (inputs-trace KLAR & kopplad) | ratt-vinkel + växel/fart-modul återstår |
-| 4 | Inputs-trace (gas/broms + staplar) | KLAR, kopplad på bussen | ABS=gult trace, TC=blått; Canvas rullande; tidsfönster 2–10 s valbart |
+| 4 | Inputs-trace (gas/broms + staplar) | KLAR, kopplad på bussen | ABS=gult trace, TC=blått; Canvas rullande; tidsfönster 2–10 s valbart; spökspår mot MoTeC-referensen |
 | 5 | Laptime log | **ej byggd** | röd rail, rubriker i amber, delta grön/röd |
 
 **Nästa naturliga bygge:** en overlay i taget, helt klar (funktion+look+animation) innan nästa.
@@ -431,6 +431,27 @@ distans — det är **normalvägen** för ACC-filer, inte ett undantag (felet bl
 över ett varv). Kanalmatchningen provar exakt namn före delsträng, för både `SPEED`
 och `WHEEL_SPEED_LF` innehåller "speed".
 
+### 8.7b "Byt fart-integrationen mot banlängd × position" — nej, och varför
+Ett återkommande förslag (senast i `Architecture Review & Feature Roa.md`) är att
+ersätta fart-integrationen med `normalizedCarPosition × Static.trackLength` för
+"perfekt synk". Det bygger på tre missförstånd, alla kontrollerade:
+
+1. **Vi använder redan `normalizedCarPosition` live.** `delta()` tar den rakt av.
+   Fart-integrationen används BARA för att bygga *referensfilens* distansaxel — och
+   det gör vi för att ACC:s MoTeC-export saknar distanskanal (§8.7, mätt: 55 kanaler,
+   noll med "dist"). Förslaget löser alltså inte problemet som finns.
+2. **`Static.trackLength` finns inte** i pyaccsharedmemory. Broadcasting ger
+   `trackMeters`, men bara när den är ansluten.
+3. **Meter ger ingen extra precision.** Att multiplicera 0..1 med banlängden på båda
+   sidor och jämföra i meter är matematiskt identiskt med att jämföra normaliserade
+   positioner. Det är ett enhetsbyte.
+
+"~15 ms drift" som brukar citeras är dessutom en felläsning: siffran är skillnaden
+mellan `.ldx`-varvets längd (136,250 s) och filnamnets angivna 2:16.265 — ett mått på
+hur exakt VARVGRÄNSERNA valdes, inte på live-synken. Att vi normaliserar den
+integrerade distansen med sitt eget maxvärde tar dessutom bort hela den systematiska
+skalfelskällan; kvar blir bara formfel, som är av andra ordningen.
+
 ### 8.8 Delta-spikskyddet är proportionellt mot varvlängden
 Vid mållinjen kan position (wrappar till 0) och varvtid (nollställs) vara ur synk ett
 frame → falsk spik med magnitud ≈ 0,99 × varvet. Tröskeln är **0,8 × varvtiden**, inte
@@ -493,6 +514,32 @@ Internt heter saker fortfarande `acc-*`: Cargo-paketet `acc-overlay`, sidecarn
 `acc-engine`, Python-paketet `acc_engine`. Det är avsiktligt. Att döpa om dem berör
 `externalBin`, `build_sidecar.py`, `verify_sidecar.py`, CI och `lib.rs` — risk utan
 någon vinst för användaren, som aldrig ser namnen.
+
+### 8.8d Spökspåren: referensen är indexerad på POSITION, traces på TID
+Inputs-trace ritar referensvarvets gas/broms bakom dina egna. Den svåra biten är att
+x-axeln i traces är TID (rullande fönster) medan referensen är indexerad på POSITION.
+
+Lösningen är att INTE lösa det i overlayn: motorn skickar `refThrottle`/`refBrake` för
+NUVARANDE position i varje ram, och overlayn sparar dem i samma sampel som sina egna
+värden. Då ligger spöket i linje per konstruktion, utan någon positionsbokföring i
+rit-koden. Skulle overlayn i stället ha slagit upp referensen själv hade den behövt
+spara position per sampel och interpolera — mer kod på fel sida processgränsen.
+
+Fyra saker att inte råka bryta:
+- Spökvärdena sätts BARA när `deltaSource == "motec"`. Samma grind som deltat: gäller
+  inte referensen (fel bana, ut-varv, ingen fil) ska inget spöke ritas heller.
+- `.ld`-kanalerna har OLIKA samplingstakt (mätt: 60 Hz för gas/broms, 20 Hz för växel)
+  och anges i PROCENT. Att slice:a dem med huvudkanalens index hade tyst gett fel data
+  för varje kanal med annan frekvens — de interpoleras därför till en gemensam tidsbas
+  före sortering, och skalas till 0..1.
+- Latch enligt §8.5 (`REF_HOLD_MS`): motorn skickar null enstaka ramar vid mållinjen,
+  och utan hållning fick spökspåret hål som syns som blink i en linje.
+- `_drawGhost` får inte anropa `stroke()` på en tom path. Första versionen gjorde det
+  60 ggr/s när ingen referens fanns — gratis arbete, och det gjorde dessutom
+  ritanropen omöjliga att mäta i testet (med och utan referens gav samma siffra).
+
+Mock-källan skickar också spökvärden, fasförskjutna 0,35 s. Det är enda sättet att SE
+funktionen utan att ACC kör — samma skäl som mocken finns för alls.
 
 ### 8.9 websockets-API:t
 Installerat: **16.0**, där `websockets.serve` är den nya asyncio-implementationen.

@@ -161,6 +161,53 @@ check("syntetisk referens går genom apply_reference",
       f.deltaSource == "motec" and abs(f.delta - 2.0) < 1e-6,
       f"källa={f.deltaSource} delta={f.delta}")
 
+# ── 9a. Spökkanaler: referensens pedaler vid en position ──────────────────
+# Kanalerna har OLIKA samplingstakt i .ld-filen (60 Hz för gas/broms, 20 Hz för
+# växel). Att bara slice:a med samma index som huvudkanalen hade tyst gett fel data
+# för varje kanal med annan frekvens — därför interpoleras de till en gemensam tidsbas.
+synth._chan = {
+    "throttle": np.where(synth._pos < 0.5, 1.0, 0.0),   # full gas första halvan
+    "brake":    np.where(synth._pos < 0.5, 0.0, 1.0),   # broms andra halvan
+}
+ch = synth.channels_at(0.25)
+check("spökkanaler samplas vid rätt position",
+      abs(ch["throttle"] - 1.0) < 1e-6 and abs(ch["brake"]) < 1e-6, ch)
+ch = synth.channels_at(0.75)
+check("och följer med runt varvet", abs(ch["throttle"]) < 1e-6 and abs(ch["brake"] - 1.0) < 1e-6, ch)
+check("position wrappar (1.25 = 0.25)",
+      abs(synth.channels_at(1.25)["throttle"] - 1.0) < 1e-6, synth.channels_at(1.25))
+
+# Går de hela vägen ut i ramen — och BARA när referensen faktiskt gäller?
+_ref_notice.clear()
+f = acc_frame(curLapMs=52000, position=0.25)
+apply_reference(f, synth)
+check("spökvärden når ramen när referensen gäller",
+      f.deltaSource == "motec" and f.refThrottle == 1.0 and f.refBrake == 0.0,
+      f"gas={f.refThrottle} broms={f.refBrake}")
+
+_ref_notice.clear()
+f = acc_frame(outLap=True, position=0.25)
+apply_reference(f, synth)
+check("inga spökvärden på ut-varv", f.refThrottle is None and f.refBrake is None,
+      f"gas={f.refThrottle} broms={f.refBrake}")
+
+_ref_notice.clear()
+f = acc_frame(trackId="monza", position=0.25)
+apply_reference(f, synth)
+check("inga spökvärden på fel bana", f.refThrottle is None and f.refBrake is None,
+      f"gas={f.refThrottle} broms={f.refBrake}")
+
+# En referens UTAN spökkanaler (äldre fil, saknad kanal) får inte krascha.
+bare = Reference()
+bare._pos, bare._t = synth._pos, synth._t
+bare.loaded, bare.lap_ms, bare.venue = True, 100000, "Spa"
+check("referens utan spökkanaler ger tom dict", bare.channels_at(0.5) == {}, bare.channels_at(0.5))
+_ref_notice.clear()
+f = acc_frame(position=0.5)
+apply_reference(f, bare)
+check("och ramen får då inga spökvärden, men deltat funkar",
+      f.deltaSource == "motec" and f.refThrottle is None, f"källa={f.deltaSource}")
+
 # ── 9b. Bortvald referens ska sluta gälla direkt ──────────────────────────
 # Panelen kunde tidigare bara LÄGGA TILL en referens, aldrig ta bort den. Nu finns
 # knappen, och då måste motorn faktiskt släppa filen.

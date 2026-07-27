@@ -29,6 +29,11 @@ class Frame:
     completedLaps: int = 0
     # Vilken referens deltat faktiskt kommer från. None = inget delta att visa.
     deltaSource: Optional[str] = None   # "motec" | "acc" | None
+    # Referensvarvets pedaler vid NUVARANDE position (0..1) — spökspåren i
+    # inputs-trace. Satta bara när deltaSource == "motec", alltså när referensen
+    # verkligen gäller; annars None så spöket försvinner rent.
+    refThrottle: Optional[float] = None
+    refBrake: Optional[float] = None
 
     # ── Broadcasting (andra bilar). Alla None när Broadcasting är av, så inga
     # befintliga overlays påverkas — de läser bara de fält de deklarerat.

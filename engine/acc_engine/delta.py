@@ -25,6 +25,7 @@ class Reference:
         self.path = ""
         self.lap_ms = None        # referensvarvets totaltid (ms)
         self.venue = ""           # banan filen spelades in på (ur .ld-huvudet)
+        self._chan = {}           # spökkanaler: namn → värden på _pos-rutnätet (0..1)
 
     def _clear(self):
         """Nollar allt referensläge. Utan detta låg gamla varvets distans/tid-kurva
@@ -35,6 +36,7 @@ class Reference:
         self.path = ""
         self.lap_ms = None
         self.venue = ""
+        self._chan = {}
 
     def unload(self) -> None:
         """Släpp referensen (användaren tog bort den i panelen). Publik motsvarighet
@@ -101,6 +103,27 @@ class Reference:
             d, t = d[order], t[order]
             keep = np.concatenate(([True], np.diff(d) > 1e-9))         # monotont & unikt
             self._pos, self._t = d[keep], t[keep] - t[keep][0]
+
+            # Spökkanaler: referensens gas/broms på SAMMA positionsrutnät som tiden.
+            # Kanalerna har olika samplingstakt i .ld-filen (60 Hz för gas/broms,
+            # 20 Hz för växel), så de måste interpoleras till huvudkanalens tidsbas
+            # innan samma sortering/filtrering läggs på. Att bara slice:a med samma
+            # index hade tyst gett fel data för varje kanal med annan frekvens.
+            t_abs = np.arange(start, end) / freq
+            for name, keys in (("throttle", ("throttle",)), ("brake", ("brake",))):
+                ch = find(*keys)
+                if ch is None:
+                    continue
+                cd = np.asarray(ch.data, dtype=float)
+                cfreq = float(ch.freq or 0)
+                if cfreq <= 0 or len(cd) < 2:
+                    continue
+                v = np.interp(t_abs, np.arange(len(cd)) / cfreq, cd)
+                v = v[order][keep]
+                # MoTeC anger dem i procent (mätt: 0–100). Ramen använder 0..1.
+                if np.nanmax(v) > 1.5:
+                    v = v / 100.0
+                self._chan[name] = np.clip(v, 0.0, 1.0)
             self.lap_ms = int((self._t[-1]) * 1000)
             self.loaded = True
             self.path = path
@@ -120,6 +143,20 @@ class Reference:
 
     def total_ms(self) -> Optional[int]:
         return self.lap_ms if self.loaded else None
+
+    def channels_at(self, norm_pos: float) -> dict:
+        """Referensens gas/broms (0..1) vid en position på varvet.
+
+        Används till spökspåren i inputs-trace. Overlayn behöver inte hålla reda på
+        någon position: motorn skickar värdet för NUVARANDE position varje ram, och
+        overlayn sparar det i samma sampel som sina egna värden. Då ligger spöket
+        exakt i linje med det aktiva spåret, trots att trace-axeln är TID och
+        referensen är indexerad på POSITION.
+        """
+        if not self.loaded or not self._chan:
+            return {}
+        p = norm_pos % 1.0
+        return {k: float(np.interp(p, self._pos, v)) for k, v in self._chan.items()}
 
     def matches_track(self, track_id: str) -> bool:
         """Är referensen inspelad på den bana som körs nu?

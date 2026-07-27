@@ -61,7 +61,13 @@ class MockSource(Source):
         # mjuk sinus-delta (samma karaktär som overlay-previewn)
         delta = max(-1.1, min(1.1, 0.62*math.sin(now*0.21) + 0.30*math.sin(now*0.53+1.1) + 0.16*math.sin(now*1.03+0.4)))
         gear = 1 + int(throttle*5)
+        # Spökspår: samma kurva som du kör, fasförskjuten ett par tiondelar. Ger ett
+        # trovärdigt "referensvarv" så att funktionen går att SE i panelens preview
+        # och i OBS utan att ACC körs — precis samma skäl som mocken finns för alls.
+        ref_th = _clamp01(_seg_at(THROTTLE, now - 0.35))
+        ref_br = _clamp01(_seg_at(BRAKE, now - 0.35))
         return Frame(connected=False, throttle=throttle, brake=brake, clutch=clutch, abs=abs_, tc=tc,
                      gear=gear, speedKph=80+throttle*180, rpm=int(3000+throttle*4500), steer=0.35*math.sin(now*0.6),
                      delta=delta, sessionBestMs=138120, lastLapMs=138322, driverName="John Smith",
-                     position=(now % LOOP)/LOOP)
+                     position=(now % LOOP)/LOOP,
+                     deltaSource="motec", refThrottle=ref_th, refBrake=ref_br)

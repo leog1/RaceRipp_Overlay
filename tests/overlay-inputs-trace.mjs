@@ -109,5 +109,65 @@ const FRAME = (o = {}) => ({ throttle: 0, brake: 0, clutch: 0, abs: false, tc: f
         `etikett ${JSON.stringify(String(label))}, ${bad} NaN-transformer`);
 }
 
+// ── 6. Spökspår: referensvarvet bakom ditt eget ────────────────────────────
+// Ritordningen är hela poängen. Ritas spöket EFTER dina spår ligger referensen
+// framför din egen insats, vilket är precis fel.
+{
+  const h = await open();
+  h.settle(FRAME({ throttle: 0.8, brake: 0.2, refThrottle: 0.5, refBrake: 0.6 }), 20);
+  const med = h.writes({ el: 'trace', key: 'stroke' }).length;
+  check('spökspåren ritas när referensen finns', med > 0, `${med} stroke`);
+
+  // Utan referens ska INGA spök-stroke tillkomma. Mätningen räknar stroke-anrop, och
+  // det fungerar bara för att _drawGhost inte längre stroke:ar en tom path — första
+  // versionen gjorde det, och då gav med/utan referens exakt samma siffra.
+  const h2 = await open();
+  h2.settle(FRAME({ throttle: 0.8, brake: 0.2 }), 20);
+  const utan = h2.writes({ el: 'trace', key: 'stroke' }).length;
+  check('referensen ger FLER ritanrop än utan', med > utan, `${utan} utan, ${med} med`);
+  check('spöket är ungefär två extra stroke per rendering',
+        med - utan > 20, `skillnad ${med - utan}`);
+}
+
+// ── 7. Spöket försvinner när referensen slutar gälla ──────────────────────
+// deltaSource != 'motec' (ut-varv, fel bana, ingen fil) → motorn skickar null.
+// Enstaka null ska latchas (§8.5), men ihållande ska släcka spöket helt.
+{
+  const h = await open({ expose: ['trace'] });
+  h.settle(FRAME({ throttle: 0.9, refThrottle: 0.4, refBrake: 0.1 }), 20);
+  check('referensmärket visas på stapeln', h.el('m-throttle').style.display !== 'none',
+        `display=${JSON.stringify(h.el('m-throttle').style.display)}`);
+
+  for (let i = 0; i < 3; i++) { h.push(FRAME({ throttle: 0.9 })); h.tick(); }
+  check('enstaka null släcker inte märket (latch)', h.el('m-throttle').style.display !== 'none',
+        `display=${JSON.stringify(h.el('m-throttle').style.display)}`);
+
+  for (let i = 0; i < 40; i++) { h.push(FRAME({ throttle: 0.9 })); h.tick(); }
+  check('ihållande avsaknad släcker märket', h.el('m-throttle').style.display === 'none',
+        `display=${JSON.stringify(h.el('m-throttle').style.display)}`);
+}
+
+// ── 8. Ghost-alternativet stänger av allt ────────────────────────────────
+{
+  const h = await open({ expose: ['trace'], init: { id: 'inputs-trace', scale: 1, opacity: 1,
+                                                    options: { clutch: true, window: 4.5, ghost: false } } });
+  h.settle(FRAME({ throttle: 0.8, refThrottle: 0.5, refBrake: 0.6 }), 20);
+  check('med ghost=false ritas inget referensmärke',
+        h.el('m-throttle').style.display === 'none',
+        `display=${JSON.stringify(h.el('m-throttle').style.display)}`);
+  check('och overlayn ritar fortfarande sina egna spår',
+        h.writes({ el: 'trace', key: 'clearRect' }).length > 10);
+}
+
+// ── 9. Ovänliga referensvärden får inte ge NaN i transformen ─────────────
+{
+  const h = await open();
+  for (const bad of ['x', null, NaN, -5, 99]) {
+    h.settle(FRAME({ throttle: 0.5, refThrottle: bad, refBrake: bad }), 6);
+  }
+  const nan = h.writes({ el: 'm-throttle' }).filter((w) => String(w.value).includes('NaN')).length;
+  check('skräp i referensvärden ger aldrig NaN på märket', nan === 0, `${nan} NaN-skrivningar`);
+}
+
 console.log(failed ? `\n${failed} kontroll(er) misslyckades` : '\nAllt OK');
 process.exit(failed ? 1 : 0);

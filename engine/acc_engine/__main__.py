@@ -83,6 +83,13 @@ def apply_reference(f: Frame, ref: Reference) -> None:
         f.delta = ref.delta(f.position, f.curLapMs)
         f.refTotalMs = ref.total_ms()
         f.deltaSource = "motec" if f.delta is not None else None
+        # Spökkanalerna följer deltat: finns det inget giltigt delta här ska inte
+        # heller spökspåren ritas, annars visar overlayn en referens som motorn
+        # samtidigt sagt sig inte lita på.
+        if f.deltaSource == "motec":
+            ch = ref.channels_at(f.position)
+            f.refThrottle = ch.get("throttle")
+            f.refBrake = ch.get("brake")
         return
     f.deltaSource = "acc" if f.delta is not None else None
 
