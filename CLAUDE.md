@@ -263,11 +263,16 @@ Handlern tar **ett** argument (`ws`), inte `(ws, path)`.
   commits; en `git filter-repo` + force-push krävs för att verkligen ta bort dem.
 
 ## 9. Så verifierar du utan att gissa
-- **Overlay-logik headless:** plocka ut `<script type="module">` ur HTML-filen, byt
-  importraden mot stubbar för `WsBus`/`wireShell`/`fontsReady`, fejka
-  `document`/`performance`/`requestAnimationFrame` och driv `frame(now)` manuellt i
-  node. Då kan man mäta saker per frame — t.ex. att bågens `d` aldrig blir `''`. Kör
-  samma harness mot `git show HEAD:<fil>` för att bevisa att den fångar buggen.
+Det finns tester i `tests/` — läs `tests/README.md`. `pnpm test` kör overlay-testet,
+`python tests/engine_smoke.py` och `python tests/motec_reference.py` de andra.
+- **Overlay-logik headless:** `tests/lib/overlay-harness.mjs` plockar ut overlayns
+  modulskript, stubbar importerna, fejkar DOM:en och låter dig driva tiden frame för
+  frame. Det är enda sättet att mäta något som varar ett enda frame.
+  Två regler: kör alltid ett nytt test även mot revisionen FÖRE fixen
+  (`node tests/overlay-delta-bar.mjs <rev>`) — passerar det där mäter det inte det du
+  tror. Och kontrollera att overlayn faktiskt renderade innan du bedömer vad den
+  renderade (`assertAlive`), annars passerar testet på en död overlay. Båda de
+  misstagen gjordes när testerna skrevs.
 - **Motorn:** starta som subprocess, anslut med `websockets.connect`, samla N ramar
   och kontrollera fält/takt/NaN. Starta en andra instans för att testa portkonflikt.
 - **MoTeC:** `Reference().load(path)` mot en riktig `.ld` och skriv ut `lap_ms`,
