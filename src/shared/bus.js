@@ -10,11 +10,21 @@
 //   speedKph   number
 //   rpm        int
 //   steer      -1..1     normaliserad rattvinkel
-//   delta      number|null   sekunder mot referens (null = ingen referens)
+//   delta      number|null   sekunder mot referensen (negativ = snabbare)
+//   deltaSource 'motec'|'acc'|null   VILKEN referens delta kommer från:
+//              'motec' = den laddade .ld-filen, 'acc' = ACC:s eget mått mot
+//              session-bästa, null = inget delta att visa. MoTeC används bara när
+//              banan matchar och det inte är ett ut-varv (CLAUDE.md §8.8b).
 //   sessionBestMs int|null
 //   lastLapMs  int|null
+//   curLapMs   int|null   pågående varvtid (motorn använder den till deltat)
+//   refTotalMs int|null   referensvarvets totaltid, bara satt när MoTeC gäller
 //   driverName string
 //   position   0..1      normalizedCarPosition
+//   trackId    string    ACC:s bannamn ("Spa") — referensen matchas mot det
+//   outLap     bool      varvet startade i depån → referensdelta är meningslöst
+//   inPitLane  bool
+//   completedLaps int
 //
 // Broadcasting (ACC:s UDP-API, andra bilar). Alla null när det är av:
 //   cars       array|null   per bil {i, spline, pos, laps, loc, kmh, deltaMs, bestMs …}

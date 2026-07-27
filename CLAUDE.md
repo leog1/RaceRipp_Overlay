@@ -102,15 +102,19 @@ src/overlays/<id>/index.html  overlay-moduler
 src/control-panel/index.html  kontrollpanelen (inkl. live-preview i iframe)
 engine/acc_engine/         motorn: __main__, bus, http_static, frame, delta,
                            sources/{mock,acc,acc_broadcast}
+engine/acc_test.py         delade minnet mot riktiga ACC (kör med spelet igång)
 engine/broadcast_test.py   Broadcasting mot riktiga ACC (kör med spelet igång)
 engine/build_sidecar.py    PyInstaller → src-tauri/binaries/acc-engine-<triple>.exe
 engine/ldparser.py         GPL, gitignorerad, hämtas lokalt
 src-tauri/src/lib.rs       fönstermanager, kommandon, sidecar+Job Object, hotkey, settings
 src-tauri/tauri.conf.json  control-fönster, updater, externalBin, bundle.resources
-.github/workflows/release.yml  CI: bygg Windows-installer + latest.json vid tagg
+tests/                     regressionstester — läs tests/README.md FÖRST, den
+                           förklarar vad varje test bevakar och hur man visar att
+                           ett test biter
+.github/workflows/release.yml  CI: kör testerna, bygg installer + latest.json vid tagg
 ```
 
-## 7. Status: verifierat vs kvar  (uppdaterad 2026-07-27, v0.3.0)
+## 7. Status: verifierat vs kvar  (uppdaterad 2026-07-28, v0.3.2)
 **Verifierat genom att faktiskt köra:**
 - **BÅDA ACC-källorna mot spelet igång** (2026-07-27, under hotlap). `acc_test.py`
   och `broadcast_test.py` kördes av användaren: Broadcasting ansluter på ett par
@@ -136,15 +140,17 @@ src-tauri/tauri.conf.json  control-fönster, updater, externalBin, bundle.resour
   Enda felet är sista steget: updater-signering kräver `TAURI_SIGNING_PRIVATE_KEY`,
   som bara finns som GitHub-secret — förväntat lokalt, CI sätter den.
 
-- **Utgåva 0.3.0 verifierad ur den PUBLICERADE MSI:n** (inte bara grön CI, §8.6c).
-  Alla 12 CI-steg gröna inklusive de nya testsstegen; release har MSI + NSIS + båda
-  `.sig` + `latest.json` med signatur för alla tre plattformsnycklar. MSI:n uppackad
-  med 7-Zip: `verify_sidecar.py` hittar alla sex modulerna i den 21,2 MB stora
-  CI-sidecarn (mindre än lokalbygget är normalt, §8.6c). Binären körd: MoTeC-referensen
-  laddas (`varvtid≈136.250s → OK`), WS ger 25 fält utan NaN, telemetrin rör sig,
-  Broadcasting registrerar, och OBS-HTTP:n svarar 200 på alla fem overlay-filerna.
+- **Utgåvorna 0.3.0 och 0.3.1 verifierade ur den PUBLICERADE MSI:n** (inte bara grön
+  CI, §8.6c). Release har MSI + NSIS + båda `.sig` + `latest.json` med signatur för
+  alla tre plattformsnycklar. MSI:n uppackad med 7-Zip: `verify_sidecar.py` hittar
+  alla sex modulerna i den 21,2 MB stora CI-sidecarn (mindre än lokalbygget är
+  normalt, §8.6c). Binären körd: MoTeC-referensen laddas
+  (`varvtid≈136.250s → OK`, `bana Spa`), WS ger 30 fält utan NaN, telemetrin rör sig,
+  Broadcasting registrerar, och OBS-HTTP:n svarar 200 på alla overlay-filerna.
   Obs: `refTotalMs` är `None` i den körningen — den sätts först när ACC är ansluten,
   så det är själva INLÄSNINGEN av referensen som är verifierad här, inte delta-vägen.
+  Att kontrollera nya FÄLT i den publicerade ramen (inte bara att den startar) är
+  vad som gör verifieringen värd något.
 
 - **Updater-kedjan hela vägen** (v0.2.5): tagg → CI → `latest.json` på
   `releases/latest/download/` med signatur för alla tre plattformsnycklar →
@@ -157,7 +163,14 @@ src-tauri/tauri.conf.json  control-fönster, updater, externalBin, bundle.resour
   Obs: starta den frysta exen via `Start-Process`, inte med `&` + omdirigering i Git
   Bash — det senare gav tyst ingen output och såg ut som att binären var trasig.
 
-**Kvar att verifiera:**
+**Kvar att verifiera — läs detta först om du tar över:**
+- **Att 0.3.1/0.3.2-fixarna faktiskt löste det som rapporterades i spelet.** Tre
+  buggar kom från riktig körning av 0.3.0: overlays blinkade var 3–4 sekund,
+  inputs-trace fick hack, och delta-overlayn visade ett MoTeC-delta ur depån och på
+  fel bana. Orsakerna är hittade, förklarade (§8.6e, §8.8b) och täckta av tester som
+  faller på den gamla koden — **men ingen har kört spelet efteråt.** Symptomen går
+  inte att reproducera utan ACC. Detta är den enskilt viktigaste öppna punkten;
+  fråga användaren innan du bygger vidare på antagandet att de är borta.
 - **Broadcasting under RIKTIGT lopp** — hittills bara sett med hotlap, alltså med i
   praktiken en bil. Entry list-flödet, omfrågan vid okänd bil och bortstädningen av
   bilar som lämnat sessionen (§8.6d) är testade mot en falsk server men aldrig mot ett
@@ -469,9 +482,10 @@ Handlern tar **ett** argument (`ws`), inte `(ws, path)`.
   commits; en `git filter-repo` + force-push krävs för att verkligen ta bort dem.
 
 ## 9. Så verifierar du utan att gissa
-Det finns tester i `tests/` — läs `tests/README.md`. `pnpm test` kör de tre
-overlay-testerna, `python tests/engine_smoke.py` och `python tests/motec_reference.py`
-de andra.
+Det finns tester i `tests/` — läs `tests/README.md`. `pnpm test` kör de fem
+overlay-testerna (Node); de fem Python-testerna körs var för sig från repo-roten.
+**CI kör alla utom `motec_reference.py`**, som kräver en `.ld` och därför alltid
+hoppar över sig själv på en runner — se fällan om det längre ner.
 - **Overlay-logik headless:** `tests/lib/overlay-harness.mjs` plockar ut overlayns
   modulskript, stubbar importerna, fejkar DOM:en och låter dig driva tiden frame för
   frame. Det är enda sättet att mäta något som varar ett enda frame.
@@ -512,7 +526,13 @@ de andra.
 # App:                    pnpm install && pnpm tauri dev
 # MoTeC:                  (i engine\) hämta ldparser.py från gotzl/ldparser (gitignorerad)
 # Paketera (Windows):     cd engine && python build_sidecar.py  &&  cd .. && pnpm tauri build
+# Tester:                 pnpm test  +  python tests/<namn>.py   (ALLTID från repo-roten)
 ```
+Python-testerna körs **från repo-roten**, inte från `engine/` — de räknar ut sökvägar
+med `parents[1]`. Kör man dem från `engine/` blir det `engine/tests/...` och Python
+säger bara "No such file or directory", vilket är lätt att misstolka som ett trasigt
+test. Samma sak gäller `engine/acc_test.py` och `engine/broadcast_test.py`: kör dem som
+`python engine\acc_test.py` från roten.
 `externalBin` **ligger kvar** i `tauri.conf.json`, så `pnpm tauri dev` kräver att
 sidecarn är byggd en gång — och dev startar den automatiskt. Kör därför **inte**
 motorn manuellt samtidigt: de krigar om port 8777 (den andra avslutar snyggt, men du
@@ -525,3 +545,19 @@ testar du gammal motorkod.
 3. Bifoga referensbild(er) rakt framifrån (transparent + mörk bakgrund; 2–3 tillstånd
    för element som ändrar färg/fyllning) — assistenten mäter pixel-exakt innan kod.
 4. Håll principen: mät först, bekräfta struktur, en overlay i taget, ändra ej kärnan.
+
+**Läsordning för en assistent som tar över:** denna fil → `tests/README.md` →
+`src/shared/tokens.css`. §8 är viktigast (fällor som redan kostat tid) och §7 säger
+vad som faktiskt är verifierat kontra antaget — blanda inte ihop dem.
+
+**Arbetssätt som gällt hittills och fungerat, behåll det:**
+- **Mät, gissa inte.** Läs källan (Tauri i `~/.cargo/registry/`, pyaccsharedmemory i
+  site-packages) i stället för att lita på minnet. Flera buggar i §8 hittades så.
+- **Ett test som inte kan falla bevisar ingenting.** Kör varje nytt test mot koden
+  FÖRE fixen. Går det inte (refaktorering, ny funktion) — bevisa tänderna på annat
+  sätt, t.ex. en medvetet trasig variant inne i testet. Se §9.
+- **Verifiera den publicerade artefakten**, inte att CI blev grön (§8.6c).
+- **Fråga hellre än att anta om användarens data.** Inställningar, positioner och
+  referenssökväg är användarens; ta säkerhetskopia innan test och återställ efteråt.
+- Rör inte kärnan (`lib.rs`, `bus.js`, registry-schemat) i onödan — men när den
+  behöver ändras, gör det ordentligt och dokumentera varför i §8.
