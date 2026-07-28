@@ -65,6 +65,22 @@ body{font-family:var(--font);color:var(--ink);
 .titlebar .tb-tag{font-size:var(--ui-fs-xs);font-weight:600;letter-spacing:1.4px;
   text-transform:uppercase;color:var(--faint);opacity:.72;line-height:1;}
 .titlebar .tb-drag{flex:1 1 auto;align-self:stretch;}
+/* Motor-/Broadcastingstatus, flyttad hit från rail-foten. Bara prick + text —
+   ingen pill-bakgrund, den bär ingenting en egen yta inte redan gör.
+   `display:flex` slår ut webbläsarens `[hidden]{display:none}` (samma fälla som
+   §8.4f), därför en egen dold-regel nedan.
+   flex:0 0 auto: utan den är statusraderna krympbara (flex-shrink är 1 som
+   standard) och `white-space:nowrap` gör att texten då spiller ut ur sin ruta i
+   stället för att .tb-drag ger med sig. Bredden här är ett designbeslut, inte en
+   restpost — samma resonemang som min-width:0 på .rail (§8.4h). */
+.tb-status{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:0 10px;
+  font-size:var(--ui-fs-xs);font-weight:600;letter-spacing:.3px;color:var(--dim);
+  -webkit-user-select:none;user-select:none;white-space:nowrap;}
+.tb-status[hidden]{display:none;}
+.tb-status .dot{width:6px;height:6px;border-radius:50%;flex:0 0 auto;background:var(--faint);}
+.tb-status .dot.live{background:var(--green);box-shadow:0 0 5px rgba(13,230,34,0.35);}
+.tb-status .dot.mock{background:var(--amber);box-shadow:0 0 5px rgba(251,191,36,0.32);}
+.tb-status .dot.off{background:var(--red);}
 .titlebar .tb-btns{display:flex;align-self:stretch;}
 .tb-btn{appearance:none;background:none;border:0;width:46px;align-self:stretch;
   display:flex;align-items:center;justify-content:center;color:var(--dim);cursor:pointer;
@@ -121,34 +137,13 @@ body.maximized .tb-btn .ico-max{display:none;}
   transition:transform .2s cubic-bezier(.2,.8,.3,1);}
 .nav[aria-selected="true"]::before{transform:translateY(-50%) scaleY(1);}
 .rail-spacer{flex:1 1 auto;}
-/* Statusraderna i listens fot. */
-.motor{display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 2px 4px;text-align:center;}
-/* Broadcasting-raden är `hidden` tills motorn faktiskt försöker ansluta, men
-   `display:flex` ovan slår ut webbläsarens `[hidden]{display:none}` — så raden låg
-   framme hela tiden som en tom röd prick under motorstatusen. Klassisk: attributet
-   sattes, regeln vann. */
-.motor[hidden]{display:none;}
-/* Lysdiod och inte en färgprick: ringen + halon gör att man ser tillståndet i
-   ögonvrån medan man ställer något annat. */
-.motor .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);
-  box-shadow:0 0 0 3px rgba(255,255,255,0.035);}
-/* Halon är nedtonad till en antydan. Full glow på en 8 px-prick gör den till en
-   lampa som drar blicken från det man faktiskt ställer in — ringen räcker för att
-   säga "tänd", halon behöver bara ta bort den hårda kanten. */
-.motor .dot.live{background:var(--green);box-shadow:0 0 0 3px rgba(13,230,34,0.12),0 0 6px rgba(13,230,34,0.30);}
-.motor .dot.mock{background:var(--amber);box-shadow:0 0 0 3px rgba(251,191,36,0.12),0 0 6px rgba(251,191,36,0.26);}
-.motor .dot.off{background:var(--red);box-shadow:0 0 0 3px rgba(255,59,59,0.10);}
-/* INTE versaler, till skillnad från flikarnas etiketter — och det är ett medvetet
-   undantag, inte en glömska. Versalt "BROADCASTING" är ~88 px brett vid 10 px och
-   får aldrig plats i en 80 px list; det var därför texten såg ihopklämd ut och det
-   var därför listen växte. Gemener tar 65 px och får luft över.
-   Skillnaden bär dessutom information: flikarna är ETIKETTER (versaler, statiska),
-   det här är en LIVE-STATUS som byter text medan man tittar. Två olika sorters text
-   ska inte se likadana ut.
-   overflow-wrap:anywhere är sista utposten — dyker det upp ett ännu längre ord ska
-   det brytas, aldrig knuffa listen i sidled igen. */
-.motor span:last-child{font-size:10px;font-weight:600;letter-spacing:.2px;
-  color:var(--dim);line-height:1.5;overflow-wrap:anywhere;}
+/* Minimal statusprick i listens fot — den fulla texten bor i titelraden (.tb-status)
+   nu, det här är bara ett tecken kvar i ögonvrån om man tittar på listen i stället. */
+.rail-dot{align-self:center;width:7px;height:7px;border-radius:50%;flex:0 0 auto;
+  margin:10px 0 4px;background:var(--faint);}
+.rail-dot.live{background:var(--green);box-shadow:0 0 0 3px rgba(13,230,34,0.12),0 0 6px rgba(13,230,34,0.30);}
+.rail-dot.mock{background:var(--amber);box-shadow:0 0 0 3px rgba(251,191,36,0.12),0 0 6px rgba(251,191,36,0.26);}
+.rail-dot.off{background:var(--red);box-shadow:0 0 0 3px rgba(255,59,59,0.10);}
 
 /* ── mittkolumn: overlay-lista ── */
 .list{flex:0 0 264px;border-right:1px solid var(--ui-edge-dk);
@@ -160,9 +155,12 @@ body.maximized .tb-btn .ico-max{display:none;}
    rubrik som redan hade två (versaler OCH en egen färg), och när man väl har tre
    signaler för samma sak börjar de tävla i stället för att förstärka. FÄRGEN RÄCKER
    — lägg inte tillbaka strecket. */
-.list-head,.card > h3{font-size:var(--ui-fs-sm);font-weight:700;letter-spacing:2px;
-  text-transform:uppercase;color:var(--amber);}
-.list-head{padding:20px 20px 12px;}
+.list-head{font-size:var(--ui-fs-sm);font-weight:700;letter-spacing:2px;
+  text-transform:uppercase;color:var(--amber);padding:20px 20px 12px;}
+/* Fortfarande i bruk av kort med EN rubrik (Referens/Om/de nya skalflikarna) —
+   de slogs aldrig ihop till flersektionskort, så samma amberrubrik som förut. */
+.card > h3{font-size:var(--ui-fs-sm);font-weight:700;letter-spacing:2px;
+  text-transform:uppercase;color:var(--amber);padding:16px 0 8px;}
 #list{flex:1 1 auto;overflow-y:auto;padding:0 8px 12px;}
 .list-foot{flex:0 0 auto;display:flex;align-items:center;gap:12px;
   padding:12px 16px;border-top:1px solid var(--ui-edge-dk);
@@ -201,6 +199,8 @@ body.maximized .tb-btn .ico-max{display:none;}
 .app[data-section="overlays"] #pane-overlays{display:flex;flex-direction:column;overflow:hidden;}
 .app[data-section="referens"] #pane-referens{display:flex;flex-direction:column;overflow-y:auto;}
 .app[data-section="om"] #pane-om{display:flex;flex-direction:column;overflow-y:auto;}
+.app[data-section="layout"] #pane-layout{display:flex;flex-direction:column;overflow-y:auto;}
+.app[data-section="installningar"] #pane-installningar{display:flex;flex-direction:column;overflow-y:auto;}
 .app:not([data-section="overlays"]) .list{display:none;}
 
 /* preview */
@@ -264,6 +264,18 @@ body.maximized .tb-btn .ico-max{display:none;}
 .pv-ticks i:nth-child(2){bottom:0;left:50%;width:1px;height:8px;transform:translateX(-.5px);}
 .pv-ticks i:nth-child(3){left:0;top:50%;width:8px;height:1px;transform:translateY(-.5px);}
 .pv-ticks i:nth-child(4){right:0;top:50%;width:8px;height:1px;transform:translateY(-.5px);}
+/* HÄR SATT REDESIGNENS HÖRNVINKLAR. De togs bort igen, och skälet är värt att
+   spara: mockupen hade fyra L-formade hörn på 10 px inset och BARA två knappar,
+   uppe till höger. Vår riktiga ruta har fem knappar i tre av fyra hörn
+   (bakgrundsväljaren 12/12, info 12/12 höger, verktygsblocket nere till höger),
+   alla 32 px och med z-index 3–4. En vinkel på 10–20 px hamnar alltså BAKOM
+   knappen, och det enda som syns är de yttersta 2 px som sticker ut vid 10–12 px
+   — tre fragment och ett helt hörn. Det såg ut som en renderingsbugg.
+   Inset går inte att lösa runt: mindre än ~6 px klipps av .pv-clip:s
+   border-radius (14 px), mer än 2 px krockar med knapparna.
+   Rutan har dessutom redan .pv-ticks som bär exakt samma "det här är ett sikte
+   med en mitt"-signal, utan att slåss med något. Lägg inte tillbaka vinklarna
+   utan att först flytta knapparna. */
 #pv{position:absolute;top:50%;left:50%;border:0;transform-origin:center center;
   transform:translate(-50%,-50%);background:transparent;pointer-events:none;}
 .pv-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
@@ -394,6 +406,16 @@ body.maximized .tb-btn .ico-max{display:none;}
   background:var(--ui-card);
   box-shadow:var(--ui-recess),var(--ui-lip);}
 .card > h3{padding:16px 0 8px;}
+/* Avdelarrubrik INNE i ett kort (Storlek/Av-på/Utseende i samma kort). Skiljer sig
+   från .list-head/.card>h3 på ett avgörande sätt: etiketten är NEUTRALT grå
+   (samma hex som --dim, inte amber), och bara den lilla stapeln bär färg — en
+   signal, inte två som tävlar (det var precis det som gjorde att guldstrecket togs
+   bort ur listrubrikerna). Stapeln är --ui-brand: panelens chrome har bara EN röd. */
+.subhead{display:flex;align-items:center;gap:8px;padding:20px 0 4px;}
+.card > .subhead:first-child{padding-top:16px;}
+.subhead .bar{width:2px;height:12px;border-radius:2px;background:var(--ui-brand);flex:0 0 auto;}
+.subhead span:last-child{font-size:var(--ui-fs-sm);font-weight:700;letter-spacing:1.4px;
+  text-transform:uppercase;color:var(--dim);}
 /* Radhöjden är fast (--ui-row-h) och inte padding-driven: en rad med reglage är
    högre än en med bara text, och listan vek sig i taktlöshet när de blandades. */
 .row{display:flex;align-items:center;gap:16px;min-height:var(--ui-row-h);}
@@ -561,6 +583,18 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
   <div class="titlebar" data-tauri-drag-region>
     <div class="tb-logo"><img src="../shared/simmatrix-logo.svg" alt="SimMatrix"><span class="tb-tag">Control</span></div>
     <div class="tb-drag" data-tauri-drag-region></div>
+    <!-- data-tauri-drag-region="deep" och INTE bara attributet: tauri-2.11.5:s
+         drag.js (window/scripts/drag.js:66) returnerar `el === composedPath[0]`
+         för ett bart attribut, alltså drar bara DIREKTA klick på .titlebar.
+         Ett klick på statusraden — eller på spannen inuti — hade därför varit en
+         död yta i titelraden. "deep" låter hela subträdet dra.
+         Varför inte pointer-events:none som .tb-logo har: #bcRow bär
+         Broadcasting-felet i sitt title-attribut, och det är enda stället felet
+         syns. Utan pekhändelser ingen tooltip. -->
+    <div class="tb-status" data-tauri-drag-region="deep"><span class="dot off" id="dot"></span><span id="statusText">Motor offline</span></div>
+    <!-- Broadcasting (andra bilars data). Dold tills motorn faktiskt försöker —
+         annars ser den ut som ett fel på riggar som inte har ACC installerat. -->
+    <div class="tb-status" id="bcRow" data-tauri-drag-region="deep" hidden><span class="dot off" id="bcDot"></span><span id="bcText"></span></div>
     <div class="tb-btns">
       <button class="tb-btn" id="tbMin" title="Minimera" aria-label="Minimera">
         <svg viewBox="0 0 10 10"><path d="M0 5h10"/></svg>
@@ -582,7 +616,13 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
       <!-- Här satt en kompakt 3×3-matrisikon som andra märke. Den togs bort: appens
            ordbild står redan i titelraden 40 px ovanför, och ett märke till i samma
            blickfång gör att man frågar sig om det är två olika saker. Listen börjar
-           nu direkt med flikarna, vilket också ger statusraderna nertill mer luft. -->
+           nu direkt med flikarna.
+           Motor-/Broadcastingstatusen bodde också här nere fram till 0.4.6 och bor
+           numera i titelraden (.tb-status) — kvar står bara pricken längst ner. -->
+      <button class="nav" data-sec="layout" aria-selected="false">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="18" rx="1.5"/><rect x="14" y="3" width="7" height="8" rx="1.5"/><rect x="14" y="15" width="7" height="6" rx="1.5"/></svg>
+        <span>Layout</span>
+      </button>
       <button class="nav" data-sec="overlays" aria-selected="true">
         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/></svg>
         <span>Overlays</span>
@@ -596,10 +636,17 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
         <span>Om</span>
       </button>
       <div class="rail-spacer"></div>
-      <div class="motor"><span class="dot off" id="dot"></span><span id="statusText">Motor offline</span></div>
-      <!-- Broadcasting (andra bilars data). Dold tills motorn faktiskt försöker —
-           annars ser den ut som ett fel på riggar som inte har ACC installerat. -->
-      <div class="motor" id="bcRow" hidden><span class="dot off" id="bcDot"></span><span id="bcText"></span></div>
+      <button class="nav" data-sec="installningar" aria-selected="false">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <!-- "Allmänt" och inte "Inställningar", av samma skäl som statusraden en
+             gång sprängde listen (§8.4h): versalt "INSTÄLLNINGAR" är ~95 px vid
+             10 px med 0,9 px spärr, och listen har 72 px innanför sin padding.
+             Etiketten rann alltså ut på båda sidor om listen — mätt i en
+             renderad panel, inte gissat. "ALLMÄNT" är ~56 px och får luft över.
+             Kugghjulet bär betydelsen; ordet behöver bara namnge fliken. -->
+        <span>Allmänt</span>
+      </button>
+      <span class="rail-dot off" id="railDot" title="Motorstatus"></span>
     </nav>
 
     <!-- ── mittkolumn: overlay-lista ── -->
@@ -656,31 +703,39 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
           </div>
         </div>
         <div class="controls">
-          <!-- Tre kort i fast ordning: storlek först (den man rör oftast), sedan
-               av/på, sedan resten. Alternativen sorteras in i kort 2 och 3 utifrån
-               sin TYP i registry.json — panelen känner fortfarande ingen overlay
-               vid namn. -->
+          <!-- Ett kort med tre avdelade sektioner i fast ordning: storlek först
+               (den man rör oftast), sedan av/på, sedan resten. Alternativen
+               sorteras in i sektion 2 och 3 utifrån sin TYP i registry.json —
+               panelen känner fortfarande ingen overlay vid namn.
+               #cardToggles/#cardTweaks är bara wrapper-divar nu (inte egna
+               .card) — renderOptions() bryr sig bara om att de finns. -->
           <div class="cards">
             <div class="card">
-              <h3>Storlek &amp; opacitet</h3>
+              <div class="subhead"><span class="bar"></span><span>Storlek &amp; opacitet</span></div>
               <div class="row slide"><label>Skala</label>
                 <input type="range" id="scale" min="0.6" max="1.6" step="0.05" value="1">
                 <span class="val" id="scaleVal">1.00×</span></div>
               <div class="row slide"><label>Opacitet</label>
                 <input type="range" id="opacity" min="0.2" max="1" step="0.05" value="1">
                 <span class="val" id="opacityVal">100%</span></div>
-            </div>
-            <div class="card" id="cardToggles">
-              <h3>Av / på</h3>
-              <!-- bool-alternativ ur registret sätts in HÄR, före raden nedan.
-                   De måste bli riktiga DOM-syskon till den: avdelarlinjen är
-                   `.row + .row`, och en wrapper runt dem hade brutit den. -->
-              <div class="row" id="rowAot"><span class="rlabel">Alltid överst</span>
-                <span class="state" id="aotState">På</span>
-                <label class="sw" id="aotSwitch"><input type="checkbox" checked><span class="track"></span><span class="knob"></span></label></div>
-            </div>
-            <div class="card" id="cardTweaks">
-              <h3>Utseende</h3>
+
+              <div class="subhead"><span class="bar"></span><span>Av / på</span></div>
+              <div id="cardToggles">
+                <!-- bool-alternativ ur registret sätts in HÄR, före raden nedan.
+                     De måste bli riktiga DOM-syskon till den: avdelarlinjen är
+                     `.row + .row`, och en wrapper runt dem hade brutit den. -->
+                <div class="row" id="rowAot"><span class="rlabel">Alltid överst</span>
+                  <span class="state" id="aotState">På</span>
+                  <label class="sw" id="aotSwitch"><input type="checkbox" checked><span class="track"></span><span class="knob"></span></label></div>
+              </div>
+
+              <!-- Kan vara tom (overlayn har inga färg-/enum-/talalternativ) —
+                   döljs som EN enhet (rubrik + rader) av renderOptions(), inte
+                   bara #cardTweaks för sig, annars blir rubriken kvar ensam. -->
+              <div id="tweaksSection">
+                <div class="subhead"><span class="bar"></span><span>Utseende</span></div>
+                <div id="cardTweaks"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -725,6 +780,38 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
               <h3>Kortkommandon</h3>
               <div class="kv"><span>Ctrl + Alt + Space</span><span>Växla race / edit</span></div>
               <p class="hint">I edit-läge drar du varje overlay på plats. Positionen sparas när du stänger panelen.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LAYOUT — skal än så länge, ska utvecklas till en egen flik med innehåll. -->
+      <div class="pane" id="pane-layout">
+        <div class="titleband">
+          <h2>Layout</h2>
+          <p>Verktyg för att ordna och gruppera overlays på skärmen kommer hit.</p>
+        </div>
+        <div class="controls">
+          <div class="cards single">
+            <div class="card"><h3>Kommer snart</h3>
+              <p class="hint">Den här fliken är under utveckling.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ALLMÄNT — skal än så länge, ska utvecklas till en egen flik med innehåll.
+           Rubriken får stå "Inställningar": den sitter i en 1000 px bred panel,
+           inte i den 80 px smala listen där etiketten måste vara kort. -->
+      <div class="pane" id="pane-installningar">
+        <div class="titleband">
+          <h2>Inställningar</h2>
+          <p>Allmänna appinställningar kommer hit.</p>
+        </div>
+        <div class="controls">
+          <div class="cards single">
+            <div class="card"><h3>Kommer snart</h3>
+              <p class="hint">Den här fliken är under utveckling.</p>
             </div>
           </div>
         </div>
@@ -1123,7 +1210,9 @@ function renderOptions(o){
     if (!d.type || d.type === 'bool') toggles.insertBefore(row, aot);
     else { tweaks.appendChild(row); nTweaks++; }
   }
-  tweaks.style.display = nTweaks ? '' : 'none';
+  // Döljs som HELA sektionen (rubrik + rader) — #cardTweaks ensamt hade lämnat
+  // "Utseende"-rubriken kvar ovanför ingenting.
+  $('tweaksSection').style.display = nTweaks ? '' : 'none';
 }
 
 /* ── live-preview (overlayn laddas app-relativt, samma bundle) ── */
@@ -1311,6 +1400,9 @@ $('checkUpd').addEventListener('click', async () => {
   let ws;
   const set = (cls, txt) => {
     $('dot').className = 'dot ' + cls; $('statusText').textContent = txt;
+    // Pricken i listen har ingen text bredvid sig — utan en titel som följer med
+    // är den bara en färgad punkt man får gissa betydelsen av.
+    $('railDot').className = 'rail-dot ' + cls; $('railDot').title = txt;
     // Hjälptexten i previewrutan doldes aldrig — den låg kvar BAKOM en körande
     // förhandsvisning och skymtade genom den. Den hör bara hemma när motorn är av.
     const hint = $('pvHint'); if (hint) hint.hidden = (cls !== 'off');

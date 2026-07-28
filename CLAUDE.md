@@ -149,6 +149,17 @@ liten uppsättning regler som är värda att kunna innan man ändrar i den:
   vertikala linje. Etiketterna har SAMMA typografi oavsett kontrolltyp — tidigare var
   reglageraderna versaler i `--dim` och växlarraderna gemener i `--ink`, och de två
   kortsorterna såg ut att komma från olika program.
+- **Två sorters rubrik, och skillnaden är avsiktlig.** En KORTRUBRIK (`.card > h3`,
+  `.list-head`) är versal, spärrad och **amber, utan streck** — där togs guldstrecket
+  bort i 0.4.4 för att en rubrik som redan har versaler OCH egen färg inte behöver en
+  tredje markör. En AVDELARRUBRIK inne i ett kort (`.subhead`, ny i 0.4.6) är versal,
+  spärrad, **neutralt grå (`--dim`) och har en 2 px-stapel i `--ui-brand`**. Den ser ut
+  att bryta mot regeln men gör tvärtom samma sak: bara EN signal bär färgen, och här är
+  det stapeln i stället för texten. Skälet att den inte kan vara amber som kortrubriken
+  är att den sitter tre gånger i SAMMA kort — tre amberrader i ett kort läser som tre
+  kort som råkat växa ihop, medan en grå etikett med en liten färgstapel läser som
+  avdelningar inuti ett. Blanda alltså inte ihop dem: lägg inte streck på en
+  kortrubrik, och gör inte en `.subhead` amber.
 - **Korten är exakt lika breda som förhandsvisningen.** `#previewBox` har
   `margin:16px 20px 0` och `.controls` `padding:16px 20px 24px` — samma 20 px, och
   ändras det ena måste det andra följa med. Två block med olika bredd ovanpå varandra
@@ -307,6 +318,19 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   arbetet, och där är `set_size` i praktiken en no-op — själva OMRÄKNINGEN är alltså
   aldrig körd skarpt. Testa på en 4K-skärm (200 % → ska bli 1440×900; 100 % → 2880×1800)
   och på en 1366×768-laptop (ska klampas till golvet 960×600, inte hamna utanför).
+- **0.4.6:s panelomgång i drift.** Motor-/Broadcastingstatusen flyttad till
+  titelraden, två nya flikar (Layout, Allmänt) som ännu är tomma skal, och de tre
+  inställningskorten sammanslagna till ett med avdelarrubriker. Verifierat genom att
+  rendera panelen i Chrome headless mot en Tauri-stub och mäta pixlar: 1440×900 och
+  960×600 (golvet), alla fem flikar, en overlay MED och en UTAN utseendealternativ,
+  samt Broadcasting-raden framme. **Men ingenting är sett i den riktiga appen.**
+  Två saker som stubben per definition inte kan bevisa: att titelraden fortfarande
+  går att DRA i (fixat med `data-tauri-drag-region="deep"`, §8.4i — stubben har
+  ingen fönsterhantering), och att `#bcRow`:s felmeddelande syns som tooltip.
+  Testa båda genom att dra fönstret i statustexten och hovra över den.
+  Notera också att headless Chrome under `--virtual-time-budget` fryser CSS-
+  transitioner halvvägs — en avstängd växlare såg grön ut i en skärmdump och var
+  det inte. Kör `--force-prefers-reduced-motion` innan du tror att du hittat en bugg.
 - **0.4.4:s designomgång i spelet.** Ändringarna är rent visuella (nedtonad glow,
   helfärgad brandbar i ordbildens röda, fullbreda kort, borttagna rubrikstreck,
   mörka behållarkanter, 4-punktsraster) plus ett nytt hexfält på varje färgrad.
@@ -617,6 +641,38 @@ overlay vald — och det är precis det som gör dem dyra.
   vid 10 px och kan aldrig få plats i en 80 px list. Statustexten är därför gemener
   medan flikarnas etiketter är versaler — ett medvetet undantag som dessutom bär
   information (etikett kontra live-status), inte en inkonsekvens att "rätta till".
+
+**Samma fälla slog till igen i 0.4.6**, nu med en FLIKETIKETT. Den nya kugghjuls-
+fliken hette först "Inställningar": versalt "INSTÄLLNINGAR" är ~95 px vid 10 px med
+0,9 px spärr, och listen har 72 px innanför sin padding. Etiketten rann ut på båda
+sidor om listen. `min-width:0` skyddar numera panelen från att FLYTTA sig, men det
+gör bara felet snyggare — texten spiller fortfarande. Fliken heter därför "Allmänt"
+(~56 px) medan panens rubrik får heta "Inställningar", för den sitter i en 1000 px
+bred vy. **Räkna bredden på railetiketten innan du döper en ny flik**, och kom ihåg
+att ~7 tecken är taket.
+
+### 8.4i `data-tauri-drag-region` gäller BARA direkta klick
+Titelraden är egen (`decorations:false`), och `.titlebar` bär `data-tauri-drag-region`.
+Det ser ut att göra hela raden dragbar. Det gör det inte: `tauri-2.11.5`:s
+`src/window/scripts/drag.js:66` returnerar `el === composedPath[0]` för ett **bart**
+attribut — alltså drar bara klick där titelraden SJÄLV är målet. Varje barn i raden
+blir en död yta.
+
+Det är därför `.tb-logo` har `pointer-events:none` (ett trick som såg ut som en
+detalj men är det som gör att man kan dra i loggan). När motorstatusen flyttades in i
+titelraden i 0.4.6 återuppstod problemet på en ny yta.
+
+Två lösningar, och valet beror på om elementet behöver pekhändelser:
+- `pointer-events:none` — enklast, men elementet kan då inte ha tooltip, hover
+  eller klick.
+- `data-tauri-drag-region="deep"` — hela subträdet drar, och pekhändelser fungerar
+  som vanligt. `#bcRow` bär Broadcasting-felet i sitt `title`, som är enda stället
+  felet syns, så där krävdes "deep".
+
+Attributet tar också värdet `"false"` (blockerar dragning för elementet OCH dess
+föräldrar), vilket är rätt om man någon gång lägger ett textfält i titelraden.
+Knappar behöver inget: `isClickableElement()` låter `BUTTON`, `INPUT`, `A` m.fl.
+blockera dragning av sig själva.
 
 ### 8.5 Flicker-mönster att aldrig upprepa
 Alla dessa fanns i delta-baren och gav synligt flimmer:
