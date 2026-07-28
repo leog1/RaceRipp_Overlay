@@ -5,6 +5,14 @@
    standardiserar).
    ══════════════════════════════════════════════════════════════════════════ */
 :root{
+  /* ── Standardstorlek ────────────────────────────────────────────────────
+     Alla overlays ritar 200 px hoga vid skala 1,0. Det ar HELA poangen med
+     talet: overlays ska se ut som en uppsattning, inte som olika program.
+     delta-bar och inputs-trace har nastan identiska proportioner (3,68:1 mot
+     3,72:1), sa samma hojd ger nastan identiska rektanglar.
+     En ny overlay ska rakna sin geometri ur detta varde, inte ur egna pixlar. */
+  --overlay-h: 200;               /* enhetslost: overlays gor px av det sjalva */
+
   /* ── Färg: betydelse, inte dekoration ── */
   --green:  #0DE622;   /* snabbare / vinner tid / full gas / negativ delta        */
   --red:    #FF3B3B;   /* långsammare / förlorar tid / broms / positiv delta      */
@@ -47,8 +55,10 @@
   --disc-mid:  rgb(33,37,34);
   --disc-bot:  rgb(17,20,18);
 
-  /* mjukt djup */
-  --depth: 0 10px 30px rgba(0,0,0,0.55);
+  /* mjukt djup. Fargen ar egen variabel sa den gar att stalla per overlay
+     (col-shadow i registry.json) utan att rora geometrin. */
+  --shadow: rgba(0,0,0,0.55);
+  --depth: 0 10px 30px var(--shadow);
   --sheen: inset 0 1px 0 rgba(255,255,255,0.05);
 
   /* FPS: INGEN blur över spelet (platta halvtransparenta paneler).

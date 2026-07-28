@@ -48,6 +48,9 @@ struct OverlayOption {
     // och inte i etiketten: etikettkolumnen är smal och "(s)" bröt till egen rad.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     unit: Option<String>,
+    // color: har fargen ett justerbart alfa? Panelen visar da ett extra reglage.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    alpha: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     values: Vec<OverlayOptionValue>,
 }
@@ -130,8 +133,11 @@ fn sanitize_option(o: &OverlayOption, v: &serde_json::Value) -> serde_json::Valu
 }
 
 fn is_hex_color(s: &str) -> bool {
+    // #rgb, #rgba, #rrggbb och #rrggbbaa. Alfaformerna behovs for ytor och skuggor:
+    // <input type="color"> kan bara ge ogenomskinlig hex, sa panelen kombinerar
+    // den med ett alfa-reglage och skickar 8-siffrigt varde hit.
     let b = s.as_bytes();
-    (b.len() == 7 || b.len() == 4) && b[0] == b'#' && b[1..].iter().all(u8::is_ascii_hexdigit)
+    matches!(b.len(), 4 | 5 | 7 | 9) && b[0] == b'#' && b[1..].iter().all(u8::is_ascii_hexdigit)
 }
 
 // Städar en hel optionskarta mot registret: okända nycklar (en option som tagits

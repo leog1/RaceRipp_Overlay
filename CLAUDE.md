@@ -89,6 +89,23 @@ till i tokens FÖRST. **Färg = betydelse, inte dekoration:**
 - `--abs #ECC328` (broms-trace vid ABS) · `--tc #29A3FF` (gas-trace vid TC) · `--clutch #0000FF`
 - Text: `--ink` primär, `--dim` etiketter, `--faint` saknat värde (grå streckad platshållare)
 
+**Standardstorlek:** alla overlays ritar **200 px höga vid skala 1,0** (`--overlay-h`
+i tokens.css). Poängen är att de ska se ut som en uppsättning, inte som olika program.
+delta-bar och inputs-trace har nästan identiska proportioner (3,68:1 mot 3,72:1), så
+samma höjd ger nästan identiska rektanglar (736×200 och 744×200). En ny overlay ska
+räkna sin geometri ur det värdet, inte ur egna pixlar. `baseWidth`/`baseHeight` i
+registret ska sitta TAJT runt det ritade innehållet plus plats för slagskuggan —
+delta-baren låg på 1300×460 för 927×252 innehåll, alltså 373×208 död yta som DWM
+komponerade i onödan (§3).
+
+**Färganpassning:** varje overlay exponerar sina färger som `col-<token>`-alternativ i
+`registry.json`. `bus.js` sätter automatiskt CSS-variabeln `--<token>`, så **en ny färg
+är en rad i registret och noll kod i overlayn**. Betydelsebärande färger delas med
+flit mellan element: pedalstapelns gröna och grafens gröna ÄR samma token, för de
+betyder samma sak. Ytor och skuggor har `alpha: true` — `<input type="color">` kan
+bara ge ogenomskinlig hex, så panelen kombinerar den med ett alfa-reglage och skickar
+`#rrggbbaa`.
+
 Typografi: **Montserrat**, SemiBold (600) primär; siffror alltid **tabular** (hoppar ej).
 Animation: mjuk lerp mot målvärde; respektera `prefers-reduced-motion`.
 Renderare per element: **SVG** (gauges/bågar/ikoner), **HTML/CSS** (paneler/text/staplar),
@@ -335,8 +352,12 @@ för om det som faktiskt ritas:
 - **Opaciteten nådde aldrig fram.** Panelen postade bara `option`, aldrig `config`.
 
 Mätningen kräver att iframen laddat, och måttet ändras när ett alternativ ändrar
-dimensionerna — därför `refitSoon()` (dubbel rAF) efter load och efter varje
-alternativändring.
+dimensionerna — därför `refitSoon()` (dubbel rAF) efter load.
+
+**En engångsmätning räcker inte.** Overlayn ritas först i fallback-font och byter till
+Montserrat när den laddat, vilket ändrar bredden. Mätte vi bara vid load blev previewn
+avklippt och rättades aldrig. En `ResizeObserver` på `#ui` inne i iframen fångar både
+fontbytet och alla senare ändringar.
 
 ### 8.5 Flicker-mönster att aldrig upprepa
 Alla dessa fanns i delta-baren och gav synligt flimmer:

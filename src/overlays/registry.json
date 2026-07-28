@@ -5,11 +5,11 @@
       "title": "Delta + Lap-time Row",
       "desc": "Delta mot referensvarv med varvtidsrad — session-bästa, förare och predikterad sluttid. Cirkeln fylls grönt när du vinner tid, rött när du tappar.",
       "url": "overlays/delta-bar/index.html",
-      "baseWidth": 1300,
-      "baseHeight": 460,
+      "baseWidth": 810,
+      "baseHeight": 310,
       "defaultX": 460,
       "defaultY": 40,
-      "defaultScale": 0.9,
+      "defaultScale": 1.0,
       "hz": 30,
       "channels": [
         "delta",
@@ -22,6 +22,66 @@
           "id": "predicted",
           "label": "Predicted-kolumn",
           "default": true
+        },
+        {
+          "id": "col-green",
+          "type": "color",
+          "label": "Snabbare",
+          "default": "#0DE622"
+        },
+        {
+          "id": "col-red",
+          "type": "color",
+          "label": "Långsammare",
+          "default": "#FF3B3B"
+        },
+        {
+          "id": "col-amber",
+          "type": "color",
+          "label": "Accent (bästa)",
+          "default": "#FBBF24"
+        },
+        {
+          "id": "col-panel",
+          "type": "color",
+          "label": "Panelbakgrund",
+          "default": "#121416db",
+          "alpha": true
+        },
+        {
+          "id": "col-bar",
+          "type": "color",
+          "label": "Varvtidsradens bakgrund",
+          "default": "#060708e6",
+          "alpha": true
+        },
+        {
+          "id": "col-edge",
+          "type": "color",
+          "label": "Kantlinje",
+          "default": "#070807",
+          "alpha": true
+        },
+        {
+          "id": "col-track",
+          "type": "color",
+          "label": "Mätarspår",
+          "default": "#00000073",
+          "alpha": true
+        },
+        {
+          "id": "col-divider",
+          "type": "color",
+          "label": "Avdelare",
+          "default": "#ffffff12",
+          "alpha": true
+        },
+        {
+          "id": "col-shadow",
+          "type": "color",
+          "label": "Skugga",
+          "default": "#0000008c",
+          "alpha": true
         }
       ]
     },
@@ -30,8 +90,8 @@
       "title": "Inputs Trace",
       "desc": "Rullande gas/broms-trace med pedalstaplar. ABS färgar bromsen gul, TC färgar gasen blå.",
       "url": "overlays/inputs-trace/index.html",
-      "baseWidth": 600,
-      "baseHeight": 200,
+      "baseWidth": 790,
+      "baseHeight": 250,
       "defaultX": 40,
       "defaultY": 40,
       "defaultScale": 1.0,
@@ -63,6 +123,71 @@
           "id": "ghost",
           "label": "Referensspår (ghost)",
           "default": true
+        },
+        {
+          "id": "col-green",
+          "type": "color",
+          "label": "Gas",
+          "default": "#0DE622"
+        },
+        {
+          "id": "col-red",
+          "type": "color",
+          "label": "Broms",
+          "default": "#FF3B3B"
+        },
+        {
+          "id": "col-abs",
+          "type": "color",
+          "label": "ABS-ingrepp",
+          "default": "#ECC328"
+        },
+        {
+          "id": "col-tc",
+          "type": "color",
+          "label": "TC-ingrepp",
+          "default": "#29A3FF"
+        },
+        {
+          "id": "col-clutch",
+          "type": "color",
+          "label": "Koppling",
+          "default": "#0000FF"
+        },
+        {
+          "id": "col-panel",
+          "type": "color",
+          "label": "Panelbakgrund",
+          "default": "#121416db",
+          "alpha": true
+        },
+        {
+          "id": "col-plot",
+          "type": "color",
+          "label": "Grafyta",
+          "default": "#141613",
+          "alpha": true
+        },
+        {
+          "id": "col-edge",
+          "type": "color",
+          "label": "Kantlinje",
+          "default": "#070807",
+          "alpha": true
+        },
+        {
+          "id": "col-grid",
+          "type": "color",
+          "label": "Rutnät",
+          "default": "#ffffff0d",
+          "alpha": true
+        },
+        {
+          "id": "col-shadow",
+          "type": "color",
+          "label": "Skugga",
+          "default": "#0000008c",
+          "alpha": true
         }
       ]
     }

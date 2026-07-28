@@ -162,5 +162,61 @@ const FRAME = (o = {}) => ({ throttle: 0, brake: 0, clutch: 0, abs: false, tc: f
         efter[efter.length - 1].value === '0.35', efter[efter.length - 1].value);
 }
 
+// ── 13. Färgalternativ sätter CSS-variabeln, generiskt ───────────────────
+// `col-<token>` → `--<token>`. Poängen är att en ny färg ska vara EN RAD i
+// registry.json och noll kod i overlayn. Går det sönder märks det inte i CSS —
+// färgen blir bara den gamla.
+{
+  const h = await loadOverlay('inputs-trace', {
+    html: htmlOf('inputs-trace'),
+    init: { id: 'inputs-trace', scale: 1, opacity: 1,
+            options: { clutch: true, window: 4.5, 'col-green': '#00ff00' } },
+  });
+  const skriv = (namn) => h.writes({ el: 'documentElement', key: namn });
+  check('färg ur INIT sätter CSS-variabeln före första paint',
+        skriv('--green').some((w) => w.value === '#00ff00'),
+        JSON.stringify(skriv('--green').map((w) => w.value)));
+
+  h.message({ __simmatrix: true, kind: 'option', id: 'inputs-trace',
+              option: 'col-red', value: '#123456' });
+  check('färgändring i drift sätter variabeln',
+        skriv('--red').some((w) => w.value === '#123456'), JSON.stringify(skriv('--red')));
+
+  // Alfa: 8-siffrig hex ska gå rakt igenom, CSS förstår den.
+  h.message({ __simmatrix: true, kind: 'option', id: 'inputs-trace',
+              option: 'col-panel', value: '#12141680' });
+  check('alfafärg (8-siffrig hex) når fram orörd',
+        skriv('--panel').some((w) => w.value === '#12141680'), JSON.stringify(skriv('--panel')));
+
+  // Ett col-alternativ som INTE är en sträng får inte skriva något alls.
+  const föreSkräp = skriv('--grid').length;
+  h.message({ __simmatrix: true, kind: 'option', id: 'inputs-trace',
+              option: 'col-grid', value: 42 });
+  check('icke-sträng skriver ingen CSS-variabel', skriv('--grid').length === föreSkräp,
+        `${skriv('--grid').length - föreSkräp} skrivningar`);
+}
+
+// ── 14. Alla färger i registret måste ha giltiga standardvärden ──────────
+// Rust validerar mot #rgb/#rgba/#rrggbb/#rrggbbaa och faller tillbaka på default
+// vid fel — men är DEFAULTEN felskriven finns inget att falla tillbaka på.
+{
+  const reg = JSON.parse(fs.readFileSync(path.join(ROOT, 'src/overlays/registry.json'), 'utf8'));
+  const hex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+  const fel = [];
+  let antal = 0;
+  for (const o of reg.overlays) {
+    for (const d of o.options || []) {
+      if (d.type !== 'color') continue;
+      antal++;
+      if (!hex.test(String(d.default))) fel.push(`${o.id}.${d.id}=${d.default}`);
+      if (!d.id.startsWith('col-')) fel.push(`${o.id}.${d.id}: färg utan col--prefix`);
+      // alfa i standardvärdet utan alpha:true går inte att ställa i panelen
+      if (String(d.default).replace('#', '').length === 8 && !d.alpha)
+        fel.push(`${o.id}.${d.id}: alfa i default men alpha saknas`);
+    }
+  }
+  check(`alla ${antal} färgalternativ är välformade`, fel.length === 0, fel.join('; ') || 'ok');
+}
+
 console.log(failed ? `\n${failed} kontroll(er) misslyckades` : '\nAllt OK');
 process.exit(failed ? 1 : 0);

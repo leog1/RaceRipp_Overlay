@@ -130,6 +130,11 @@ body{font-family:var(--font);background:var(--app-bg);color:var(--ink);
 .osel:focus-visible{outline:2px solid var(--green);outline-offset:1px;}
 .ocol{flex:0 0 44px;width:44px;height:26px;padding:2px;background:var(--track);
   border:1px solid var(--slot-edge);border-radius:8px;cursor:pointer;}
+/* Alfa-reglaget bredvid färgrutan. Smalare än de vanliga reglagen så raden rymmer
+   etikett + färg + alfa + procent utan att bryta. */
+.oalpha{flex:0 1 120px;min-width:70px;accent-color:var(--dim);height:4px;}
+.row .val{flex:0 0 42px;text-align:right;font-size:12px;font-weight:600;color:var(--dim);
+  font-variant-numeric:tabular-nums;}
 
 /* toggle */
 .sw{position:relative;width:42px;height:24px;flex:0 0 auto;cursor:pointer;}
@@ -433,13 +438,42 @@ function renderOptions(o){
       row.appendChild(sel);
 
     } else if (d.type === 'color'){
+      /* <input type="color"> kan BARA ge ogenomskinlig hex. Ytor och skuggor behöver
+         alfa, så färgen kombineras med ett eget alfa-reglage och skickas som
+         8-siffrig hex (#rrggbbaa), vilket CSS förstår direkt. */
       row.className = 'row';
       row.innerHTML = `<span class="rlabel"></span>`;
       row.querySelector('.rlabel').textContent = d.label;
+      const s = String(val || d.default || '#000000');
+      const rgb = '#' + s.replace('#','').slice(0,6).padEnd(6,'0');
+      const a0 = s.replace('#','').length >= 8 ? parseInt(s.slice(-2),16)/255 : 1;
+
       const inp = document.createElement('input');
-      inp.type = 'color'; inp.className = 'ocol'; inp.value = val;
-      inp.addEventListener('input', () => send(inp.value));
+      inp.type = 'color'; inp.className = 'ocol'; inp.value = rgb;
+      let alpha = a0;
+      const emit = () => {
+        const hex = inp.value;
+        send(d.alpha && alpha < 0.999
+          ? hex + Math.round(alpha*255).toString(16).padStart(2,'0')
+          : hex);
+      };
+      inp.addEventListener('input', emit);
       row.appendChild(inp);
+
+      if (d.alpha){
+        const al = document.createElement('input');
+        al.type = 'range'; al.className = 'oalpha';
+        al.min = 0; al.max = 1; al.step = 0.01; al.value = alpha;
+        al.title = 'Genomskinlighet';
+        const out = document.createElement('span'); out.className = 'val';
+        out.textContent = Math.round(alpha*100) + '%';
+        al.addEventListener('input', () => {
+          alpha = parseFloat(al.value);
+          out.textContent = Math.round(alpha*100) + '%';
+          emit();
+        });
+        row.appendChild(al); row.appendChild(out);
+      }
 
     } else {
       row.className = 'row';
@@ -468,7 +502,7 @@ function setPreview(o){
   const src = '../' + o.url + '?id=' + encodeURIComponent(o.id);
   if (pv.dataset.src !== src){
     pv.dataset.src = src; pv.src = src;
-    pv.onload = refitSoon;          // innehållet går inte att mäta före load
+    pv.onload = () => { refitSoon(); watchPreview(); };   // mät först efter load
   }
   fitPreview(); refitSoon();
 }
@@ -510,6 +544,26 @@ function fitPreview(){
 /* Innehållet går inte att mäta förrän iframen laddat, och ändras när ett alternativ
    ändrar dimensionerna. rAF ger layouten en chans att landa först. */
 function refitSoon(){ requestAnimationFrame(() => requestAnimationFrame(fitPreview)); }
+
+/* En ENGÅNGSMÄTNING räcker inte. Overlayn ritas först i fallback-font och byter till
+   Montserrat när den laddat, vilket ändrar bredden — mätte vi då blev previewn
+   avklippt och rättades aldrig. En ResizeObserver på #ui inne i iframen fångar både
+   det och alla senare ändringar (dolda kolumner, ändrat tidsfönster), så previewn
+   alltid är centrerad och hel. Samma origin, så vi kommer åt dokumentet. */
+let pvObs = null;
+function watchPreview(){
+  const pv = $('pv');
+  try {
+    if (pvObs) { pvObs.disconnect(); pvObs = null; }
+    const el = pv.contentDocument && pv.contentDocument.getElementById('ui');
+    if (!el) return;
+    pvObs = new ResizeObserver(() => fitPreview());
+    pvObs.observe(el);
+    // Fonten kan byta strax efter load utan att elementets storlek ändras i samma
+    // veva; ett par sena omritningar kostar inget och tar bort kvarvarande fall.
+    pv.contentDocument.fonts?.ready?.then(refitSoon).catch(() => {});
+  } catch {}
+}
 addEventListener('resize', () => { if (selectedId) fitPreview(); });
 
 /* ── kontrollremsa ── */

@@ -11,7 +11,10 @@
 <style>
 /* Overlay-specifik geometri (palett från tokens.css) */
 :root{
-  --H:150px;                              /* panelhöjd = skalenhet; sätts av kontrollpanelen */
+  /* Panelhöjd = skalenhet. Värdet är standardhöjden ur tokens.css (--overlay-h)
+     så alla overlays är lika stora vid skala 1,0; kontrollpanelen multiplicerar
+     med användarens skala. */
+  --H:200px;
   --r:calc(var(--H)*0.0625); --pad:calc(var(--H)*0.060);
   --bar-w:calc(var(--H)*0.190); --bar-h:calc(var(--H)*0.735);
   --bar-gap:calc(var(--H)*0.055); --bar-r:calc(var(--H)*0.022);
@@ -90,6 +93,10 @@ import { WsBus, wireShell, fontsReady, startLoop } from '../../shared/bus.js';
 const prefersReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const Clock = { now(){ return performance.now(); } };   // scroll-tid (lokal)
 const TAU = 0.05;                                       // s, utjämning av pedalstaplar
+/* Standardhöjden ur tokens.css. Läses därifrån så det finns EN källa — hårdkodas
+   den här glider overlays isär i storlek igen. */
+const OVERLAY_H = Number(getComputedStyle(document.documentElement)
+                    .getPropertyValue('--overlay-h').trim()) || 200;
 /* Spökspårets nedtoning. 0.38 är valt så referensen går att följa men aldrig
    konkurrerar med din egen insats — den ska läsas som djup, inte som en andra linje. */
 const GHOST_ALPHA = 0.38;
@@ -232,12 +239,17 @@ const bus=new WsBus();
 const trace=new InputsTrace(bus, document.getElementById('overlay'));
 
 wireShell(({scale,opacity})=>{
-  if(typeof scale==='number') document.documentElement.style.setProperty('--H',(150*scale)+'px');
+  if(typeof scale==='number') document.documentElement.style.setProperty('--H',(OVERLAY_H*scale)+'px');
   if(typeof opacity==='number') document.getElementById('ui').style.opacity=String(opacity);
 },(opt,val)=>{
   if(opt==='clutch'){ const c=document.getElementById('col-clutch'); if(c) c.style.display = val ? '' : 'none'; }
   if(opt==='window') trace.setWindow(val);
   if(opt==='ghost') trace.ghost = !!val;
+  /* Canvas-färgerna läses EN gång vid start och cachas (de används 30 ggr/s).
+     Ändras en färg måste cachen fyllas på — annars ritar traces vidare i den gamla
+     färgen medan resten av panelen redan bytt. bus.js har satt CSS-variabeln innan
+     detta anrop, så omläsningen ger det nya värdet. */
+  if(typeof opt==='string' && opt.startsWith('col-')) trace.col = trace._readColors();
 });
 // Väntar in fonten men aldrig i evighet (riggen kan vara offline).
 fontsReady().then(()=>document.getElementById('overlay').classList.add('ready'));

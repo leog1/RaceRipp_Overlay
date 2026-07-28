@@ -245,6 +245,17 @@ export function fontsReady(timeoutMs = 1500) {
 // applyConfig får {scale, opacity}. applyOption (valfri) får (id, value) per
 // alternativ som overlayn deklarerat i registry.json. Fungerar även utan Tauri
 // (t.ex. i OBS eller vanlig webbläsare) — då händer bara inget.
+/* Färgalternativ heter `col-<token>` och sätter motsvarande CSS-variabel direkt.
+   Generiskt med FLIT: en ny färg är en rad i registry.json och noll kod i overlayn,
+   precis som resten av optionsschemat. Overlayn får värdet vidare också, för den
+   som behöver reagera (inputs-trace läser om sina canvas-färger). */
+function applyOne(applyOption, opt, val) {
+  if (typeof opt === 'string' && opt.startsWith('col-') && typeof val === 'string' && val) {
+    try { document.documentElement.style.setProperty('--' + opt.slice(4), val); } catch {}
+  }
+  if (applyOption) applyOption(opt, val);
+}
+
 export function wireShell(applyConfig, applyOption) {
   // Injicerad skala/opacitet/alternativ appliceras FÖRST och synkront, före allt
   // async — annars hinner overlayn ritas i CSS-defaultens skala och ser avkapad ut.
@@ -253,8 +264,8 @@ export function wireShell(applyConfig, applyOption) {
   // Ligger utanför Tauri-kontrollen nedan så det gäller även om event-API:t saknas.
   if (INIT) {
     applyConfig({ scale: INIT.scale, opacity: INIT.opacity });
-    if (applyOption && INIT.options) {
-      for (const [k, v] of Object.entries(INIT.options)) applyOption(k, v);
+    if (INIT.options) {
+      for (const [k, v] of Object.entries(INIT.options)) applyOne(applyOption, k, v);
     }
   }
 
@@ -278,7 +289,7 @@ export function wireShell(applyConfig, applyOption) {
     const p = ev.data;
     if (!p || p.__simmatrix !== true) return;
     if (p.id && label && p.id !== label) return;
-    if (p.kind === 'option') { if (applyOption) applyOption(p.option, p.value); }
+    if (p.kind === 'option') applyOne(applyOption, p.option, p.value);
     else if (p.kind === 'config') applyConfig(p);
   });
 
@@ -301,8 +312,8 @@ export function wireShell(applyConfig, applyOption) {
   try {
     if (label) T.core.invoke('get_config', { id: label }).then(cfg => {
       applyConfig(cfg || {});
-      if (applyOption && cfg && cfg.options) {
-        for (const [k, v] of Object.entries(cfg.options)) applyOption(k, v);
+      if (cfg && cfg.options) {
+        for (const [k, v] of Object.entries(cfg.options)) applyOne(applyOption, k, v);
       }
     }).catch(() => {});
   } catch {}
@@ -315,7 +326,7 @@ export function wireShell(applyConfig, applyOption) {
   T.event.listen('option', (e) => {
     const p = e.payload || {};
     if (p.id && label && p.id !== label) return;   // ignorera annan overlays alternativ
-    if (applyOption) applyOption(p.option, p.value);
+    applyOne(applyOption, p.option, p.value);
   });
   T.event.listen('edit-mode', (e) => {
     _editMode = e.payload === true;

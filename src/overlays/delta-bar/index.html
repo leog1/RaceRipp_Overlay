@@ -12,7 +12,11 @@
 /* Overlay-specifik geometri (palett kommer från tokens.css) */
 :root{
   --disc:280px; --bar-h:86px; --overlap:46px;
-  --ui-scale:0.9;                 /* sätts av kontrollpanelen (M2) */
+  --ui-scale:1;                   /* användarens skala; sätts av kontrollpanelen */
+  /* Normalisering till standardhöjden (tokens.css --overlay-h). Overlayns
+     onormaliserade höjd är 280 px, så 200/280 = 0.7143 ger standarden vid skala 1.
+     Utan detta var delta-baren 1,68x högre än inputs-trace vid samma skala. */
+  --fit:0.7143;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{width:100%;height:100%;overflow:hidden;background:transparent;}
@@ -21,7 +25,7 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
 /* skalbart, positionerbart rot-element — window:t är tajt runt detta */
 /* Opaciteten från kontrollpanelen ligger i --ui-opacity, inte som inline style:
    annars kör den över opacity:0 och overlayn blir synlig innan första render. */
-#ui{position:absolute;top:34px;left:30px;transform:scale(var(--ui-scale));transform-origin:top left;
+#ui{position:absolute;top:34px;left:30px;transform:scale(calc(var(--ui-scale) * var(--fit)));transform-origin:top left;
   opacity:0;transition:opacity .3s ease;will-change:transform,opacity;}
 #ui.ready{opacity:var(--ui-opacity,1);}
 .delta-row{display:flex;align-items:center;}
