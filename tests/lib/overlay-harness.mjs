@@ -109,6 +109,9 @@ function makeEl(id, log, byId) {
  * @param {number}   opts.loopHz  overlayns renderloop-takt (default 30). Skild från
  *                                opts.hz just för att kunna testa Hz-taket: sätt
  *                                hz:144, loopHz:30 för att mäta att den kapar.
+ * @param {boolean}  opts.preview kör overlayn som om den satt i kontrollpanelens
+ *                                iframe (bus.js:IN_PREVIEW blir true)
+ * @param {string}   opts.busFile alternativ sökväg till bus.js (för före/efter-bevis)
  */
 export async function loadOverlay(id, opts = {}) {
   const file = opts.html || path.join(ROOT, 'src/overlays', id, 'index.html');
@@ -151,7 +154,12 @@ export async function loadOverlay(id, opts = {}) {
   });
   globalThis.ResizeObserver = class { observe() {} disconnect() {} };
   globalThis.location = { search: '' };
-  globalThis.window = { devicePixelRatio: 1 };
+  // bus.js avgör med `window.self !== window.top` om overlayn kör i kontrollpanelens
+  // förhandsvisning. Två skilda objekt = iframe. Standardfallet (båda undefined) är
+  // ett vanligt overlay-fönster, vilket är vad alla andra tester ska mäta.
+  globalThis.window = opts.preview
+    ? { devicePixelRatio: 1, self: { frame: 'preview' }, top: { frame: 'control' } }
+    : { devicePixelRatio: 1 };
   globalThis.document = {
     getElementById: byId,
     createElement: () => makeEl('span', log, byId),
@@ -174,7 +182,10 @@ export async function loadOverlay(id, opts = {}) {
   // importen). Frågesträngen bryter ESM:s modulcache så INIT läses om för VARJE
   // loadOverlay — annars fryses den till det första anropets värden och tester med
   // olika init påverkar varandra.
-  const busUrl = pathToFileURL(path.join(ROOT, 'src/shared/bus.js')).href;
+  // opts.busFile pekar ut en ANNAN bus.js (t.ex. en äldre revision). Utan den går
+  // det inte att bevisa att ett test på delad kod biter: overlayns HTML kan hämtas
+  // ur git med htmlAtRevision, men bus.js laddas alltid från arbetsträdet.
+  const busUrl = pathToFileURL(opts.busFile || path.join(ROOT, 'src/shared/bus.js')).href;
   const bus = await import(`${busUrl}?n=${++loadCounter}`);
   // opts.loopHz sätter takten i test; skild från opts.hz (fejkad vsync) så att
   // Hz-taket går att mäta. En overlay som anger egen hz vinner.
@@ -237,11 +248,16 @@ export async function loadOverlay(id, opts = {}) {
   };
 }
 
-/** Overlayns HTML som den såg ut i en given git-revision (för före/efter-bevis). */
-export function htmlAtRevision(id, rev = 'HEAD') {
-  return execFileSync('git', ['show', `${rev}:src/overlays/${id}/index.html`], {
+/** En repo-fil som den såg ut i en given git-revision (för före/efter-bevis). */
+export function fileAtRevision(relPath, rev = 'HEAD') {
+  return execFileSync('git', ['show', `${rev}:${relPath}`], {
     cwd: ROOT, encoding: 'utf8', maxBuffer: 8 << 20,
   });
+}
+
+/** Overlayns HTML som den såg ut i en given git-revision (för före/efter-bevis). */
+export function htmlAtRevision(id, rev = 'HEAD') {
+  return fileAtRevision(`src/overlays/${id}/index.html`, rev);
 }
 
 export { ROOT };

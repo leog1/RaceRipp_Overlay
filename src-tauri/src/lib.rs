@@ -561,6 +561,18 @@ fn set_reference(app: AppHandle, state: State<Mutex<Settings>>, path: String) {
     }
 }
 
+// Anropas av panelen strax innan updateraren installerar. Updateraren startar
+// installeraren och gör sedan `std::process::exit(0)` inifrån plugin:et — det går
+// FÖRBI både CloseRequested-hanteraren och RunEvent::Exit, så positioner som dragits
+// under sessionen hade annars gått förlorade vid varje uppdatering, och motorn hade
+// levt kvar precis så länge det tar för OS:et att stänga Job Object-handtaget medan
+// installeraren redan vill skriva över acc-engine.exe.
+#[tauri::command]
+fn prepare_update(app: AppHandle) {
+    persist_positions(&app);
+    stop_engine();
+}
+
 // ── Globala inställningar (gäller alla overlays) ─────────────────────────────
 #[derive(Serialize, Clone)]
 struct GlobalsPayload {
@@ -639,7 +651,8 @@ pub fn run() {
             set_edit_mode,
             set_reference,
             get_globals,
-            set_hide_until_connected
+            set_hide_until_connected,
+            prepare_update
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

@@ -89,6 +89,14 @@ annars kör du gammal motorkod.
 3. `git tag v0.2.0 && git push origin v0.2.0` → GitHub Actions bygger installer +
    `latest.json`. Appens **Sök uppdatering** hittar och installerar nya versioner.
 
+**Bygg bara ETT installerformat.** `bundle.targets` är låst till `["nsis"]` med flit.
+Med `"all"` byggs både MSI och NSIS, och den generiska nyckeln i `latest.json` —
+`windows-x86_64`, den updateraren faktiskt slår upp — pekade då på **MSI:n** medan
+appen var installerad med NSIS. MSI installerar per maskin i `Program Files`, NSIS per
+användare i `%LOCALAPPDATA%`: uppdateringen "lyckades" men lade en andra kopia bredvid,
+och genvägen fortsatte peka på den gamla. Symptomen var att man fick uppdatera vid
+varje start. Se CLAUDE.md §8.8e.
+
 OS-kodsignering (SmartScreen) är medvetet uppskjuten — updater-signaturen räcker för
 integritet; utan Authenticode klickar man "kör ändå" första gången.
 

@@ -218,5 +218,68 @@ const FRAME = (o = {}) => ({ throttle: 0, brake: 0, clutch: 0, abs: false, tc: f
   check(`alla ${antal} färgalternativ är välformade`, fel.length === 0, fel.join('; ') || 'ok');
 }
 
+// ── 15. Varje färgalternativ måste faktiskt STYRA något i sin overlay ───────
+// Rapporterat: skuggreglaget på delta-baren gjorde ingenting. Orsaken var att
+// overlayns box-shadow stod hårdkodad — `col-shadow` satte --shadow, men inget läste
+// den. Samma sak gällde col-panel och col-edge, som inte hade någon motsvarighet
+// alls i delta-baren. Det syns inte i CSS och inte i något annat test: reglaget rör
+// sig, värdet sparas, och ingenting händer.
+//
+// Kontrollen följer indirektionen genom tokens.css, för det är så det SKA se ut:
+// inputs-trace använder var(--depth), och --depth är definierad som
+// "0 10px 30px var(--shadow)". Den overlayn styrs alltså av col-shadow trots att
+// den aldrig nämner --shadow.
+{
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+  const tokens = strip(fs.readFileSync(path.join(ROOT, 'src/shared/tokens.css'), 'utf8'));
+
+  // token → tokens den är byggd av
+  const deps = new Map();
+  for (const m of tokens.matchAll(/--([\w-]+)\s*:([^;]*);/g)) {
+    const set = deps.get(m[1]) || new Set();
+    for (const r of m[2].matchAll(/var\(\s*--([\w-]+)/g)) set.add(r[1]);
+    deps.set(m[1], set);
+  }
+
+  const reg = JSON.parse(fs.readFileSync(path.join(ROOT, 'src/overlays/registry.json'), 'utf8'));
+  const döda = [];
+  for (const o of reg.overlays) {
+    const src = strip(fs.readFileSync(path.join(ROOT, 'src', o.url), 'utf8'));
+    // Alla tokennamn overlayn nämner — var(--x) i CSS OCH getPropertyValue('--x')
+    // i JS (inputs-trace läser sina canvas-färger den vägen, och en kontroll som
+    // bara tittade på var() hade dömt ut col-abs och col-tc som döda).
+    const used = new Set([...src.matchAll(/--([\w-]+)/g)].map((m) => m[1]));
+    for (const t of [...used]) for (const d of (deps.get(t) || [])) used.add(d);
+
+    for (const d of o.options || []) {
+      if (d.type !== 'color') continue;
+      if (!used.has(d.id.slice(4))) döda.push(`${o.id}.${d.id}`);
+    }
+  }
+  check('varje färgalternativ styr en token som overlayn faktiskt läser',
+        döda.length === 0, döda.length ? `utan verkan: ${döda.join(', ')}` : 'ok');
+}
+
+// ── 16. Ingen overlay får hårdkoda en färg som har ett reglage ─────────────
+// Delta-baren satte bågens och siffrans färg med `'#0DE622'`/`'#FF3B3B'` rakt i JS.
+// Kontroll 15 ovan hittar INTE det: --green används på annat håll i samma fil, så
+// tokenen ser använd ut — men de två mest synliga elementen bytte aldrig färg.
+{
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+  const reg = JSON.parse(fs.readFileSync(path.join(ROOT, 'src/overlays/registry.json'), 'utf8'));
+  const träffar = [];
+  for (const o of reg.overlays) {
+    const src = strip(fs.readFileSync(path.join(ROOT, 'src', o.url), 'utf8'));
+    const literaler = new Set([...src.matchAll(/#([0-9a-fA-F]{6})\b/g)].map((m) => m[1].toLowerCase()));
+    for (const d of o.options || []) {
+      if (d.type !== 'color') continue;
+      const rgb = String(d.default).replace('#', '').slice(0, 6).toLowerCase();
+      if (literaler.has(rgb)) träffar.push(`${o.id}: #${rgb} (${d.id})`);
+    }
+  }
+  check('ingen overlay hårdkodar en färg som har ett eget reglage',
+        träffar.length === 0, träffar.join('; ') || 'ok');
+}
+
 console.log(failed ? `\n${failed} kontroll(er) misslyckades` : '\nAllt OK');
 process.exit(failed ? 1 : 0);

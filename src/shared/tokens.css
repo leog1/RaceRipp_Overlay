@@ -60,6 +60,13 @@
   --shadow: rgba(0,0,0,0.55);
   --depth: 0 10px 30px var(--shadow);
   --sheen: inset 0 1px 0 rgba(255,255,255,0.05);
+  /* Svagare syskon till --shadow. Delta-cirkeln staplar TRE drop shadows med olika
+     styrka (nara/mellan/halo) — hade alla tre tagit --shadow rakt av blivit halon
+     markant morkare an idag. Fallbacken har ar exakt de varden som stod hardkodade
+     innan col-shadow kopplades in, sa utseendet ar oforandrat pa en motor utan
+     color-mix; @supports nedan gor dem harledda dar den finns. */
+  --shadow-mid:  rgba(0,0,0,0.50);
+  --shadow-soft: rgba(0,0,0,0.38);
 
   /* FPS: INGEN blur över spelet (platta halvtransparenta paneler).
      För OBS där FPS ej spelar roll: blur(9px) saturate(0.95) */
@@ -67,4 +74,16 @@
 
   /* ── Typografi ── */
   --font: 'Montserrat', system-ui, sans-serif;   /* 500 / 600 (primär) / 700 */
+}
+
+/* Harled de svagare skuggorna ur --shadow sa att col-shadow styr ALLA lager, med
+   bibehallna inbordes vikter (91 % och 69 % av grundvardet = dagens 0,50 och 0,38
+   mot 0,55). Ligger i @supports och inte direkt i :root for att en ogiltig
+   color-mix annars hade tagit hela deklarationen med sig — och da hade overlayn
+   statt helt utan skugga i stallet for med fel nyans. */
+@supports (color: color-mix(in srgb, red 50%, transparent)){
+  :root{
+    --shadow-mid:  color-mix(in srgb, var(--shadow) 91%, transparent);
+    --shadow-soft: color-mix(in srgb, var(--shadow) 69%, transparent);
+  }
 }

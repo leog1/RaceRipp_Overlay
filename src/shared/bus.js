@@ -256,6 +256,28 @@ function applyOne(applyOption, opt, val) {
   if (applyOption) applyOption(opt, val);
 }
 
+/* Skalan är FÖNSTRETS egenskap och hör inte hemma i kontrollpanelens förhandsvisning:
+   där ritas overlayn i naturlig storlek och krymps sedan av panelen för att passa
+   rutan (§8.4c). Släpp därför aldrig igenom `scale` till en overlay som kör i previewn.
+
+   Det är inte kosmetik utan en riktig bugg som var rapporterad: `get_config`
+   NÅR fram in i iframen, medan `emit` inte gör det. På WebView2 injiceras
+   init-skript i ALLA frames (wry: "scripts are always added to subframes"), så
+   `__TAURI__` finns i previewn och `invoke` fungerar därifrån — men `emit` går via
+   `webview.eval`, som bara kör i huvudframen. Följden blev precis det som
+   rapporterades: att dra skalreglaget syntes inte i previewn (inget event kom fram),
+   men NÄSTA gång iframen laddades om — dvs. när man bytte overlay och tillbaka —
+   hämtade den den sparade skalan med get_config och previewn hoppade i storlek. */
+function applyConfigFor(applyConfig, cfg) {
+  if (!cfg) return;
+  if (IN_PREVIEW && cfg.scale !== undefined) {
+    const { scale, ...rest } = cfg;
+    applyConfig(rest);
+  } else {
+    applyConfig(cfg);
+  }
+}
+
 export function wireShell(applyConfig, applyOption) {
   // Injicerad skala/opacitet/alternativ appliceras FÖRST och synkront, före allt
   // async — annars hinner overlayn ritas i CSS-defaultens skala och ser avkapad ut.
@@ -263,7 +285,7 @@ export function wireShell(applyConfig, applyOption) {
   // kolumn, antal rader) hade annars ritat ett frame i fel utseende.
   // Ligger utanför Tauri-kontrollen nedan så det gäller även om event-API:t saknas.
   if (INIT) {
-    applyConfig({ scale: INIT.scale, opacity: INIT.opacity });
+    applyConfigFor(applyConfig, { scale: INIT.scale, opacity: INIT.opacity });
     if (INIT.options) {
       for (const [k, v] of Object.entries(INIT.options)) applyOne(applyOption, k, v);
     }
@@ -280,17 +302,20 @@ export function wireShell(applyConfig, applyOption) {
 
   /* ANDRA kanalen: postMessage från kontrollpanelen.
      Tauri-eventen nedan når inte panelens förhandsvisning — den kör i en <iframe>,
-     och `__TAURI__` injiceras inte där. Följden var att previewn aldrig reagerade
-     på att man slog av/på ett alternativ; man fick se skillnaden först i spelet.
-     Den här lyssnaren ligger FÖRE Tauri-kontrollen just därför, och panelen postar
-     ändringen direkt till iframen. Den syns dessutom omedelbart, utan att vänta in
-     rundturen via Rust. */
+     och `emit` går via `webview.eval`, som bara kör i HUVUDframen. (Däremot fungerar
+     `invoke` därifrån: init-skript injiceras i alla frames på WebView2, så
+     `__TAURI__` finns. Den asymmetrin är precis varför previewn kunde plocka upp en
+     sparad skala den aldrig fick något event om — se applyConfigFor.)
+     Följden var att previewn aldrig reagerade på att man slog av/på ett alternativ;
+     man fick se skillnaden först i spelet. Den här lyssnaren ligger FÖRE
+     Tauri-kontrollen just därför, och panelen postar ändringen direkt till iframen.
+     Den syns dessutom omedelbart, utan att vänta in rundturen via Rust. */
   addEventListener('message', (ev) => {
     const p = ev.data;
     if (!p || p.__simmatrix !== true) return;
     if (p.id && label && p.id !== label) return;
     if (p.kind === 'option') applyOne(applyOption, p.option, p.value);
-    else if (p.kind === 'config') applyConfig(p);
+    else if (p.kind === 'config') applyConfigFor(applyConfig, p);
   });
 
   if (!T || !T.event) return;
@@ -311,7 +336,7 @@ export function wireShell(applyConfig, applyOption) {
   // Hämta sparad skala/opacitet/alternativ direkt vid start (undviker fel look först).
   try {
     if (label) T.core.invoke('get_config', { id: label }).then(cfg => {
-      applyConfig(cfg || {});
+      applyConfigFor(applyConfig, cfg || {});
       if (cfg && cfg.options) {
         for (const [k, v] of Object.entries(cfg.options)) applyOne(applyOption, k, v);
       }
@@ -321,7 +346,7 @@ export function wireShell(applyConfig, applyOption) {
   T.event.listen('config', (e) => {
     const p = e.payload || {};
     if (p.id && label && p.id !== label) return;   // ignorera annan overlays config
-    applyConfig(p);
+    applyConfigFor(applyConfig, p);
   });
   T.event.listen('option', (e) => {
     const p = e.payload || {};

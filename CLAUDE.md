@@ -100,7 +100,9 @@ komponerade i onödan (§3).
 
 **Färganpassning:** varje overlay exponerar sina färger som `col-<token>`-alternativ i
 `registry.json`. `bus.js` sätter automatiskt CSS-variabeln `--<token>`, så **en ny färg
-är en rad i registret och noll kod i overlayn**. Betydelsebärande färger delas med
+är en rad i registret och noll kod i overlayn**. Men det garanterar bara att variabeln
+SÄTTS — overlayn måste också faktiskt läsa den, och får inte hårdkoda färgen på det
+element som syns mest. Båda felen har hänt och båda var osynliga (§8.4e). Betydelsebärande färger delas med
 flit mellan element: pedalstapelns gröna och grafens gröna ÄR samma token, för de
 betyder samma sak. Ytor och skuggor har `alpha: true` — `<input type="color">` kan
 bara ge ogenomskinlig hex, så panelen kombinerar den med ett alfa-reglage och skickar
@@ -212,9 +214,21 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
 - **DPI-fixen** (§8.2) — användarens skärm kör 100 % skalning, där logiska och
   fysiska pixlar är identiska, så buggen kan inte reproduceras lokalt. Kräver en
   skärm på 125/150 %.
-- **"Sök uppdatering"-knappen i appen** — endpointen, signaturerna och artefakterna är
-  verifierade (se ovan), men själva knappen i panelen är aldrig klickad, så
-  nedladdning + installation genom `T.updater` är otestad.
+- **Att 0.4.1 löste det som rapporterades i 0.4.0.** Fyra saker kom ur riktig
+  användning: uppdateringen "återställdes" vid varje omstart (§8.8e), previewn tog åt
+  sig skalan efter ett overlay-byte (§8.4d), delta-barens skuggreglage gjorde
+  ingenting (§8.4e), och panelens layout gjordes om. Tre av dem är verifierade i
+  drift här — previewn med skärmdumpar före/efter, färgkedjan genom att injicera
+  `#C869FF`/`#FF0000` i `settings.json` och mäta pixeln (200,105,255) i delta-siffran,
+  och båda täcks av tester som faller på den gamla koden. **Updater-fixen är den enda
+  som inte går att bevisa förrän 0.4.1 ligger publicerad** — den kräver en
+  installerad 0.4.0 som uppdaterar sig till 0.4.1 och startas om.
+- **"Sök uppdatering"-knappen i appen** — nu klickad, av användaren, och det var så
+  §8.8e hittades: knappen fungerade, `T.updater` laddade ner och körde installeraren,
+  men installeraren var en MSI mot en NSIS-installation. Kvar att verifiera är att
+  kedjan nu **landar i rätt katalog**: installera 0.4.0 (NSIS), uppdatera till 0.4.1,
+  starta om och kontrollera att `Om`-fliken visar den nya versionen. Titta också efter
+  en kvarlämnad `C:\Program Files\SimMatrix` från MSI-tiden.
 
 ## 8. Fällor som redan kostat tid — LÄS DENNA
 ### 8.1 Sidecarn: `child.kill()` räcker INTE på Windows
@@ -319,13 +333,28 @@ Kontrollpanelens preview kör overlayn i en **iframe inuti "control"-fönstret**
 fönster och filtreras på payloadens `id` i `bus.js`. Previewen får sitt id via
 `?id=<overlay>` i iframe-URL:en, eftersom fönstrets label där är `control`.
 
-### 8.4b Förhandsvisningen får INTE Tauris event — den kör i en iframe
+### 8.4b Förhandsvisningen får INTE Tauris event — men den KAN anropa invoke
 §8.4 säger att `config`/`option` skickas till alla fönster och filtreras på id i
 `bus.js`, och att previewn får sitt id via `?id=`. Det stämmer, men räcker inte:
-previewn kör i en `<iframe>` inuti kontrollfönstret, och **`__TAURI__` injiceras inte
-i iframes**. `wireShell` returnerade därför tidigt (`if (!T || !T.event) return;`) och
-previewn reagerade aldrig på att man slog av/på ett alternativ — man fick se
-skillnaden först i spelet.
+previewn kör i en `<iframe>` inuti kontrollfönstret, och `emit` går via
+`webview.eval()` — som bara kör i **huvudframen**. Previewn reagerade därför aldrig
+på att man slog av/på ett alternativ; man fick se skillnaden först i spelet.
+
+**Asymmetrin är hela poängen och den är lätt att gissa fel på — den här filen påstod
+själv fel sak fram till 0.4.1.** Det är inte så att `__TAURI__` saknas i iframen:
+wry dokumenterar rakt ut att *"on Windows, scripts are always added to subframes
+regardless of the `for_main_frame_only` option"* (`wry-0.55.1/src/lib.rs:990`), så
+init-skriptet — och därmed `window.__TAURI__` — finns i previewn. Det som INTE når
+dit är eventen. Alltså:
+
+| | når previewn? |
+|---|---|
+| `invoke` (IPC) | **ja** |
+| `emit` / `event.listen` | **nej** (`webview.eval` = bara huvudframen) |
+
+Att tro att hela Tauri saknas i iframen är dyrt: `wireShell` gör sitt `get_config`-
+anrop bakom `if (!T || !T.event) return;`, och det anropet går alltså igenom. Det var
+precis så FÖNSTRETS skala läckte in i previewn (§8.4d).
 
 Lösningen är en ANDRA kanal: kontrollpanelen postar ändringen direkt till iframen
 (`postMessage` med markören `__simmatrix`), och `bus.js` lyssnar på `message`
@@ -358,6 +387,64 @@ dimensionerna — därför `refitSoon()` (dubbel rAF) efter load.
 Montserrat när den laddat, vilket ändrar bredden. Mätte vi bara vid load blev previewn
 avklippt och rättades aldrig. En `ResizeObserver` på `#ui` inne i iframen fångar både
 fontbytet och alla senare ändringar.
+
+### 8.4d Skalan läckte in i previewn — via `get_config`, en omladdning senare
+Rapporterat från riktig användning i 0.4.0: att dra skalreglaget syntes inte i
+previewn (rätt, se §8.4c) — men bytte man till en annan overlay och **tillbaka**
+hoppade previewn plötsligt i storlek. En inställning som "inte fungerade" och sedan
+gjorde det, med en helt orelaterad handling emellan.
+
+Orsaken är asymmetrin i §8.4b. Previewn får inget `config`-event när man drar
+reglaget, så inget händer. Men att byta overlay sätter `pv.src` på nytt, och vid
+laddningen kör `wireShell` sitt `get_config` — som **fungerar** från en iframe och
+lämnar tillbaka den sparade skalan. Previewn plockade alltså upp en skala den aldrig
+fick något event om, en omladdning för sent.
+
+Fixen är en enda grind, `bus.js:applyConfigFor()`: **är `IN_PREVIEW` sant släpps
+`scale` aldrig igenom, oavsett vilken av de fyra vägarna configen kom.** Opacitet och
+alternativ går igenom som vanligt — en grind som slängt hela config-objektet hade
+tystat opacitetsreglaget i previewn igen (§8.4c).
+
+Panelen postar dessutom overlayns läge till iframen vid `onload` (`pushPreviewState`),
+så previewn får sitt tillstånd från den som äger det i stället för att hämta det bakom
+ryggen på panelen.
+
+Två saker att inte upprepa:
+- **En bugg som bara syns EFTER en orelaterad handling har oftast en omladdning i
+  mitten.** Leta efter vad som körs vid init, inte efter vad som körs vid ändringen.
+- `tests/overlay-preview.mjs` mäter detta. Harnessen fick två nya reglage för att
+  kunna göra det alls: `preview: true` (sätter `window.self !== window.top` så
+  `IN_PREVIEW` blir sant) och `busFile` (kör mot en **annan** `bus.js`). Det senare
+  behövdes för §9:s regel om att ett test ska köras mot koden före fixen — buggen satt
+  i delad kod, och `htmlAtRevision` når bara overlayns HTML.
+
+### 8.4e Ett färgreglage utan mottagare ser ut att fungera
+Rapporterat i 0.4.0: skuggreglaget på delta-baren gjorde ingenting. Reglaget fanns,
+gick att dra, värdet sparades i `settings.json` och `--shadow` sattes på
+`documentElement` — och ingenting hände, för delta-barens `box-shadow` stod
+hårdkodad som `rgba(0,0,0,0.55)`. Samma sak för `col-panel` och `col-edge`, som inte
+hade **någon** motsvarighet alls i den overlayn.
+
+Det generiska `col-<token>` → `--<token>`-greppet (§4) är rätt, men det gör bara
+halva jobbet: det garanterar att variabeln SÄTTS, aldrig att någon LÄSER den. Ett
+sådant fel syns inte i `cargo check`, inte i CSS och inte i något test som mäter att
+värdet når fram — bara i att skärmen inte ändrar sig.
+
+Två fällor, och de kräver olika kontroller:
+- **Ingen läser tokenen.** `tests/overlay-options.mjs` kontroll 15 följer
+  `var(--x)`-kedjan genom `tokens.css` (inputs-trace använder `var(--depth)`, och
+  `--depth` är byggd av `var(--shadow)` — den styrs alltså av `col-shadow` utan att
+  nämna den) och läser även `getPropertyValue('--x')` i JS, som är hur inputs-trace
+  hämtar sina canvas-färger.
+- **Tokenen läses, men just det synliga elementet hårdkodar färgen.** Delta-barens JS
+  satte bågens och siffrans färg med literalerna `'#0DE622'`/`'#FF3B3B'`. `--green`
+  användes på annat håll i filen, så kontroll 15 blir nöjd. Kontroll 16 letar därför
+  efter hex-literaler som är **identiska med ett färgalternativs standardvärde** —
+  den enda signaturen som skiljer "medvetet fast färg" från "glömd token".
+
+Går ett reglage inte att koppla till något: **ta bort det ur registret.** Ett
+alternativ som inte gör något är sämre än inget alternativ.
+`sanitize_options` städar bort nyckeln ur `settings.json` av sig själv.
 
 ### 8.5 Flicker-mönster att aldrig upprepa
 Alla dessa fanns i delta-baren och gav synligt flimmer:
@@ -628,6 +715,53 @@ två fält lämnades orörda, och båda skulle kosta användardata om de rördes
   i stället för en uppdatering. Koden ovan är den som gällde för "ACC Overlay".
   Kontrollera med `pnpm tauri inspect wix-upgrade-code` — den skriver ut både den
   härledda och den låsta, och de SKA skilja sig åt nu.
+
+### 8.8e "Uppdateringen fungerar men försvinner när jag stänger appen"
+Rapporterat från riktig användning av 0.4.0: användaren fick köra **Sök uppdatering
+vid varje start**. Uppdateringen gick igenom, men nästa gång appen startades var den
+gamla versionen tillbaka. Det låter som att något inte sparas — det är det inte.
+
+`bundle.targets` stod på `"all"`, vilket på Windows bygger **både MSI och NSIS**.
+tauri-action lägger då in båda i `latest.json`, och den generiska nyckeln som
+updateraren faktiskt slår upp — `windows-x86_64` — pekade på **MSI:n**:
+
+```
+"windows-x86_64"       → SimMatrix_0.4.0_x64_en-US.msi     ← den updateraren använder
+"windows-x86_64-msi"   → …_en-US.msi
+"windows-x86_64-nsis"  → …_x64-setup.exe
+```
+
+Men den installerade appen kom från **NSIS**, som installerar per användare i
+`%LOCALAPPDATA%\SimMatrix` (avinstallation i `HKCU\…\Uninstall\SimMatrix`). MSI:n
+installerar per maskin i `C:\Program Files\`. Två olika installationstekniker på två
+olika platser: MSI:n kan inte uppdatera NSIS-installationen, den lägger bara en ANNAN
+kopia bredvid. Genvägen pekar kvar på den gamla — alltså "det återställs".
+
+Fixen är att bara bygga **ett** installerformat: `"targets": ["nsis"]` plus
+`bundle.windows.nsis.installMode: "currentUser"`, så att `windows-x86_64` pekar på
+setup.exe och updateraren skriver över den installation som faktiskt körs.
+
+- **Verifiera aldrig updateraren på "det stod Klart".** Kontrollera nyckeln
+  `windows-x86_64` i den publicerade `latest.json` mot var appen ligger på disk:
+  ```powershell
+  curl -sL https://github.com/leog1/RaceRipp_Overlay/releases/latest/download/latest.json
+  Get-ItemProperty HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\* |
+    Where-Object DisplayName -match SimMatrix | Select DisplayName,DisplayVersion,InstallLocation
+  ```
+  Står det `.msi` i den ena och `AppData\Local` i den andra är det den här buggen.
+- **`wix.upgradeCode` ligger kvar i konfigurationen** trots att MSI inte byggs. Den är
+  inert där, men värdet är omöjligt att räkna ut i efterhand (§8.8c) — det står kvar
+  som dokumentation ifall MSI någonsin ska tillbaka.
+- **`process::exit(0)` i updateraren går förbi appens avslutsväg.**
+  `tauri-plugin-updater`s `install_inner()` startar installeraren och avslutar
+  processen direkt — varken `CloseRequested`-hanteraren eller `RunEvent::Exit` körs,
+  så positioner som dragits under sessionen hade gått förlorade vid varje
+  uppdatering. Panelen anropar därför `prepare_update` (sparar lägen + stoppar motorn)
+  innan `downloadAndInstall()`. Lägg till nya "spara vid avslut"-saker på BÅDA
+  ställena.
+- Panelen visade tidigare samma text — *"Uppdateringar är inte konfigurerade än"* —
+  för varje fel, inklusive riktiga installationsfel. Det var en direkt orsak till att
+  buggen ovan var osynlig i två utgåvor. Visa alltid `errMsg(err)`.
 
 Internt heter saker fortfarande `acc-*`: Cargo-paketet `acc-overlay`, sidecarn
 `acc-engine`, Python-paketet `acc_engine`. Det är avsiktligt. Att döpa om dem berör

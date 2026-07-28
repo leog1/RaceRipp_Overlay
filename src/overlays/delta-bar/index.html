@@ -36,8 +36,13 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
     conic-gradient(from 0deg at 50% 50%, rgba(0,0,0,0.42) 0deg, rgba(255,255,255,0.12) 360deg),
     radial-gradient(circle at 50% 44%,transparent 56%,rgba(0,0,0,0.60) 100%),
     linear-gradient(to bottom, var(--disc-top) 0%, rgb(36,40,37) 42%, rgb(29,33,30) 72%, var(--disc-bot) 100%);
+  /* De tva forsta inset-lagren ar diskens EGET material (fasning + vinjett) och ska
+     inte folja med skuggfargen. De tre yttre ar sjalva slagskuggan och tar darfor
+     --shadow/--shadow-mid/--shadow-soft, sa col-shadow i registry.json faktiskt
+     gor nagot. Innan detta var de hardkodade och reglaget var helt verkningslost. */
   box-shadow:inset 0 0 0 3px rgba(0,0,0,0.5),inset 0 0 24px 7px rgba(0,0,0,0.4),
-    0 1px 0 rgba(255,255,255,0.07),0 3px 8px rgba(0,0,0,0.5),0 12px 26px rgba(0,0,0,0.55),0 24px 48px rgba(0,0,0,0.38);
+    0 1px 0 rgba(255,255,255,0.07),0 3px 8px var(--shadow-mid),0 12px 26px var(--shadow),
+    0 24px 48px var(--shadow-soft);
   backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);
   display:grid;grid-template-rows:34.5% 31% 34.5%;}
 .band{position:absolute;inset:0;border-radius:50%;pointer-events:none;z-index:1;
@@ -60,7 +65,7 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
 /* ---- BAR ---- */
 .bar{position:relative;z-index:2;margin-left:calc(var(--overlap)*-1);height:var(--bar-h);
   display:flex;align-items:stretch;background:var(--bar);border-radius:16px;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,0.04),0 16px 34px rgba(0,0,0,0.5);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.04),0 16px 34px var(--shadow-mid);
   backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);padding-left:calc(var(--overlap) + 6px);}
 .col{position:relative;flex:1 0 auto;min-width:198px;padding:0 28px;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;}
@@ -229,7 +234,11 @@ function render(now=performance.now()){
   const d=state.shown,ahead=aheadOf(d); signAhead=ahead;
   const path=valueArc(d); if(path!==lastArc){el.arc.setAttribute('d',path);lastArc=path;}
   if(ahead!==lastAhead){
-    el.arc.style.stroke=ahead?'#0DE622':'#FF3B3B';el.deltaVal.style.color=el.arc.style.stroke;
+    /* var() och inte hardkodad hex: literalerna som stod har kopplade tyst bort
+       col-green/col-red for bade bagen och delta-siffran — resten av overlayn bytte
+       farg men de tva syntes aldrig. Inline style med var() loses upp mot
+       :root-variabeln som bus.js satter. */
+    el.arc.style.stroke=ahead?'var(--green)':'var(--red)';el.deltaVal.style.color=el.arc.style.stroke;
     el.cellPred.toggleAttribute('data-slow',!ahead);lastAhead=ahead;}
   const ds=fmtDelta(d,ahead); if(ds!==lastD){setCells(el.deltaVal,cD,ds);lastD=ds;}
   const ps = pbase!=null ? fmtLap(pbase+d*1000) : DASH_L;

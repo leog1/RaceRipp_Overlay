@@ -70,15 +70,40 @@ body{font-family:var(--font);background:var(--app-bg);color:var(--ink);
 .app:not([data-section="overlays"]) .list{display:none;}
 
 /* preview */
-#previewBox{position:relative;flex:0 0 40%;min-height:190px;margin:16px 18px 0;border-radius:12px;
+/* overflow ligger på .pv-clip och INTE här: info-rutan hänger utanför rutans nedre
+   kant, och en klippande förälder hade kapat den mitt i meningen. z-index lyfter
+   hela rutan över korten under, som annars målas ovanpå (senare i DOM). */
+#previewBox{position:relative;z-index:2;flex:0 0 42%;min-height:190px;margin:16px 18px 0;border-radius:12px;
   background:
     radial-gradient(120% 120% at 50% 0%, rgba(255,255,255,0.02), transparent 60%),
     var(--plot);
-  border:1px solid var(--edge);overflow:hidden;box-shadow:var(--sheen);}
+  border:1px solid var(--edge);box-shadow:var(--sheen);}
+.pv-clip{position:absolute;inset:0;overflow:hidden;border-radius:12px;}
 #pv{position:absolute;top:50%;left:50%;border:0;transform-origin:center center;
   transform:translate(-50%,-50%);background:transparent;pointer-events:none;}
 .pv-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   font-size:11.5px;color:var(--faint);letter-spacing:.4px;pointer-events:none;}
+
+/* Kontrollknapparna bor I previewrutan, nere till höger med liten kant-marginal.
+   De hör ihop med det man tittar på — en egen remsa bredvid korten gjorde att blicken
+   fick vandra bort från overlayn för att flytta eller dölja den. */
+.pv-tools{position:absolute;right:10px;bottom:10px;display:flex;gap:8px;z-index:3;}
+/* Beskrivningen låg tidigare som ett stycke under previewn och tog vertikal plats
+   varje sekund man INTE läste den. Nu: en ikon uppe till höger som visar den vid
+   hover (och vid tangentbordsfokus — knappen måste gå att nå utan mus). */
+.pv-info{position:absolute;right:10px;top:10px;z-index:4;}
+/* Ogenomskinlig bakgrund (--app-bg, inte --bar): rutan ligger ovanpå en RÖRLIG
+   overlay, och genom --bar:s 10 % skymtade siffrorna bakom rakt genom texten. */
+.pv-info .tip{position:absolute;top:calc(100% + 8px);right:0;width:320px;padding:11px 13px;
+  border-radius:10px;background:var(--app-bg);border:1px solid var(--divider);box-shadow:var(--depth);
+  opacity:0;visibility:hidden;transform:translateY(-4px);pointer-events:none;
+  transition:opacity .14s ease,transform .14s ease,visibility 0s linear .14s;}
+.pv-info:hover .tip,.pv-info:focus-within .tip{opacity:1;visibility:visible;transform:none;
+  transition-delay:0s;}
+.pv-info .tip b{display:block;font-size:12.5px;font-weight:700;letter-spacing:.3px;color:var(--ink);}
+.pv-info .tip span{display:block;margin-top:6px;font-size:11.5px;font-weight:500;
+  line-height:1.55;color:var(--dim);}
+.pv-info .tip:empty,.pv-info .tip.none{display:none;}
 
 /* titel + beskrivning (centrerad, röd understrykning) */
 .titleband{padding:20px 22px 6px;text-align:center;}
@@ -99,14 +124,15 @@ body{font-family:var(--font);background:var(--app-bg);color:var(--ink);
 
 /* kontroller: kontrollremsa + kort */
 .controls{display:flex;gap:16px;padding:16px 22px 22px;align-items:flex-start;}
-.strip{flex:0 0 auto;display:flex;flex-direction:column;gap:8px;padding-top:26px;}
-.sbtn{width:46px;height:46px;display:flex;align-items:center;justify-content:center;
-  background:var(--ctrl);border:1px solid var(--divider);border-radius:11px;color:var(--dim);
+/* Knapparna ligger ovanpå previewn, så ytan är ogenomskinlig (--bar och inte --ctrl):
+   en halvtransparent knapp över en rörlig overlay går inte att läsa. */
+.sbtn{width:38px;height:38px;display:flex;align-items:center;justify-content:center;
+  background:var(--bar);border:1px solid var(--divider);border-radius:10px;color:var(--dim);
   cursor:pointer;transition:background .15s ease,color .15s ease,border-color .15s ease;}
-.sbtn svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;}
+.sbtn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;}
 .sbtn:hover{background:var(--ctrl-hi);color:var(--ink);}
-.sbtn.active{color:var(--amber);border-color:rgba(251,191,36,0.5);background:rgba(251,191,36,0.10);}
-.strip .lbl{font-size:9px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--faint);text-align:center;}
+.sbtn:focus-visible{outline:2px solid var(--green);outline-offset:2px;}
+.sbtn.active{color:var(--amber);border-color:rgba(251,191,36,0.5);background:rgba(251,191,36,0.14);}
 
 .cards{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:12px;}
 .cards.single{max-width:560px;}
@@ -120,7 +146,9 @@ body{font-family:var(--font);background:var(--app-bg);color:var(--ink);
 .row.on .state,.state.on{color:var(--green);}
 
 /* slider-rad */
-.row.slide label{flex:0 0 62px;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--dim);}
+/* min-width och inte flex-basis: en etikett som "TIDSFÖNSTER" är bredare än 62 px och
+   trycktes ut ändå (min-width:auto på flex-items), så basvärdet ljög om layouten. */
+.row.slide label{flex:0 0 auto;min-width:62px;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--dim);}
 .row.slide input[type=range]{flex:1 1 auto;accent-color:var(--green);height:4px;}
 .row.slide .val{flex:0 0 48px;text-align:right;font-size:12.5px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;}
 
@@ -130,9 +158,12 @@ body{font-family:var(--font);background:var(--app-bg);color:var(--ink);
 .osel:focus-visible{outline:2px solid var(--green);outline-offset:1px;}
 .ocol{flex:0 0 44px;width:44px;height:26px;padding:2px;background:var(--track);
   border:1px solid var(--slot-edge);border-radius:8px;cursor:pointer;}
-/* Alfa-reglaget bredvid färgrutan. Smalare än de vanliga reglagen så raden rymmer
-   etikett + färg + alfa + procent utan att bryta. */
-.oalpha{flex:0 1 120px;min-width:70px;accent-color:var(--dim);height:4px;}
+/* Färgrutan ligger SIST på raden och alfa-reglaget i ett slot med fast bredd, även
+   när färgen saknar alfa. Annars hamnade rutorna i två olika kolumner — de färger
+   som har alfa knuffades 170 px åt vänster av sitt reglage, och en lista med tio
+   färger såg ut som två halvfärdiga listor. */
+.aslot{flex:0 0 170px;display:flex;align-items:center;justify-content:flex-end;gap:10px;}
+.oalpha{flex:1 1 auto;min-width:60px;accent-color:var(--dim);height:4px;}
 .row .val{flex:0 0 42px;text-align:right;font-size:12px;font-weight:600;color:var(--dim);
   font-variant-numeric:tabular-nums;}
 
@@ -213,15 +244,19 @@ button.act:hover{background:var(--ctrl-hi);}
       <!-- OVERLAYS -->
       <div class="pane" id="pane-overlays">
         <div id="previewBox">
-          <div class="pv-hint" id="pvHint">Förhandsvisning kräver att motorn kör</div>
-          <iframe id="pv" title="Förhandsvisning"></iframe>
-        </div>
-        <div class="titleband">
-          <h2 id="ovTitle">—</h2>
-          <p id="ovDesc"></p>
-        </div>
-        <div class="controls">
-          <div class="strip">
+          <div class="pv-clip">
+            <div class="pv-hint" id="pvHint">Förhandsvisning kräver att motorn kör</div>
+            <iframe id="pv" title="Förhandsvisning"></iframe>
+          </div>
+          <!-- Titel + beskrivning bor här i stället för i ett eget band under
+               previewn: de läses en gång och tog annars vertikal plats för alltid. -->
+          <div class="pv-info">
+            <button class="sbtn" id="btnInfo" aria-describedby="ovTip" aria-label="Om denna overlay">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.6h.01"/></svg>
+            </button>
+            <div class="tip" id="ovTip" role="tooltip"><b id="ovTitle">—</b><span id="ovDesc"></span></div>
+          </div>
+          <div class="pv-tools">
             <button class="sbtn" id="btnMove" title="Flytta — slår på edit-läge">
               <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3 9 6M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>
             </button>
@@ -232,22 +267,33 @@ button.act:hover{background:var(--ctrl-hi);}
               <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg>
             </button>
           </div>
+        </div>
+        <div class="controls">
+          <!-- Tre kort i fast ordning: storlek först (den man rör oftast), sedan
+               av/på, sedan resten. Alternativen sorteras in i kort 2 och 3 utifrån
+               sin TYP i registry.json — panelen känner fortfarande ingen overlay
+               vid namn. -->
           <div class="cards">
-            <div class="card" id="cardOptions">
-              <h3>Alternativ</h3>
-              <div id="optRows"></div>
-            </div>
             <div class="card">
-              <h3>Utseende &amp; fönster</h3>
+              <h3>Storlek &amp; opacitet</h3>
               <div class="row slide"><label>Skala</label>
                 <input type="range" id="scale" min="0.6" max="1.6" step="0.05" value="1">
                 <span class="val" id="scaleVal">1.00×</span></div>
               <div class="row slide"><label>Opacitet</label>
                 <input type="range" id="opacity" min="0.2" max="1" step="0.05" value="1">
                 <span class="val" id="opacityVal">100%</span></div>
-              <div class="row"><span class="rlabel">Alltid överst</span>
+            </div>
+            <div class="card" id="cardToggles">
+              <h3>Av / på</h3>
+              <!-- bool-alternativ ur registret sätts in HÄR, före raden nedan.
+                   De måste bli riktiga DOM-syskon till den: avdelarlinjen är
+                   `.row + .row`, och en wrapper runt dem hade brutit den. -->
+              <div class="row" id="rowAot"><span class="rlabel">Alltid överst</span>
                 <span class="state" id="aotState">På</span>
                 <label class="sw" id="aotSwitch"><input type="checkbox" checked><span class="track"></span><span class="knob"></span></label></div>
+            </div>
+            <div class="card" id="cardTweaks">
+              <h3>Utseende</h3>
             </div>
           </div>
         </div>
@@ -384,11 +430,16 @@ function toPreview(msg){
   catch {}
 }
 
+/* Alternativen sorteras i tre kategorier: skala/opacitet ligger fast i första
+   kortet, bool-alternativen hamnar bland av/på-reglagen och ALLT annat (färger,
+   enum-val, talreglage) i utseendekortet. Sorteringen går på `type` i registret —
+   inte på overlay-id — så en ny overlay hamnar rätt utan att panelen ändras. */
 function renderOptions(o){
-  const wrap = $('optRows'), card = $('cardOptions');
-  wrap.innerHTML = '';
+  const toggles = $('cardToggles'), tweaks = $('cardTweaks'), aot = $('rowAot');
+  for (const el of [...toggles.querySelectorAll('.row.gen'), ...tweaks.querySelectorAll('.row.gen')])
+    el.remove();
   const defs = o.option_defs || [];
-  card.style.display = defs.length ? '' : 'none';
+  let nTweaks = 0;
 
   for (const d of defs){
     const val = (o.options && d.id in o.options) ? o.options[d.id] : d.default;
@@ -458,8 +509,10 @@ function renderOptions(o){
           : hex);
       };
       inp.addEventListener('input', emit);
-      row.appendChild(inp);
 
+      // Alfa-reglaget ligger i ett slot som finns även när färgen saknar alfa, så att
+      // färgrutan hamnar i samma kolumn på ALLA färgrader.
+      const slot = document.createElement('span'); slot.className = 'aslot';
       if (d.alpha){
         const al = document.createElement('input');
         al.type = 'range'; al.className = 'oalpha';
@@ -472,8 +525,9 @@ function renderOptions(o){
           out.textContent = Math.round(alpha*100) + '%';
           emit();
         });
-        row.appendChild(al); row.appendChild(out);
+        slot.appendChild(al); slot.appendChild(out);
       }
+      row.appendChild(slot); row.appendChild(inp);
 
     } else {
       row.className = 'row';
@@ -489,8 +543,13 @@ function renderOptions(o){
       row.appendChild(sw);
     }
 
-    wrap.appendChild(row);
+    // `.gen` märker raderna som genererade så nästa overlay kan städa bort dem utan
+    // att röra "Alltid överst", som är statisk och har sina lyssnare kopplade en gång.
+    row.classList.add('gen');
+    if (!d.type || d.type === 'bool') toggles.insertBefore(row, aot);
+    else { tweaks.appendChild(row); nTweaks++; }
   }
+  tweaks.style.display = nTweaks ? '' : 'none';
 }
 
 /* ── live-preview (overlayn laddas app-relativt, samma bundle) ── */
@@ -502,9 +561,20 @@ function setPreview(o){
   const src = '../' + o.url + '?id=' + encodeURIComponent(o.id);
   if (pv.dataset.src !== src){
     pv.dataset.src = src; pv.src = src;
-    pv.onload = () => { refitSoon(); watchPreview(); };   // mät först efter load
+    pv.onload = () => { pushPreviewState(o); refitSoon(); watchPreview(); };   // mät först efter load
   }
   fitPreview(); refitSoon();
+}
+
+/* Previewn laddas om varje gång man byter overlay. Skicka dess läge dit direkt i
+   stället för att lita på att overlayn hämtar det själv med get_config: det är
+   precis den vägen som drog in FÖNSTRETS skala i previewn och fick den att hoppa i
+   storlek när man bytte overlay och tillbaka (bus.js:applyConfigFor). Panelen äger
+   previewns tillstånd — skala ingår med flit inte. */
+function pushPreviewState(o){
+  toPreview({ kind: 'config', id: o.id, opacity: o.opacity });
+  for (const [k, v] of Object.entries(o.options || {}))
+    toPreview({ kind: 'option', id: o.id, option: k, value: v });
 }
 function fitPreview(){
   const o = ov(selectedId); if (!o) return;
@@ -636,14 +706,24 @@ $('clearRef').addEventListener('click', async () => {
 $('checkUpd').addEventListener('click', async () => {
   const m = $('updmsg'); m.textContent = 'Söker …';
   try {
-    if (!T || !T.updater) throw new Error('no-updater');
+    if (!T || !T.updater) throw new Error('updater-plugin saknas i detta bygge');
     const upd = await Promise.race([
       T.updater.check(),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
+      new Promise((_, rej) => setTimeout(() => rej(new Error('tidsgränsen gick ut')), 15000))
     ]);
-    if (upd){ m.textContent = `Ny version ${upd.version} — installerar …`; await upd.downloadAndInstall(); m.textContent = 'Klart — starta om appen.'; }
-    else m.textContent = 'Du har senaste versionen.';
-  } catch(err){ m.textContent = 'Uppdateringar är inte konfigurerade än (kräver GitHub-repo + nycklar).'; }
+    if (!upd){ m.textContent = 'Du har senaste versionen.'; return; }
+    m.textContent = `Ny version ${upd.version} — laddar ner …`;
+    // Spara läge och stäng motorn INNAN installeraren startar: plugin:et gör
+    // process::exit(0) så fort installeraren är i gång, vilket går förbi appens
+    // vanliga avslutsväg (positioner sparas där).
+    try { await invoke('prepare_update'); } catch {}
+    await upd.downloadAndInstall();
+    m.textContent = 'Klart — starta om appen.';
+  } catch(err){
+    // Ett enda svepande "inte konfigurerat än" dolde tidigare ALLA fel — inklusive
+    // ett riktigt installationsfel. Visa vad som faktiskt hände.
+    m.textContent = 'Uppdatering misslyckades: ' + errMsg(err);
+  }
 });
 
 /* ── motorstatus via WS ── */

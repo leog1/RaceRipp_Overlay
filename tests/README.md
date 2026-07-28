@@ -9,13 +9,14 @@ node tests/overlay-inputs-trace.mjs   # canvas-traces: Hz-tak, tidsbaserad utjä
 node tests/overlay-loop.mjs           # renderloopens takt under jitter
 node tests/overlay-gate.mjs           # synk-grinden: blinkar overlayn?
 node tests/overlay-options.mjs        # typade alternativ, före första paint
+node tests/overlay-preview.mjs        # previewn får aldrig fönstrets skala
 python tests/acc_source.py            # "ingen ny data" != frånkopplad, ut-varv
 python tests/delta_source.py          # vilken referens deltat kommer från
 python tests/engine_smoke.py          # motorn: ramschema, takt, portkonflikt
 python tests/motec_reference.py       # MoTeC-delta mot en riktig .ld
 python tests/broadcast_protocol.py    # Broadcasting-UDP mot en falsk ACC-server
 ```
-`pnpm test` kör de fyra overlay-testerna.
+`pnpm test` kör de sex overlay-testerna.
 
 **Harnessen stubbar INTE `bus.js`.** `startLoop` och `wireShell` importeras på riktigt
 (bara `WsBus` och `fontsReady` är stubbar), eftersom det är just dem flera tester
@@ -25,7 +26,15 @@ att overlayn ens fått värdet.
 
 Följden att känna till: `htmlAtRevision` rullar bara tillbaka **overlayns HTML**, inte
 `src/shared/bus.js`. Kör du mot en gammal revision testas den gamla overlayn mot
-DAGENS buss.
+DAGENS buss. Sitter buggen i bussen — som §8.4d gjorde — går det inte att bevisa så.
+Använd då `loadOverlay(..., { busFile })` med en `bus.js` skriven ur git
+(`fileAtRevision('src/shared/bus.js', rev)`); det är precis vad
+`overlay-preview.mjs <rev>` gör.
+
+Två flaggor till i harnessen som är lätta att missa:
+- `preview: true` — kör overlayn som om den satt i kontrollpanelens iframe
+  (`window.self !== window.top`, alltså `IN_PREVIEW` i `bus.js`).
+- `busFile` — alternativ sökväg till `bus.js`.
 
 ## overlay-delta-bar.mjs
 Kör delta-barens **riktiga** renderloop utan webbläsare: modulskriptet plockas ut ur
@@ -95,6 +104,42 @@ i ett enda frame. Testet kontrollerar också att registrets scheman är välform
 så ett fel där ger ingen byggvarning utan en app som dör vid start), att tal kommer
 fram som tal och inte strängar, och att overlayn överlever skräpvärden — OBS och
 webbläsare har ingen Rust-validering framför sig.
+
+Sedan 0.4.1 kontrollerar den också att varje färgalternativ faktiskt **styr** något.
+Det låter självklart men var det inte: skuggreglaget på delta-baren gjorde ingenting i
+0.4.0 eftersom overlayns `box-shadow` stod hårdkodad, och `col-panel`/`col-edge` hade
+ingen motsvarighet alls i den overlayn. Två kontroller behövs, för de fångar olika fel:
+
+- **15** följer `var(--x)` genom `tokens.css` (inputs-trace använder `var(--depth)`,
+  som är byggd av `var(--shadow)` — den styrs alltså av `col-shadow` utan att nämna
+  den) och läser även `getPropertyValue('--x')`, som är hur inputs-trace hämtar sina
+  canvas-färger.
+- **16** letar hex-literaler som är identiska med ett färgalternativs standardvärde.
+  Delta-baren satte bågens och siffrans färg med `'#0DE622'`/`'#FF3B3B'` i JS medan
+  `--green` användes på annat håll i filen — kontroll 15 blev alltså nöjd, men de två
+  mest synliga elementen bytte aldrig färg.
+
+Kör dem mot koden före fixen med `git stash push -- src/overlays src/shared/tokens.css`
+(testfilen måste ligga kvar i arbetsträdet, annars stashas kontrollerna med).
+
+## overlay-preview.mjs
+Kontrollpanelens förhandsvisning får aldrig ta åt sig FÖNSTRETS skala — previewn visar
+naturlig storlek och krymps av panelen (§8.4c). Buggen som gav testet: att dra
+skalreglaget syntes inte i previewn, men bytte man overlay och tillbaka hoppade den
+plötsligt i storlek.
+
+Orsaken är en asymmetri i Tauri som är lätt att gissa fel på: `emit` går via
+`webview.eval` och når bara huvudframen, medan `invoke` fungerar från en iframe
+(init-skript injiceras i alla frames på WebView2). Previewn fick alltså inget event
+när man drog reglaget, men hämtade den sparade skalan med `get_config` nästa gång
+iframen laddades om.
+
+Testet mäter båda riktningarna i samma körning — previewn ska släppa skalan men
+behålla opacitet och alternativ, och ett riktigt overlay-fönster ska fortfarande ta
+emot skalan. Buggen satt i delad kod, så teeth bevisas med `busFile`:
+```
+node tests/overlay-preview.mjs HEAD    # 2 kontroller ska misslyckas
+```
 
 ## overlay-gate.mjs
 Synk-grinden ("Endast när ACC kör"). I 0.3.0 blinkade båda overlays var tredje–fjärde

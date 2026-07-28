@@ -42,24 +42,10 @@
           "default": "#FBBF24"
         },
         {
-          "id": "col-panel",
-          "type": "color",
-          "label": "Panelbakgrund",
-          "default": "#121416db",
-          "alpha": true
-        },
-        {
           "id": "col-bar",
           "type": "color",
           "label": "Varvtidsradens bakgrund",
           "default": "#060708e6",
-          "alpha": true
-        },
-        {
-          "id": "col-edge",
-          "type": "color",
-          "label": "Kantlinje",
-          "default": "#070807",
           "alpha": true
         },
         {
