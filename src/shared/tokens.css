@@ -50,6 +50,14 @@
      i registry.json (som skriver rakt på --<token>). */
   --app-bg:    #0b0d0c;                  /* panelens basbakgrund                  */
   --rail-bg:   #070908;                  /* vänster ikonrad (aning mörkare)       */
+
+  /* Panelens RÖDA är ordbildens röda — exakt #A41F1F, samma värde som fyller varje
+     path i simmatrix-logo.svg. Poängen är att appen bara ska ha EN röd: står loggan
+     och brandbaren bredvid varandra i #A41F1F respektive #D10404 läser ögat dem som
+     två olika varumärken.
+     Blanda inte ihop den med --rail (#D10404), som är OVERLAYERNAS brand-rail och
+     dessutom ställbar per overlay via col-rail. Panelens chrome rör aldrig den. */
+  --ui-brand:  #A41F1F;
   --sel:       rgba(255,255,255,0.06);   /* vald/aktiv rad eller flik             */
   --hover:     rgba(255,255,255,0.04);   /* hover på rad/flik                     */
   --ctrl:      rgba(255,255,255,0.06);   /* knappyta                              */
@@ -62,30 +70,64 @@
   --ui-surf-hi: #161918;                 /* samma yta upphöjd (hover)             */
   --ui-inset:   #060807;                 /* nedsänkt: reglagespår, fält, väljare  */
 
-  /* Linjer i två vikter. hair delar innehåll INNE i en yta, edge ramar in ytan. */
+  /* Linjer i tre vikter. hair delar innehåll INNE i en yta, edge ramar in en liten
+     kontroll, edge-dk ramar in en BEHÅLLARE.
+     Skillnaden mellan de två sista är hela djupknepet: en ljus kant säger "den här
+     ytan fångar ljus", en mörk kant säger "här slutar materialet". En stor behållare
+     med ljusgrå kant flyter ovanpå bakgrunden som ett klistermärke; med mörk kant och
+     en ljus sheen längs överkanten läser samma ruta som infräst i panelen.
+     Små kontroller (knappar, väljare, färgrutor) behåller den LJUSA kanten — de ska
+     sticka ut ur ytan de ligger på, inte sjunka in i den. */
   --ui-hair:    rgba(255,255,255,0.06);
   --ui-edge:    rgba(255,255,255,0.10);
   --ui-edge-hi: rgba(255,255,255,0.19);
+  --ui-edge-dk: rgba(0,0,0,0.66);
+
+  /* Tre färdiga djuprecept, alla byggda på samma antagande: ljuset kommer UPPIFRÅN.
+     Därför ligger den ljusa raden överst på något som skjuter upp ur panelen och
+     underst på något som är urgröpt ur den — det är den enda skillnaden mellan de
+     två, och den räcker för att ögat ska läsa rätt håll utan en enda gradient till.
+     raise  = kort och menyer som ligger PÅ panelen
+     recess = ytor som är URGRÄVDA ur den (förhandsvisningen, väljare)
+     lip    = hårfin ljusfångst i UNDERkanten. Den ger en behållare tjocklek i
+              stället för bara en kontur, och används av båda. */
+  --ui-raise:  inset 0 1px 0 rgba(255,255,255,0.055),
+               0 8px 20px rgba(0,0,0,0.34);
+  --ui-recess: inset 0 2px 6px rgba(0,0,0,0.55),
+               inset 0 -1px 0 rgba(255,255,255,0.030);
+  --ui-lip:    0 1px 0 rgba(255,255,255,0.032);
 
   /* Fokusring. Medvetet AMBER och inte grön: i panelen betyder grönt "på"
      (PÅ-texten i listan, påslagna reglage), så en grön ring hade läst som ett
      tillstånd i stället för som "här står markören". Amber = highlight (§4). */
   --ui-focus:   #FBBF24;
 
-  /* Geometri och typskala — en skala, inga engångsvärden. */
-  --ui-r-sm: 7px; --ui-r-md: 10px; --ui-r-lg: 14px;
+  /* ── Geometri: 4-punktsraster ────────────────────────────────────────────
+     ALLA mått i panelen — padding, gap, radhöjd, radie, ikonstorlek — är en
+     multipel av 4. Det är inte kosmetik: när halva panelen står på 13 px och
+     andra halvan på 11 hamnar ingenting på samma linje, och resultatet läses som
+     slarv långt innan man kan peka ut varför. Behöver du ett mellanting: välj
+     grannvärdet, inte 2 px emellan.
+     Radierna går i steg om 4 av samma skäl (6 → 10 → 14), så en knapp inuti ett
+     kort får en hörnradie som följer kortets i stället för att konkurrera. */
+  --ui-r-sm: 6px; --ui-r-md: 10px; --ui-r-lg: 14px;
+  /* Typskalan följer samma tanke: fyra steg, inga halva pixlar. Halvpixlar
+     renderas dessutom olika beroende på DPI, så 12,5 px blev 12 på en skärm och
+     13 på nästa — ett radavstånd som vandrar mellan maskiner. */
   --ui-fs-xs: 10px;                      /* railetiketter, taggar                 */
   --ui-fs-sm: 11px;                      /* rubriker, hjälptext                   */
-  --ui-fs-md: 12.5px;                    /* värden, sekundär text                 */
-  --ui-fs-lg: 13.5px;                    /* radetiketter, listtitlar              */
+  --ui-fs-md: 12px;                      /* värden, sekundär text                 */
+  --ui-fs-lg: 14px;                      /* radetiketter, listtitlar              */
+  --ui-row-h: 48px;                      /* radhöjd (12 × 4)                      */
   /* Reglage/väljare ligger i en egen kolumn längst till höger. Fast bredd så att
      ALLA rader — reglage, växlare, färgruta — får samma vertikala linje att
      landa på. Utan den vandrar högerkanten med kontrolltypen. */
   --ui-ctl-w: 300px;
-  /* Textkolumnens tak. Utan det står etiketten och sitt reglage 1 100 px isär på
-     en 1440-panel, och raden slutar läsas som en rad. Kolumnen centreras under
-     den fullbreda förhandsvisningen. */
-  --ui-col-max: 820px;
+  /* Skrollremsans bredd. Måste vara samma tal som ::-webkit-scrollbar i panelen:
+     en skrollbar äter av innehållsbredden, och det är precis den bredden som gjorde
+     att korten hamnade 11 px innanför förhandsvisningens högerkant så fort listan
+     blev för lång. Ändrar du remsan, ändra detta. */
+  --ui-scrollbar: 12px;
 
   --ui-lift:  0 10px 26px rgba(0,0,0,0.42);
   --ui-sheen: inset 0 1px 0 rgba(255,255,255,0.045);

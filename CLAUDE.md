@@ -106,7 +106,14 @@ element som syns mest. Båda felen har hänt och båda var osynliga (§8.4e). Be
 flit mellan element: pedalstapelns gröna och grafens gröna ÄR samma token, för de
 betyder samma sak. Ytor och skuggor har `alpha: true` — `<input type="color">` kan
 bara ge ogenomskinlig hex, så panelen kombinerar den med ett alfa-reglage och skickar
-`#rrggbbaa`.
+`#rrggbbaa`. Varje färgrad har dessutom ett **hexfält** (`.hexf`): färger kommer
+nästan alltid någon annanstans ifrån — en liveryfil, ett teams färgprofil, en annan
+overlay — och då vill man klistra in koden, inte sikta i en gradientruta. Det tar
+`#RRGGBB`, `#RRGGBBAA` och kortformen `#RGB`, med eller utan brädgård. Ogiltig
+inmatning **markeras** (`.bad`) men rensas aldrig medan man skriver; fältet återgår
+till gällande värde vid blur/Enter. Sätter koden alfa uppdateras reglaget — och
+`paintRange()` måste anropas för hand då, eftersom ett programmatiskt värde inte
+utlöser något `input`.
 
 **Kontrollpanelens chrome ligger också i tokens**, i ett eget block prefixat `--ui-`
 (ytor, linjevikter, radier, typskala, fokusring, kolumnbredder). Overlays läser inget
@@ -114,14 +121,46 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
 `--<token>` (§4) och aldrig ska kunna råka träffa panelens värden. Panelen har en egen
 liten uppsättning regler som är värda att kunna innan man ändrar i den:
 - **Djup kommer av kant + sheen, inte av kontrast.** Stegen mellan `--ui-surf`,
-  `--ui-surf-hi` och `--app-bg` är små med flit.
+  `--ui-surf-hi` och `--app-bg` är små med flit. Kanten på en BEHÅLLARE är mörk
+  (`--ui-edge-dk`), kanten på en liten KONTROLL är ljus (`--ui-edge`): en ljus kant
+  säger "den här ytan fångar ljus", en mörk säger "här slutar materialet". En stor
+  ruta med ljusgrå kant flyter ovanpå panelen som ett klistermärke. Tre färdiga
+  recept finns — `--ui-raise` (ligger på panelen), `--ui-recess` (urgröpt ur den) och
+  `--ui-lip` (ljusfångst i underkanten, ger tjocklek i stället för kontur). Alla utgår
+  från att **ljuset kommer uppifrån**; det är den enda regeln som avgör om den ljusa
+  raden ska ligga överst eller underst.
+- **Glow är en signal, inte en yta.** Panelen hade lysande halon på brandbaren,
+  flikmarkören, rubrikstrecken, varje påslagen växlare och varje aktiv knapp. Var och
+  en försvarbar, allihop tillsammans = amatörmässigt, och det var det första
+  användaren reagerade på. Kvar finns bara två, båda nedtonade: statuslysdioden och
+  växlarknoppen — saker vars ENDA uppgift är att synas i ögonvrån. Behöver ett element
+  glow för att läsas är det färgen eller kontrasten som är fel.
+- **En röd i panelen: `--ui-brand` (#A41F1F), samma som ordbilden.** Panelens chrome
+  rör aldrig `--rail` (#D10404) — den är overlayernas och dessutom ställbar per
+  overlay. Två röda intill varandra läser som två varumärken. Undantaget är
+  `--red` (#FF3B3B) på motorstatusens offline-prick, som är en SIGNALfärg (§4:
+  färg = betydelse), inte varumärke.
+- **4-punktsraster.** Alla mått i panelen — padding, gap, radhöjd (`--ui-row-h`),
+  radie, ikonstorlek, listbredd — är multiplar av 4. Typskalan har inga halvpixlar
+  (12,5 px renderades som 12 på en skärm och 13 på nästa). Behöver du ett mellanting:
+  ta grannvärdet, inte 2 px emellan.
 - **En kontrollkolumn.** Alla rader har etiketten till vänster och kontrollen i en
   högerkolumn (`--ui-ctl-w`), så reglage, växlare och färgrutor landar på samma
   vertikala linje. Etiketterna har SAMMA typografi oavsett kontrolltyp — tidigare var
   reglageraderna versaler i `--dim` och växlarraderna gemener i `--ink`, och de två
   kortsorterna såg ut att komma från olika program.
-- **Textkolumnen har ett tak** (`--ui-col-max`, 820 px) och centreras. Utan det står
-  etiketten och sitt reglage 1 100 px isär på en 1440-panel.
+- **Korten är exakt lika breda som förhandsvisningen.** `#previewBox` har
+  `margin:16px 20px 0` och `.controls` `padding:16px 20px 24px` — samma 20 px, och
+  ändras det ena måste det andra följa med. Två block med olika bredd ovanpå varandra
+  läser som två olika vyer hur små pixlarna än är. (Korten satt först i en centrerad
+  spalt med tak, `--ui-col-max` 820 px; den togs bort i 0.4.4 på användarens begäran.)
+  Referens och Om behåller sin smala spalt (`.cards.single`) — de har ingen preview
+  att linjera mot.
+- **Alla kontrollkluster är 376 px breda.** Reglage 300 + gap 16 + värde 60 = 376;
+  färgrad 200 (`.aslot`) + 16 + 96 (hexfält) + 16 + 48 (färgruta) = 376; väljaren är
+  376 rakt av. Det är det som gör att etiketterna slutar på samma lodräta linje över
+  hela kortet i stället för att sicksacka några pixlar. Lägger du till en ny
+  kontrolltyp: räkna ut klustret och landa på 376.
 - **Grönt betyder "på" i panelen** (PÅ-brickan, påslagna växlare). Därför är
   fokusringen amber och reglagens fyllnad neutralt vit — ett halvdraget reglage är
   inget tillstånd.
@@ -268,6 +307,12 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   arbetet, och där är `set_size` i praktiken en no-op — själva OMRÄKNINGEN är alltså
   aldrig körd skarpt. Testa på en 4K-skärm (200 % → ska bli 1440×900; 100 % → 2880×1800)
   och på en 1366×768-laptop (ska klampas till golvet 960×600, inte hamna utanför).
+- **0.4.4:s designomgång i spelet.** Ändringarna är rent visuella (nedtonad glow,
+  helfärgad brandbar i ordbildens röda, fullbreda kort, borttagna rubrikstreck,
+  mörka behållarkanter, 4-punktsraster) plus ett nytt hexfält på varje färgrad.
+  Allt är mätt i webbläsare mot en mock — **ingen del är sedd med ACC igång.**
+  Det som faktiskt kan gå fel i drift: de fullbreda korten på en liten panel (960 px
+  golv, §8.2b) där reglagekolumnen på 376 px tar en tredjedel av bredden.
 - **0.4.3:s panelomgång i spelet.** Designen, den statiska previewn, de 15 % mindre
   overlaysen i previewrutan och de mindre pedalsiffrorna är alla verifierade i
   webbläsare mot en körande motor (mock-data) — inte med ACC igång. Pedalsiffran
@@ -547,6 +592,31 @@ inte räknat: `0.092` gav exakt kant i kant och såg fortfarande trångt ut.
 
 Generellt: **räkna alltid bredden på det BREDASTE värdet ett fält kan visa**, inte på
 det som råkar stå där när du tittar. Samma familj som platshållarbredden i §8.5.
+
+### 8.4h Två layoutfel som bara uppstår vid VISST INNEHÅLL
+Båda hittades genom att mäta panelen i en webbläsare, inte genom att titta på den.
+Ingen av dem syns i CSS:en, i `cargo check` eller ens i panelen om man råkar ha fel
+overlay vald — och det är precis det som gör dem dyra.
+
+- **Skrollremsan åt av kortens bredd.** Korten ska ligga kant i kant med
+  förhandsvisningen (§4). De gjorde det — tills listan blev lång nog att skrolla.
+  En skrollbar tas ur INNEHÅLLSbredden, så `.cards` blev 12 px smalare medan
+  `#previewBox` (som ligger utanför skrollbehållaren) stod kvar. En overlay med sex
+  färgrader låg alltså i linje och en med sju gjorde det inte.
+  Fixen är `scrollbar-gutter:stable` plus en högerpadding som drar av exakt samma
+  tal, båda ur `--ui-scrollbar`. Att bara reservera remsan räcker inte — då är
+  kortet konsekvent 12 px för smalt i stället för ibland.
+- **En list som växte av sitt eget innehåll.** `.rail` är `flex:0 0 80px`, vilket
+  ser låst ut. Det är det inte: ett flexbarn har `min-width:auto`, alltså ett golv
+  vid sitt min-content, och statusraden innehåller ordet "Broadcasting" som inte går
+  att bryta. Listen gick från 80 till 97 px i samma sekund som Broadcasting-raden
+  dök upp — mitt under körning, med hela panelen till höger flyttad i sidled.
+  **`flex:0 0 <bredd>` låser ingenting utan `min-width:0`.** Lägg till det på varje
+  flexbarn vars bredd är ett designbeslut.
+  Den bakomliggande orsaken var dock typografisk: versalt "BROADCASTING" är ~88 px
+  vid 10 px och kan aldrig få plats i en 80 px list. Statustexten är därför gemener
+  medan flikarnas etiketter är versaler — ett medvetet undantag som dessutom bär
+  information (etikett kontra live-status), inte en inkonsekvens att "rätta till".
 
 ### 8.5 Flicker-mönster att aldrig upprepa
 Alla dessa fanns i delta-baren och gav synligt flimmer:

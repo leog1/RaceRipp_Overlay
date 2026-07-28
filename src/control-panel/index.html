@@ -34,7 +34,7 @@ body{font-family:var(--font);color:var(--ink);
 
 /* Skrollbarer: systemets ljusgrå remsa skär rakt genom en mörk panel. Tunn,
    kantlös och osynlig tills det finns något att skrolla. */
-::-webkit-scrollbar{width:11px;height:11px;}
+::-webkit-scrollbar{width:var(--ui-scrollbar);height:var(--ui-scrollbar);}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.09);border-radius:99px;
   border:3px solid transparent;background-clip:content-box;}
@@ -53,16 +53,17 @@ body{font-family:var(--font);color:var(--ink);
    dubbelklick-maximerbar; utan den går fönstret inte att flytta alls. */
 .titlebar{flex:0 0 auto;height:36px;display:flex;align-items:center;position:relative;z-index:6;
   background:linear-gradient(180deg,#0a0c0b,#070908);
-  border-bottom:1px solid var(--ui-hair);
   -webkit-user-select:none;user-select:none;}
-.titlebar .tb-logo{display:flex;align-items:center;gap:11px;padding:0 4px 0 15px;pointer-events:none;}
-.titlebar .tb-logo img{height:17px;width:auto;display:block;}
+.titlebar .tb-logo{display:flex;align-items:baseline;gap:8px;padding:0 4px 0 16px;pointer-events:none;}
+.titlebar .tb-logo img{height:16px;width:auto;display:block;align-self:center;}
 /* "Control" bredvid ordbilden: fönstret har ingen systemtitel kvar att säga vilken
-   vy man är i, och raden ser omotiverat tom ut utan den. Avdelaren är en linje och
-   inte ett bindestreck — den skalar med texthöjden och konkurrerar inte om blicken. */
-.titlebar .tb-tag{font-size:var(--ui-fs-xs);font-weight:700;letter-spacing:2.2px;
-  text-transform:uppercase;color:var(--faint);padding-left:11px;
-  border-left:1px solid var(--ui-hair);line-height:1.5;}
+   vy man är i, och raden ser omotiverat tom ut utan den.
+   Den ska läsas som ordbildens UNDERTEXT, inte som en egen etikett. Första försöket
+   hade avdelarlinje, 700-vikt och 2,2 px spärr — tre signaler om att det här är
+   något eget, och då slutar lockupen vara en lockup. Nu: ingen linje, samma
+   optiska vikt som ett svagt bakgrundsord, och satt på baslinjen med ordbilden. */
+.titlebar .tb-tag{font-size:var(--ui-fs-xs);font-weight:600;letter-spacing:1.4px;
+  text-transform:uppercase;color:var(--faint);opacity:.72;line-height:1;}
 .titlebar .tb-drag{flex:1 1 auto;align-self:stretch;}
 .titlebar .tb-btns{display:flex;align-self:stretch;}
 .tb-btn{appearance:none;background:none;border:0;width:46px;align-self:stretch;
@@ -70,32 +71,41 @@ body{font-family:var(--font);color:var(--ink);
   transition:background .12s ease,color .12s ease;}
 .tb-btn svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:1.1;}
 .tb-btn:hover{background:var(--ctrl-hi);color:var(--ink);}
-.tb-btn.close:hover{background:#c42b1c;color:#fff;}
+.tb-btn.close:hover{background:var(--ui-brand);color:#fff;}
 .tb-btn:focus-visible{outline:1px solid var(--ui-focus);outline-offset:-2px;}
 /* Återställ-ikonen visas bara när fönstret är maximerat, och tvärtom. */
 .tb-btn .ico-restore{display:none;}
 body.maximized .tb-btn .ico-restore{display:block;}
 body.maximized .tb-btn .ico-max{display:none;}
 
-/* Varumärkes-rail överst. Toningen åt höger läser som en livery-rand i stället för
-   som en avdelare — den röda ska vara ett avstamp, inte en linjal tvärs fönstret. */
-.brandbar{height:3px;flex:0 0 auto;
-  background:linear-gradient(90deg,
-    var(--rail) 0%, var(--rail) 16%,
-    rgba(209,4,4,0.62) 34%, rgba(209,4,4,0.20) 62%, rgba(209,4,4,0.06) 100%);
-  box-shadow:0 1px 10px rgba(209,4,4,0.28);}
+/* Varumärkes-rail överst: HELFÄRGAD och i ordbildens röda (--ui-brand).
+   Den var först en toning som klingade av åt höger, tänkt som en livery-rand. Men en
+   toning läser som något som håller på att TA SLUT, och en linje som ligger under
+   hela titelraden ska inte se ut att ge upp på halva vägen. En jämn 2 px-remsa är
+   dessutom vad varenda seriöst verktyg gör med sin accentlinje.
+   Ingen glow: en lysande röd linje tvärs fönstret drar blicken hela tiden, och den
+   här linjen har inget att berätta — den identifierar bara appen. */
+.brandbar{height:2px;flex:0 0 auto;background:var(--ui-brand);}
 
 /* trepanelslayout */
 .app{flex:1 1 auto;display:flex;min-height:0;}
 
-/* ── vänster ikonrad ── */
-.rail{flex:0 0 78px;border-right:1px solid var(--ui-hair);
+/* ── vänster ikonrad ──
+   80 px (10 × 8) och inte 78: listen är panelens vänstra kant och sätter den lodräta
+   linje allt annat mäts mot, så den ska ligga på rastret även om ingen ser talet.
+   Seam åt höger, inte en ljus linje: en mörk kant med en hårfin ljus rad på utsidan
+   läser som två material som möts. En ensam ljusgrå linje läser som en ritad kant. */
+/* min-width:0 är inte kosmetik. Ett flexbarn har `min-width:auto`, alltså ett golv
+   vid sitt MIN-CONTENT — och statusraden nertill innehåller ordet "Broadcasting",
+   som inte går att bryta. Listen växte därför från 80 till 97 px i samma sekund som
+   Broadcasting-raden dök upp, och hela panelen till höger flyttade sig i sidled mitt
+   under körning. `flex:0 0 80px` hindrar inte det; bara min-width gör det. */
+.rail{flex:0 0 80px;min-width:0;border-right:1px solid var(--ui-edge-dk);
+  box-shadow:1px 0 0 rgba(255,255,255,0.028);
   background:linear-gradient(180deg,#080a09,#060807);
-  display:flex;flex-direction:column;align-items:stretch;padding:13px 0 11px;}
-.brand{display:flex;align-items:center;justify-content:center;height:32px;margin-bottom:15px;}
-.brand svg{width:22px;height:22px;}
+  display:flex;flex-direction:column;align-items:stretch;padding:12px 0 12px;}
 .nav{position:relative;appearance:none;background:none;border:0;color:var(--dim);font:inherit;
-  cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;padding:11px 4px;
+  cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 4px;
   transition:color .15s ease,background .15s ease;}
 .nav svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;
   stroke-linecap:round;stroke-linejoin:round;}
@@ -106,13 +116,13 @@ body.maximized .tb-btn .ico-max{display:none;}
 /* Markören animeras i höjdled i stället för att bara tändas: den korta rörelsen
    säger vilken flik man LÄMNADE, vilket en tänd/släckt kant inte gör. */
 .nav::before{content:"";position:absolute;left:0;top:50%;width:3px;height:28px;
-  border-radius:0 3px 3px 0;background:var(--rail);
+  border-radius:0 3px 3px 0;background:var(--ui-brand);
   transform:translateY(-50%) scaleY(0);transform-origin:center;
   transition:transform .2s cubic-bezier(.2,.8,.3,1);}
-.nav[aria-selected="true"]::before{transform:translateY(-50%) scaleY(1);
-  box-shadow:0 0 12px rgba(209,4,4,0.65);}
+.nav[aria-selected="true"]::before{transform:translateY(-50%) scaleY(1);}
 .rail-spacer{flex:1 1 auto;}
-.motor{display:flex;flex-direction:column;align-items:center;gap:7px;padding:9px 6px 3px;text-align:center;}
+/* Statusraderna i listens fot. */
+.motor{display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 2px 4px;text-align:center;}
 /* Broadcasting-raden är `hidden` tills motorn faktiskt försöker ansluta, men
    `display:flex` ovan slår ut webbläsarens `[hidden]{display:none}` — så raden låg
    framme hela tiden som en tom röd prick under motorstatusen. Klassisk: attributet
@@ -122,43 +132,60 @@ body.maximized .tb-btn .ico-max{display:none;}
    ögonvrån medan man ställer något annat. */
 .motor .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);
   box-shadow:0 0 0 3px rgba(255,255,255,0.035);}
-.motor .dot.live{background:var(--green);box-shadow:0 0 0 3px rgba(13,230,34,0.12),0 0 11px rgba(13,230,34,0.55);}
-.motor .dot.mock{background:var(--amber);box-shadow:0 0 0 3px rgba(251,191,36,0.12),0 0 11px rgba(251,191,36,0.45);}
+/* Halon är nedtonad till en antydan. Full glow på en 8 px-prick gör den till en
+   lampa som drar blicken från det man faktiskt ställer in — ringen räcker för att
+   säga "tänd", halon behöver bara ta bort den hårda kanten. */
+.motor .dot.live{background:var(--green);box-shadow:0 0 0 3px rgba(13,230,34,0.12),0 0 6px rgba(13,230,34,0.30);}
+.motor .dot.mock{background:var(--amber);box-shadow:0 0 0 3px rgba(251,191,36,0.12),0 0 6px rgba(251,191,36,0.26);}
 .motor .dot.off{background:var(--red);box-shadow:0 0 0 3px rgba(255,59,59,0.10);}
-.motor span:last-child{font-size:9px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;
-  color:var(--dim);line-height:1.35;}
+/* INTE versaler, till skillnad från flikarnas etiketter — och det är ett medvetet
+   undantag, inte en glömska. Versalt "BROADCASTING" är ~88 px brett vid 10 px och
+   får aldrig plats i en 80 px list; det var därför texten såg ihopklämd ut och det
+   var därför listen växte. Gemener tar 65 px och får luft över.
+   Skillnaden bär dessutom information: flikarna är ETIKETTER (versaler, statiska),
+   det här är en LIVE-STATUS som byter text medan man tittar. Två olika sorters text
+   ska inte se likadana ut.
+   overflow-wrap:anywhere är sista utposten — dyker det upp ett ännu längre ord ska
+   det brytas, aldrig knuffa listen i sidled igen. */
+.motor span:last-child{font-size:10px;font-weight:600;letter-spacing:.2px;
+  color:var(--dim);line-height:1.5;overflow-wrap:anywhere;}
 
 /* ── mittkolumn: overlay-lista ── */
-.list{flex:0 0 268px;border-right:1px solid var(--ui-hair);display:flex;flex-direction:column;min-height:0;
+.list{flex:0 0 264px;border-right:1px solid var(--ui-edge-dk);
+  box-shadow:1px 0 0 rgba(255,255,255,0.028);
+  display:flex;flex-direction:column;min-height:0;
   background:linear-gradient(180deg,rgba(255,255,255,0.014),transparent 180px);}
-/* Rubrikmarkören (guldstreck före texten) är samma i listan och på varje kort, så
-   "det här är en avdelning" ser likadant ut överallt. */
-.list-head,.card > h3{font-size:var(--ui-fs-sm);font-weight:700;letter-spacing:2.2px;
-  text-transform:uppercase;color:var(--amber);display:flex;align-items:center;gap:9px;}
-.list-head::before,.card > h3::before{content:"";flex:0 0 auto;width:12px;height:2px;border-radius:2px;
-  background:var(--amber);box-shadow:0 0 9px rgba(251,191,36,0.5);}
-.list-head{padding:18px 18px 11px;}
-#list{flex:1 1 auto;overflow-y:auto;padding:0 9px 12px;}
+/* Avdelningsrubriker. Bara typografi: versaler, spärr och amber.
+   Här satt tidigare ett litet guldstreck före texten. Det var en markör till på en
+   rubrik som redan hade två (versaler OCH en egen färg), och när man väl har tre
+   signaler för samma sak börjar de tävla i stället för att förstärka. FÄRGEN RÄCKER
+   — lägg inte tillbaka strecket. */
+.list-head,.card > h3{font-size:var(--ui-fs-sm);font-weight:700;letter-spacing:2px;
+  text-transform:uppercase;color:var(--amber);}
+.list-head{padding:20px 20px 12px;}
+#list{flex:1 1 auto;overflow-y:auto;padding:0 8px 12px;}
 .list-foot{flex:0 0 auto;display:flex;align-items:center;gap:12px;
-  padding:13px 16px;border-top:1px solid var(--ui-hair);background:rgba(0,0,0,0.28);}
+  padding:12px 16px;border-top:1px solid var(--ui-edge-dk);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.028);background:rgba(0,0,0,0.28);}
 .list-foot .lf-text{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:3px;}
-.list-foot .lf-title{font-size:12px;font-weight:600;}
+.list-foot .lf-title{font-size:var(--ui-fs-md);font-weight:600;}
 .list-foot .lf-sub{font-size:var(--ui-fs-xs);color:var(--faint);line-height:1.4;}
 .lrow{width:100%;appearance:none;background:none;color:var(--ink);font:inherit;cursor:pointer;
-  display:flex;align-items:center;gap:10px;padding:10px 11px;border-radius:var(--ui-r-md);
+  display:flex;align-items:center;gap:12px;padding:0 12px;min-height:44px;border-radius:var(--ui-r-md);
   border:1px solid transparent;text-align:left;
   transition:background .14s ease,border-color .14s ease;}
-.lrow + .lrow{margin-top:3px;}
+.lrow + .lrow{margin-top:4px;}
 .lrow:hover{background:var(--hover);}
 .lrow:focus-visible{outline:2px solid var(--ui-focus);outline-offset:-1px;}
 /* Vald rad lyfts som en egen liten yta (kant + sheen) i stället för att bara bli
    ljusare. Ingen färgad vänsterkant — den gröna PÅ-brickan är redan radens markör,
    och två markörer på samma rad tävlar. */
-.lrow.sel{background:var(--ui-surf-hi);border-color:var(--ui-edge);box-shadow:var(--ui-sheen);}
+.lrow.sel{background:var(--ui-surf-hi);border-color:var(--ui-edge-dk);
+  box-shadow:var(--ui-sheen),0 1px 0 rgba(255,255,255,0.028);}
 .lrow .ltitle{flex:1 1 auto;min-width:0;font-size:var(--ui-fs-lg);font-weight:600;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.lrow .lstate{flex:0 0 auto;font-size:9px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;
-  color:var(--faint);line-height:1;padding:4px 7px;border-radius:999px;
+.lrow .lstate{flex:0 0 auto;font-size:var(--ui-fs-xs);font-weight:700;letter-spacing:.9px;text-transform:uppercase;
+  color:var(--faint);line-height:1;padding:4px 8px;border-radius:999px;
   border:1px solid var(--ui-hair);transition:color .14s ease,border-color .14s ease,background .14s ease;}
 .lrow.on .lstate{color:var(--green);border-color:rgba(13,230,34,0.32);background:rgba(13,230,34,0.10);}
 .empty{padding:16px 18px;font-size:12px;color:var(--dim);line-height:1.55;}
@@ -182,12 +209,27 @@ body.maximized .tb-btn .ico-max{display:none;}
    hela rutan över korten under, som annars målas ovanpå (senare i DOM).
    Taket (max-height) finns för stora skärmar: utan det blev rutan 700 px hög på en
    4K-panel och tryckte ner inställningarna under vikningen. */
-#previewBox{position:relative;z-index:2;flex:0 0 40%;min-height:210px;max-height:560px;
+/* Höjden är 38,2 % — den mindre delen av gyllene snittet (1 − 1/φ). Rutan och
+   inställningarna under den är panelens två block, och 40/60 låg tillräckligt nära
+   halva för att se ut som ett obeslutsamt 50/50. 38,2/61,8 läser som ett val.
+   DJUPET: mörk kant utåt, ljus sheen längs INSIDANS överkant och en hårfin ljus rad
+   på UTSIDANS underkant. Det är samma tre lager som på en riktig infräst panel —
+   ljuset kommer uppifrån, så överkanten ligger i skugga och underkantens lip fångar
+   det. En ljusgrå 1 px-kant runt om (som här stod förut) ger motsatt intryck: rutan
+   ser pålagd ut, som ett klistermärke på panelen. */
+#previewBox{position:relative;z-index:2;flex:0 0 38.2%;min-height:216px;max-height:560px;
   margin:16px 20px 0;border-radius:var(--ui-r-lg);
-  background:radial-gradient(120% 130% at 50% -20%, rgba(255,255,255,0.038), transparent 62%),
+  background:radial-gradient(120% 130% at 50% -20%, rgba(255,255,255,0.030), transparent 62%),
              var(--plot);
-  border:1px solid var(--ui-edge);box-shadow:var(--ui-sheen),var(--ui-lift);}
+  border:1px solid var(--ui-edge-dk);box-shadow:var(--ui-lip),var(--ui-lift);}
 .pv-clip{position:absolute;inset:0;overflow:hidden;border-radius:var(--ui-r-lg);}
+/* Innerskuggan måste ligga ÖVER innehållet. En `inset`-skugga på #previewBox målas
+   under sina barn, och previewn fyller hela rutan — djupet hade alltså syns bara
+   där ingenting ritades. Det här är ett eget lager, sist i DOM:en och utan z-index,
+   så det hamnar ovanför .pv-clip men under knapparna (som har z-index 3–4). */
+#previewBox::after{content:"";position:absolute;inset:0;pointer-events:none;
+  border-radius:var(--ui-r-lg);
+  box-shadow:var(--ui-recess);}
 
 /* Bakgrundsbild. cover + center så bilden aldrig blir uttänjd, och den ligger
    UNDER overlayn — previewn ska visa hur overlayn ser ut mot en bana, inte
@@ -218,10 +260,10 @@ body.maximized .tb-btn .ico-max{display:none;}
    ett instrument. Hörnmarkeringar hade krockat med knapparna som bor i hörnen. */
 .pv-ticks{position:absolute;inset:0;pointer-events:none;z-index:1;}
 .pv-ticks i{position:absolute;background:rgba(255,255,255,0.15);}
-.pv-ticks i:nth-child(1){top:0;left:50%;width:1px;height:9px;transform:translateX(-.5px);}
-.pv-ticks i:nth-child(2){bottom:0;left:50%;width:1px;height:9px;transform:translateX(-.5px);}
-.pv-ticks i:nth-child(3){left:0;top:50%;width:9px;height:1px;transform:translateY(-.5px);}
-.pv-ticks i:nth-child(4){right:0;top:50%;width:9px;height:1px;transform:translateY(-.5px);}
+.pv-ticks i:nth-child(1){top:0;left:50%;width:1px;height:8px;transform:translateX(-.5px);}
+.pv-ticks i:nth-child(2){bottom:0;left:50%;width:1px;height:8px;transform:translateX(-.5px);}
+.pv-ticks i:nth-child(3){left:0;top:50%;width:8px;height:1px;transform:translateY(-.5px);}
+.pv-ticks i:nth-child(4){right:0;top:50%;width:8px;height:1px;transform:translateY(-.5px);}
 #pv{position:absolute;top:50%;left:50%;border:0;transform-origin:center center;
   transform:translate(-50%,-50%);background:transparent;pointer-events:none;}
 .pv-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
@@ -233,29 +275,29 @@ body.maximized .tb-btn .ico-max{display:none;}
    fick vandra bort från overlayn för att flytta eller dölja den.
    De tre sitter i ETT segmenterat block: de är en verktygsuppsättning för samma
    objekt, och tre lösa knappar såg ut som tre orelaterade beslut. */
-.pv-tools{position:absolute;right:12px;bottom:12px;display:flex;gap:3px;z-index:3;
+.pv-tools{position:absolute;right:12px;bottom:12px;display:flex;gap:4px;z-index:3;
   padding:4px;border-radius:var(--ui-r-md);background:rgba(7,9,8,0.90);
-  border:1px solid var(--ui-edge);box-shadow:0 6px 18px rgba(0,0,0,0.5),var(--ui-sheen);}
+  border:1px solid var(--ui-edge-dk);box-shadow:var(--ui-raise),var(--ui-lip);}
 /* Bakgrundsväljaren uppe till VÄNSTER, samma 12 px kantmarginal som de andra. */
 .pv-bgpick{position:absolute;left:12px;top:12px;z-index:4;}
-.pv-bgpick .menu{position:absolute;top:calc(100% + 8px);left:0;min-width:224px;padding:6px;
+.pv-bgpick .menu{position:absolute;top:calc(100% + 8px);left:0;min-width:224px;padding:4px;
   border-radius:var(--ui-r-md);background:linear-gradient(180deg,#141817,#0d100f);
-  border:1px solid var(--ui-edge);box-shadow:var(--ui-lift),var(--ui-sheen);
+  border:1px solid var(--ui-edge-dk);box-shadow:var(--ui-lift),var(--ui-raise);
   display:none;max-height:min(360px,42vh);overflow-y:auto;}
 .pv-bgpick.open .menu{display:block;}
 .bgitem{width:100%;appearance:none;background:none;border:0;color:var(--ink);font:inherit;
-  font-size:var(--ui-fs-md);font-weight:600;text-align:left;padding:8px 10px;
-  border-radius:var(--ui-r-sm);cursor:pointer;display:flex;align-items:center;gap:9px;
+  font-size:var(--ui-fs-md);font-weight:600;text-align:left;padding:8px 12px;
+  border-radius:var(--ui-r-sm);cursor:pointer;display:flex;align-items:center;gap:8px;
   transition:background .12s ease;}
 .bgitem:hover{background:var(--hover);}
 .bgitem.sel{background:var(--sel);}
 .bgitem:focus-visible{outline:2px solid var(--ui-focus);outline-offset:-2px;}
 .bgitem .tick{flex:0 0 12px;color:var(--green);font-size:11px;}
 .bgitem .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.bgitem .tag{margin-left:auto;flex:0 0 auto;font-size:8.5px;font-weight:700;letter-spacing:.8px;
-  text-transform:uppercase;color:var(--faint);padding:3px 6px;border-radius:999px;
+.bgitem .tag{margin-left:auto;flex:0 0 auto;font-size:var(--ui-fs-xs);font-weight:700;letter-spacing:.8px;
+  text-transform:uppercase;color:var(--faint);padding:4px 8px;border-radius:999px;
   border:1px solid var(--ui-hair);line-height:1;}
-.bgsep{height:1px;background:var(--ui-hair);margin:6px 4px;}
+.bgsep{height:1px;background:var(--ui-hair);margin:4px;}
 .bgitem.act{color:var(--dim);font-weight:600;font-size:var(--ui-fs-sm);}
 /* Beskrivningen låg tidigare som ett stycke under previewn och tog vertikal plats
    varje sekund man INTE läste den. Nu: en ikon uppe till höger som visar den vid
@@ -263,23 +305,25 @@ body.maximized .tb-btn .ico-max{display:none;}
 .pv-info{position:absolute;right:12px;top:12px;z-index:4;}
 /* OGENOMSKINLIG bakgrund: rutan ligger ovanpå en RÖRLIG overlay, och genom en
    halvtransparent yta skymtade siffrorna bakom rakt genom texten. */
-.pv-info .tip{position:absolute;top:calc(100% + 8px);right:0;width:330px;padding:13px 15px;
+.pv-info .tip{position:absolute;top:calc(100% + 8px);right:0;width:328px;padding:12px 16px;
   border-radius:var(--ui-r-md);background:linear-gradient(180deg,#141817,#0d100f);
-  border:1px solid var(--ui-edge);box-shadow:var(--ui-lift),var(--ui-sheen);
+  border:1px solid var(--ui-edge-dk);box-shadow:var(--ui-lift),var(--ui-raise);
   opacity:0;visibility:hidden;transform:translateY(-5px);pointer-events:none;
   transition:opacity .16s ease,transform .16s cubic-bezier(.2,.8,.3,1),visibility 0s linear .16s;}
 .pv-info:hover .tip,.pv-info:focus-within .tip{opacity:1;visibility:visible;transform:none;
   transition-delay:0s;}
 .pv-info .tip b{display:block;font-size:var(--ui-fs-md);font-weight:700;letter-spacing:.3px;color:var(--ink);}
-.pv-info .tip span{display:block;margin-top:7px;font-size:var(--ui-fs-sm);font-weight:500;
+.pv-info .tip span{display:block;margin-top:8px;font-size:var(--ui-fs-sm);font-weight:500;
   line-height:1.6;color:var(--dim);}
 .pv-info .tip:empty,.pv-info .tip.none{display:none;}
 
 /* titel + beskrivning (centrerad, röd understrykning) */
-.titleband{padding:26px 24px 4px;text-align:center;}
-.titleband h2{font-size:21px;font-weight:700;letter-spacing:.5px;}
-.titleband h2::after{content:"";display:block;width:44px;height:2.5px;background:var(--rail);
-  margin:10px auto 0;border-radius:2px;box-shadow:0 0 12px rgba(209,4,4,0.45);}
+.titleband{padding:24px 24px 4px;text-align:center;}
+.titleband h2{font-size:20px;font-weight:700;letter-spacing:.5px;}
+/* Samma röda som brandbaren och ordbilden, och utan glow: strecket är en
+   avslutning under en rubrik, inte en varningslampa. */
+.titleband h2::after{content:"";display:block;width:44px;height:2px;background:var(--ui-brand);
+  margin:12px auto 0;border-radius:2px;}
 .titleband p{max-width:560px;margin:12px auto 0;font-size:var(--ui-fs-md);font-weight:500;
   line-height:1.6;color:var(--dim);}
 /* Textloggan ersätter rubriken i Om-fliken. Behåller guldstrecket under, men utan
@@ -293,42 +337,63 @@ body.maximized .tb-btn .ico-max{display:none;}
    bokstäverna och ordbilden ÄR redan varumärket. */
 .titleband h2.wordmark::after{display:none;}
 
-/* ── kort och rader ── */
-.controls{display:flex;gap:16px;padding:18px 20px 28px;align-items:flex-start;}
+/* ── kort och rader ──
+   Vågrät padding är 20 px, exakt samma som #previewBox:s margin. Det är det som gör
+   att korten står kant i kant med förhandsvisningen i stället för i en egen,
+   smalare spalt — två block med olika bredd ovanpå varandra läser som två olika
+   vyer, hur små pixlarna än är. Ändrar du det ena, ändra det andra. */
+.controls{display:flex;gap:16px;padding:16px 20px 24px;align-items:flex-start;}
 /* Skrollen bor HÄR och inte på panen (se .pane ovan) — det är det som håller
-   förhandsvisningen kvar överst. */
-#pane-overlays .controls{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;}
+   förhandsvisningen kvar överst.
+   SKROLLREMSANS BREDD MÅSTE RÄKNAS BORT. En skrollbar äter av innehållsbredden, så
+   korten hamnade 11 px innanför förhandsvisningens högerkant — men bara när listan
+   var lång nog att skrolla. Alltså: ett kort med sex färgrader satt i linje, ett med
+   sju gjorde det inte, och felet fanns inte att hitta i någon regel.
+   `scrollbar-gutter:stable` reserverar remsan ÄVEN när den inte behövs, så bredden
+   aldrig hoppar, och högerpaddingen dras av lika mycket. Summan är exakt 20 px till
+   panens kant i båda lägena — samma som #previewBox:s margin. */
+#pane-overlays .controls{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;
+  scrollbar-gutter:stable;padding-right:calc(20px - var(--ui-scrollbar));}
 /* Knapparna ligger ovanpå previewn, så ytan är ogenomskinlig: en halvtransparent
    knapp över en rörlig overlay går inte att läsa. */
-.sbtn{width:34px;height:34px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
-  background:rgba(7,9,8,0.90);border:1px solid var(--ui-edge);border-radius:var(--ui-r-md);
-  color:var(--dim);cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,0.45),var(--ui-sheen);
+.sbtn{width:32px;height:32px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+  background:rgba(7,9,8,0.90);border:1px solid var(--ui-edge-dk);border-radius:var(--ui-r-md);
+  color:var(--dim);cursor:pointer;box-shadow:var(--ui-raise),var(--ui-lip);
   transition:background .15s ease,color .15s ease,border-color .15s ease,transform .1s ease;}
-.sbtn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.7;
+.sbtn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;
   stroke-linecap:round;stroke-linejoin:round;}
 .sbtn:hover{background:#191d1b;color:var(--ink);border-color:var(--ui-edge-hi);}
 .sbtn:active{transform:translateY(1px);}
 .sbtn:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
+/* Aktivt läge: tonad amber yta och amber kant. INGEN yttre glow — knappen sitter
+   ovanpå en rörlig overlay, och en lysande ring runt den drog blicken från precis
+   det man tittar på. Färgen ensam säger redan att läget är på. */
 .sbtn.active{color:var(--amber);border-color:rgba(251,191,36,0.45);
   background:linear-gradient(180deg,rgba(251,191,36,0.22),rgba(251,191,36,0.10));
-  box-shadow:0 0 16px rgba(251,191,36,0.16),var(--ui-sheen);}
+  box-shadow:var(--ui-sheen);}
 /* Inne i verktygsblocket bär blocket kanten — knapparna får inte var sin. */
-.pv-tools .sbtn{width:30px;height:30px;background:none;border-color:transparent;box-shadow:none;
+.pv-tools .sbtn{width:28px;height:28px;background:none;border-color:transparent;box-shadow:none;
   border-radius:var(--ui-r-sm);}
 .pv-tools .sbtn:hover{background:var(--ctrl-hi);}
 .pv-tools .sbtn.active{background:linear-gradient(180deg,rgba(251,191,36,0.22),rgba(251,191,36,0.10));
   border-color:rgba(251,191,36,0.40);}
 
-.cards{flex:1 1 auto;min-width:0;max-width:var(--ui-col-max);margin:0 auto;
-  display:flex;flex-direction:column;gap:14px;}
-.cards.single{max-width:620px;}
-.card{border:1px solid var(--ui-edge);border-radius:var(--ui-r-lg);padding:2px 18px 12px;
+/* Korten tar HELA bredden under förhandsvisningen. De satt tidigare i en centrerad
+   spalt med tak (820 px), vilket höll etikett och reglage nära varandra men gjorde
+   att inställningarna såg ut att tillhöra en annan, smalare vy än rutan ovanför.
+   Med full bredd är kanterna gemensamma och blocken läser som ett.
+   Referens och Om har ingen preview att rätta sig efter och behåller sin smala
+   spalt (.single) — där finns inget att linjera mot, och en 1400 px bred rad med
+   en enda knapp i hade sett tom ut. */
+.cards{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:16px;}
+.cards.single{max-width:620px;margin:0 auto;}
+.card{border:1px solid var(--ui-edge-dk);border-radius:var(--ui-r-lg);padding:0 20px 12px;
   background:linear-gradient(180deg,var(--ui-surf-hi),var(--ui-surf));
-  box-shadow:var(--ui-sheen),0 6px 20px rgba(0,0,0,0.30);}
-.card > h3{padding:16px 0 9px;}
-/* Radhöjden är fast (46 px) och inte padding-driven: en rad med reglage är högre än
-   en med bara text, och listan vek sig i taktlöshet när de blandades. */
-.row{display:flex;align-items:center;gap:16px;min-height:46px;}
+  box-shadow:var(--ui-raise),var(--ui-lip);}
+.card > h3{padding:16px 0 8px;}
+/* Radhöjden är fast (--ui-row-h) och inte padding-driven: en rad med reglage är
+   högre än en med bara text, och listan vek sig i taktlöshet när de blandades. */
+.row{display:flex;align-items:center;gap:16px;min-height:var(--ui-row-h);}
 .row + .row{border-top:1px solid var(--ui-hair);}
 .rlabel{flex:1 1 auto;min-width:0;font-size:var(--ui-fs-lg);font-weight:600;}
 .state{flex:0 0 auto;font-size:var(--ui-fs-sm);font-weight:700;letter-spacing:.9px;
@@ -340,7 +405,11 @@ body.maximized .tb-btn .ico-max{display:none;}
    såg ut att komma från olika program. */
 .row.slide label{flex:1 1 auto;min-width:0;font-size:var(--ui-fs-lg);font-weight:600;color:var(--ink);}
 .row.slide input[type=range]{flex:0 1 var(--ui-ctl-w);width:var(--ui-ctl-w);min-width:120px;}
-.row.slide .val{flex:0 0 58px;text-align:right;font-size:var(--ui-fs-md);font-weight:700;
+/* 60 px, inte "så brett som texten behöver": reglagekolumnen (300) + gap (16) + 60
+   blir 376 px, exakt lika mycket som färgraden tar (200 + 16 + 96 + 16 + 48). Det är
+   det som gör att reglage, väljare, växlare och färgrutor slutar på SAMMA lodräta
+   linje över hela kortet i stället för att sicksacka fyra pixlar. */
+.row.slide .val{flex:0 0 60px;text-align:right;font-size:var(--ui-fs-md);font-weight:700;
   color:var(--ink);font-variant-numeric:tabular-nums;}
 
 /* Reglage. Helt egenritat — `accent-color` ger systemets reglage, som är 2 px högt,
@@ -365,15 +434,19 @@ input[type=range]:focus-visible::-webkit-slider-thumb{
   box-shadow:0 0 0 2px var(--ui-focus),0 2px 6px rgba(0,0,0,0.55);}
 
 /* typade alternativ (enum/färg) — bool använder .sw, tal använder .row.slide */
-.osel{flex:0 0 auto;min-width:150px;appearance:none;-webkit-appearance:none;
+/* Väljaren är exakt 376 px — samma bredd som reglagets och färgradens kluster (se
+   .row.slide .val), så etiketten slutar på samma lodräta linje oavsett vilken sorts
+   kontroll raden har. En väljare som bara var så bred som sitt längsta alternativ
+   såg ut att ha ramlat in i raden. */
+.osel{flex:0 0 376px;width:376px;appearance:none;-webkit-appearance:none;
   color:var(--ink);font:inherit;font-size:var(--ui-fs-md);font-weight:600;cursor:pointer;
-  padding:9px 32px 9px 12px;border:1px solid var(--ui-edge);border-radius:var(--ui-r-sm);
+  padding:8px 32px 8px 12px;border:1px solid var(--ui-edge);border-radius:var(--ui-r-sm);
   /* background-size måste anges: en inline-SVG utan width/height har ingen egen
      storlek och skalas då till hela rutan — pilen blev en stor grå bock. */
   background-color:var(--ui-inset);background-repeat:no-repeat;
   background-position:right 11px center;background-size:11px 11px;
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%237f867d' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'><path d='M2.75 4.5 6 7.75 9.25 4.5'/></svg>");
-  box-shadow:inset 0 1px 3px rgba(0,0,0,0.45);
+  box-shadow:var(--ui-recess);
   transition:border-color .15s ease,background-color .15s ease;}
 .osel:hover{border-color:var(--ui-edge-hi);}
 .osel:focus-visible{outline:2px solid var(--ui-focus);outline-offset:1px;}
@@ -381,7 +454,7 @@ input[type=range]:focus-visible::-webkit-slider-thumb{
 .osel option{background:#0e100f;color:var(--ink);}
 /* Färgrutan: nollställd inuti (webkit lägger 2 px padding och en grå kant runt
    provet) så det är FÄRGEN som är knappen, inte en liten fläck i en ram. */
-.ocol{flex:0 0 46px;width:46px;height:28px;padding:0;cursor:pointer;
+.ocol{flex:0 0 48px;width:48px;height:28px;padding:0;cursor:pointer;
   background:var(--ui-inset);border:1px solid var(--ui-edge);border-radius:var(--ui-r-sm);
   transition:border-color .15s ease,transform .1s ease;}
 .ocol::-webkit-color-swatch-wrapper{padding:3px;}
@@ -389,35 +462,56 @@ input[type=range]:focus-visible::-webkit-slider-thumb{
 .ocol:hover{border-color:var(--ui-edge-hi);}
 .ocol:active{transform:translateY(1px);}
 .ocol:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
+/* Hexfältet bredvid färgrutan. Systemets färgväljare kan bara nås med musen och
+   räknar i RGB — men färger kommer nästan alltid någon annanstans ifrån: ur en
+   liveryfil, ur ett teams färgprofil, ur en annan overlay. Då vill man klistra in
+   #0DE622, inte leta rätt på den i en gradientruta.
+   Fast bredd (96 px) räcker för #RRGGBBAA med marginal, och gör att fältet står i
+   samma kolumn på alla färgrader — samma skäl som .aslot har fast bredd. */
+.hexf{flex:0 0 96px;width:96px;height:28px;appearance:none;padding:0 8px;
+  background:var(--ui-inset);border:1px solid var(--ui-edge);border-radius:var(--ui-r-sm);
+  color:var(--ink);font:inherit;font-size:var(--ui-fs-md);font-weight:600;letter-spacing:.4px;
+  font-variant-numeric:tabular-nums;text-transform:uppercase;box-shadow:var(--ui-recess);
+  transition:border-color .15s ease;}
+.hexf:hover{border-color:var(--ui-edge-hi);}
+.hexf:focus{outline:none;border-color:var(--ui-edge-hi);}
+.hexf:focus-visible{outline:2px solid var(--ui-focus);outline-offset:1px;}
+/* Ogiltig inmatning avvisas inte och rensas inte — den MARKERAS. Ett fält som
+   nollställer sig mitt i att man skriver "#0DE" är obrukbart; man ska hinna skriva
+   klart. Fältet återställs i stället till det gällande värdet när det tappar fokus. */
+.hexf.bad{border-color:rgba(255,59,59,0.55);}
 /* Färgrutan ligger SIST på raden och alfa-reglaget i ett slot med fast bredd, även
    när färgen saknar alfa. Annars hamnade rutorna i två olika kolumner — de färger
    som har alfa knuffades åt vänster av sitt reglage, och en lista med tio färger
    såg ut som två halvfärdiga listor. */
-.aslot{flex:0 0 196px;display:flex;align-items:center;justify-content:flex-end;gap:12px;}
+.aslot{flex:0 0 200px;display:flex;align-items:center;justify-content:flex-end;gap:12px;}
 .oalpha{flex:1 1 auto;min-width:60px;}
 .row .val{flex:0 0 44px;text-align:right;font-size:var(--ui-fs-md);font-weight:600;color:var(--dim);
   font-variant-numeric:tabular-nums;}
 
 /* toggle */
-.sw{position:relative;width:40px;height:22px;flex:0 0 auto;cursor:pointer;}
+.sw{position:relative;width:40px;height:24px;flex:0 0 auto;cursor:pointer;}
 .sw input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer;}
 .sw .track{position:absolute;inset:0;border-radius:999px;background:var(--ui-inset);
   border:1px solid var(--ui-edge);box-shadow:inset 0 1px 3px rgba(0,0,0,0.6);
   transition:background .18s ease,border-color .18s ease,box-shadow .18s ease;}
-.sw .knob{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;
+.sw .knob{position:absolute;top:4px;left:4px;width:16px;height:16px;border-radius:50%;
   background:var(--dim);box-shadow:0 1px 3px rgba(0,0,0,0.6);
   transition:transform .2s cubic-bezier(.2,.8,.3,1),background .18s ease,box-shadow .18s ease;}
+/* Påslaget läge: tonat spår och grön knopp. Glowen runt spåret är borta helt och
+   knoppens nedtonad till en antydan — det finns upp till åtta växlare i samma kort,
+   och åtta lysande ringar gör kortet till en julgran. */
 .sw input:checked ~ .track{background:rgba(13,230,34,0.16);border-color:rgba(13,230,34,0.42);
-  box-shadow:inset 0 1px 3px rgba(0,0,0,0.5),0 0 14px rgba(13,230,34,0.15);}
-.sw input:checked ~ .knob{transform:translateX(18px);background:var(--green);
-  box-shadow:0 1px 3px rgba(0,0,0,0.6),0 0 10px rgba(13,230,34,0.5);}
+  box-shadow:inset 0 1px 3px rgba(0,0,0,0.5);}
+.sw input:checked ~ .knob{transform:translateX(16px);background:var(--green);
+  box-shadow:0 1px 3px rgba(0,0,0,0.6),0 0 5px rgba(13,230,34,0.28);}
 .sw input:focus-visible ~ .track{outline:2px solid var(--ui-focus);outline-offset:2px;}
 
 /* knappar + text i Referens/Om */
 button.act{width:100%;font:inherit;font-size:var(--ui-fs-md);font-weight:600;letter-spacing:.3px;
-  color:var(--ink);border:1px solid var(--ui-edge);border-radius:var(--ui-r-md);padding:12px 14px;
+  color:var(--ink);border:1px solid var(--ui-edge);border-radius:var(--ui-r-md);padding:12px 16px;
   background:linear-gradient(180deg,rgba(255,255,255,0.075),rgba(255,255,255,0.032));
-  box-shadow:var(--ui-sheen);cursor:pointer;margin:6px 0 4px;
+  box-shadow:var(--ui-sheen);cursor:pointer;margin:8px 0 4px;
   transition:background .15s ease,border-color .15s ease,transform .1s ease;}
 button.act:hover{border-color:var(--ui-edge-hi);
   background:linear-gradient(180deg,rgba(255,255,255,0.12),rgba(255,255,255,0.055));}
@@ -425,7 +519,7 @@ button.act:active{transform:translateY(1px);}
 button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
 /* Sökvägen är data och inte prosa — monospacekänslan kommer av tabular-nums, så
    den blir läsbar utan att bryta typsnittsvalet. */
-.refpath{font-size:var(--ui-fs-sm);font-weight:500;color:var(--dim);margin:10px 0 4px;
+.refpath{font-size:var(--ui-fs-sm);font-weight:500;color:var(--dim);margin:8px 0 4px;
   word-break:break-all;font-variant-numeric:tabular-nums;line-height:1.55;}
 .hint{font-size:var(--ui-fs-sm);color:var(--faint);line-height:1.6;padding:4px 0 8px;}
 .kv{display:flex;justify-content:space-between;align-items:center;gap:16px;
@@ -434,19 +528,30 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
 /* Kortkommandot får en tangentbricka: det ÄR något man trycker på, och som löptext
    var det omöjligt att skilja från beskrivningen bredvid. */
 .kv span:first-child{flex:0 0 auto;font-weight:700;font-size:var(--ui-fs-sm);color:var(--ink);
-  font-variant-numeric:tabular-nums;letter-spacing:.4px;padding:6px 9px;border-radius:var(--ui-r-sm);
+  font-variant-numeric:tabular-nums;letter-spacing:.4px;padding:6px 8px;border-radius:var(--ui-r-sm);
   background:var(--ui-inset);border:1px solid var(--ui-edge);
   box-shadow:inset 0 1px 0 rgba(255,255,255,0.05),0 1px 0 rgba(0,0,0,0.5);}
 .kv span:last-child{color:var(--dim);text-align:right;}
 
 /* toast */
-#toast{position:fixed;right:18px;bottom:16px;max-width:340px;padding:11px 15px;
+#toast{position:fixed;right:16px;bottom:16px;max-width:340px;padding:12px 16px;
   border-radius:var(--ui-r-md);background:linear-gradient(180deg,#141817,#0c0f0e);
-  border:1px solid var(--ui-edge);color:var(--ink);font-size:var(--ui-fs-md);font-weight:600;
-  line-height:1.45;box-shadow:var(--ui-lift),var(--ui-sheen);
+  border:1px solid var(--ui-edge-dk);color:var(--ink);font-size:var(--ui-fs-md);font-weight:600;
+  line-height:1.45;box-shadow:var(--ui-lift),var(--ui-raise);
   opacity:0;transform:translateY(8px) scale(.98);pointer-events:none;z-index:99;
   transition:opacity .2s ease,transform .22s cubic-bezier(.2,.8,.3,1);}
 #toast.show{opacity:1;transform:none;}
+
+/* Smal panel. Korten går kant i kant med förhandsvisningen, så på panelens golv
+   (960 px, §8.2b) blir 376 px kontrollkluster nära en tredjedel av kortets bredd och
+   etiketterna börjar brytas mitt i ordet. Klustret krymper då till 296 px — och ALLA
+   tre varianterna räknas om, annars tappar de linjeringen som är hela poängen:
+   reglage 220+16+60, färg 120+16+96+16+48, väljare 296. */
+@media (max-width: 1100px){
+  :root{--ui-ctl-w:220px;}
+  .osel{flex:0 0 296px;width:296px;}
+  .aslot{flex:0 0 120px;}
+}
 </style>
 </head>
 <body>
@@ -471,23 +576,10 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
 
     <!-- ── vänster ikonrad ── -->
     <nav class="rail">
-      <!-- Märket i listen är en 3×3-matris med den röda diagonalen: appen heter
-           SimMatrix, och en klocka (som stod här förut) sa ingenting om vare sig
-           namnet eller vad panelen gör. Ordbilden är 8,4:1 och får inte plats i en
-           78 px bred list, så den bor i titelraden och det här är dess kompakta form. -->
-      <div class="brand" title="SimMatrix">
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <rect x="2.5"  y="2.5"  width="5.6" height="5.6" rx="1.5" fill="var(--rail)"/>
-          <rect x="9.2"  y="2.5"  width="5.6" height="5.6" rx="1.5" fill="#2a2f2b"/>
-          <rect x="15.9" y="2.5"  width="5.6" height="5.6" rx="1.5" fill="#2a2f2b"/>
-          <rect x="2.5"  y="9.2"  width="5.6" height="5.6" rx="1.5" fill="#2a2f2b"/>
-          <rect x="9.2"  y="9.2"  width="5.6" height="5.6" rx="1.5" fill="var(--rail)"/>
-          <rect x="15.9" y="9.2"  width="5.6" height="5.6" rx="1.5" fill="#2a2f2b"/>
-          <rect x="2.5"  y="15.9" width="5.6" height="5.6" rx="1.5" fill="#2a2f2b"/>
-          <rect x="9.2"  y="15.9" width="5.6" height="5.6" rx="1.5" fill="#2a2f2b"/>
-          <rect x="15.9" y="15.9" width="5.6" height="5.6" rx="1.5" fill="var(--rail)"/>
-        </svg>
-      </div>
+      <!-- Här satt en kompakt 3×3-matrisikon som andra märke. Den togs bort: appens
+           ordbild står redan i titelraden 40 px ovanför, och ett märke till i samma
+           blickfång gör att man frågar sig om det är två olika saker. Listen börjar
+           nu direkt med flikarna, vilket också ger statusraderna nertill mer luft. -->
       <button class="nav" data-sec="overlays" aria-selected="true">
         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/></svg>
         <span>Overlays</span>
@@ -938,11 +1030,18 @@ function renderOptions(o){
       const inp = document.createElement('input');
       inp.type = 'color'; inp.className = 'ocol'; inp.value = rgb;
       let alpha = a0;
+      let alphaIn = null, alphaOut = null;      // sätts nedan om färgen har alfa
+
+      /** Det gällande värdet som text — exakt det som skickas till overlayn. */
+      const canon = () => (d.alpha && alpha < 0.999
+        ? inp.value + Math.round(alpha*255).toString(16).padStart(2,'0')
+        : inp.value).toUpperCase();
+
       const emit = () => {
-        const hex = inp.value;
-        send(d.alpha && alpha < 0.999
-          ? hex + Math.round(alpha*255).toString(16).padStart(2,'0')
-          : hex);
+        send(canon().toLowerCase());
+        // Skriv inte över fältet medan användaren skriver i det — markören hade
+        // hoppat till slutet vid varje tecken.
+        if (document.activeElement !== hexIn) hexIn.value = canon();
       };
       inp.addEventListener('input', emit);
 
@@ -962,8 +1061,43 @@ function renderOptions(o){
           emit();
         });
         slot.appendChild(al); slot.appendChild(out);
+        alphaIn = al; alphaOut = out;
       }
-      row.appendChild(slot); row.appendChild(inp);
+
+      /* Hexfält: klistra in eller skriv en färgkod i stället för att sikta i
+         systemets färgruta. Tar #RRGGBB, #RRGGBBAA och kortformen #RGB, med eller
+         utan brädgård — det är de former man faktiskt får kopierade till sig.
+         Alfa i koden vinner över reglaget när färgen tillåter alfa; skriver man
+         #0DE622FF blir reglaget 100 %, precis som koden säger. */
+      const hexIn = document.createElement('input');
+      hexIn.type = 'text'; hexIn.className = 'hexf'; hexIn.spellcheck = false;
+      hexIn.autocomplete = 'off'; hexIn.value = canon();
+      hexIn.title = 'Färgkod — klistra in #RRGGBB' + (d.alpha ? ' eller #RRGGBBAA' : '');
+      hexIn.setAttribute('aria-label', d.label + ' — färgkod');
+      hexIn.addEventListener('input', () => {
+        const raw = hexIn.value.trim().replace(/^#/, '');
+        // Kortformen är en förkortning där varje tecken står för två: f0a → ff00aa.
+        const full = /^[0-9a-fA-F]{3}$/.test(raw)
+          ? raw.split('').map(c => c + c).join('') : raw;
+        if (!/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(full)){ hexIn.classList.add('bad'); return; }
+        hexIn.classList.remove('bad');
+        inp.value = '#' + full.slice(0,6).toLowerCase();
+        if (full.length === 8 && d.alpha){
+          alpha = parseInt(full.slice(6,8),16) / 255;
+          // Programmatiska värden utlöser inget `input`, så reglagets fyllda del
+          // måste målas om för hand (samma skäl som paintAll() i select()).
+          if (alphaIn){ alphaIn.value = alpha; paintRange(alphaIn); }
+          if (alphaOut) alphaOut.textContent = Math.round(alpha*100) + '%';
+        }
+        emit();
+      });
+      // Halvskriven kod ska inte bli kvar i rutan. Vid blur (och Enter) återgår
+      // fältet till det värde som faktiskt gäller.
+      const settle = () => { hexIn.classList.remove('bad'); hexIn.value = canon(); };
+      hexIn.addEventListener('blur', settle);
+      hexIn.addEventListener('keydown', e => { if (e.key === 'Enter'){ settle(); hexIn.blur(); } });
+
+      row.appendChild(slot); row.appendChild(hexIn); row.appendChild(inp);
 
     } else {
       row.className = 'row';
