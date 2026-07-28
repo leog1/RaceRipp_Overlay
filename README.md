@@ -1,6 +1,8 @@
-# SimMatrix
+<p align="center">
+  <img src="docs/simmatrix-logo.png" alt="SimMatrix" width="459">
+</p>
 
-Modulärt overlay-paket för Assetto Corsa Competizione.
+<p align="center">Modulärt overlay-paket för Assetto Corsa Competizione.</p>
 
 Frikopplad arkitektur: en **Python-motor** läser telemetri och publicerar JSON-ramar
 över en **lokal WebSocket**; **overlays renderas som webb** (HTML/CSS/SVG/Canvas) och

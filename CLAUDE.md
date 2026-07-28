@@ -319,6 +319,25 @@ Två saker att inte tappa: filtrera på `id` (annars svarar alla overlays på al
 kräv markören (annars tolkas meddelanden från andra bibliotek och iframes som
 inställningar).
 
+### 8.4c Förhandsvisningen: mät innehållet, inte fönstret
+Tre fel i previewrutan hade samma rot — panelen resonerade om iframens MÅTT i stället
+för om det som faktiskt ritas:
+
+- **Skalreglaget klippte overlayn.** Iframen sattes till `base × skala` medan
+  innehållet inuti behöll sin egen skala (config når inte in i en iframe, §8.4b).
+  Previewn visar nu alltid overlayns NATURLIGA storlek; skalan påverkar den med flit
+  inte alls, eftersom previewn ändå krymps för att passa rutan.
+- **Innehållet var inte centrerat.** Overlays är förankrade uppe till vänster inuti
+  sitt fönster (`#ui{top;left}`), så ett alternativ som ändrar bredden — dold
+  kopplingsstapel, borttagen kolumn — knuffade bilden ur mitten. Panelen mäter nu
+  `#ui`:s faktiska rektangel i iframen (samma origin, så det går) och centrerar DEN:
+  `transform-origin:0 0` + `translate(-mitt × s) scale(s)`.
+- **Opaciteten nådde aldrig fram.** Panelen postade bara `option`, aldrig `config`.
+
+Mätningen kräver att iframen laddat, och måttet ändras när ett alternativ ändrar
+dimensionerna — därför `refitSoon()` (dubbel rAF) efter load och efter varje
+alternativändring.
+
 ### 8.5 Flicker-mönster att aldrig upprepa
 Alla dessa fanns i delta-baren och gav synligt flimmer:
 - **Tröskel som slår ut ett element helt.** `valueArc()` returnerade `''` när

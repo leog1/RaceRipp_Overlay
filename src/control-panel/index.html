@@ -54,7 +54,8 @@ body{font-family:var(--font);background:var(--app-bg);color:var(--ink);
   border-left:3px solid transparent;text-align:left;transition:background .12s ease;}
 .lrow:hover{background:var(--hover);}
 .lrow.sel{background:var(--sel);}
-.lrow.on{border-left-color:var(--green);}
+/* Ingen grön vänsterkant på raden — den gröna PÅ-texten räcker som markör.
+   Den transparenta kanten är kvar så radens innehåll inte hoppar 3 px. */
 .lrow .ltitle{flex:1 1 auto;font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .lrow .lstate{font-size:10.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--faint);}
 .lrow.on .lstate{color:var(--green);}
@@ -391,6 +392,7 @@ function renderOptions(o){
     const send = async (v) => {
       const cur = ov(o.id); if (cur){ cur.options = cur.options || {}; cur.options[d.id] = v; }
       toPreview({ kind: 'option', id: o.id, option: d.id, value: v });   // syns direkt
+      refitSoon();                                    // dimensionerna kan ha ändrats
       try { await invoke('set_option', { id: o.id, option: d.id, value: v }); }
       catch(err){ toast('Kunde inte spara alternativ: ' + errMsg(err), true); }
     };
@@ -464,22 +466,50 @@ function renderOptions(o){
 function setPreview(o){
   const pv = $('pv');
   const src = '../' + o.url + '?id=' + encodeURIComponent(o.id);
-  if (pv.dataset.src !== src){ pv.dataset.src = src; pv.src = src; }
-  fitPreview();
+  if (pv.dataset.src !== src){
+    pv.dataset.src = src; pv.src = src;
+    pv.onload = refitSoon;          // innehållet går inte att mäta före load
+  }
+  fitPreview(); refitSoon();
 }
 function fitPreview(){
   const o = ov(selectedId); if (!o) return;
   const box = $('previewBox'), pv = $('pv');
   const bw = box.clientWidth - 30, bh = box.clientHeight - 30;
   if (bw <= 0 || bh <= 0) return;
-  // Iframen får samma storlek som det riktiga fönstret (base × skala) så previewn
-  // visar exakt det overlayn gör; sedan krymps den för att passa i rutan.
-  const w = o.base_width * (o.scale || 1), h = o.base_height * (o.scale || 1);
-  const s = Math.min(bw / w, bh / h, 1);
-  pv.style.width = w + 'px';
-  pv.style.height = h + 'px';
-  pv.style.transform = `translate(-50%,-50%) scale(${s})`;
+
+  /* Iframen får overlayns NATURLIGA storlek. Skalreglaget påverkar med flit inte
+     previewn: iframen ändrade storlek efter skalan medan innehållet inuti behöll
+     sin egen (config når inte in i en iframe), och då klipptes overlayn av. */
+  pv.style.width  = o.base_width + 'px';
+  pv.style.height = o.base_height + 'px';
+
+  /* Mät det som FAKTISKT ritas och centrera DET — inte iframen. Overlays är
+     förankrade uppe till vänster inuti sitt fönster (#ui top/left), så ett
+     alternativ som ändrar bredden — dold kopplingsstapel, borttagen kolumn —
+     hade annars knuffat bilden ur mitten. */
+  let cx = o.base_width / 2, cy = o.base_height / 2, cw = o.base_width, ch = o.base_height;
+  try {
+    const d = pv.contentDocument;
+    const el = d && d.getElementById('ui');
+    const r = el && el.getBoundingClientRect();
+    if (r && r.width > 4 && r.height > 4) {
+      cx = r.left + r.width / 2; cy = r.top + r.height / 2;
+      cw = r.width; ch = r.height;
+    }
+  } catch {}
+
+  const s = Math.min(bw / cw, bh / ch, 1);
+  /* transform-origin 0 0 + translate(-mitt × s) lägger innehållets mittpunkt exakt
+     på iframens origin, som i sin tur ligger i rutans mitt (left/top: 50%). */
+  pv.style.transformOrigin = '0 0';
+  pv.style.transform =
+    `translate(${(-cx * s).toFixed(2)}px, ${(-cy * s).toFixed(2)}px) scale(${s.toFixed(4)})`;
 }
+
+/* Innehållet går inte att mäta förrän iframen laddat, och ändras när ett alternativ
+   ändrar dimensionerna. rAF ger layouten en chans att landa först. */
+function refitSoon(){ requestAnimationFrame(() => requestAnimationFrame(fitPreview)); }
 addEventListener('resize', () => { if (selectedId) fitPreview(); });
 
 /* ── kontrollremsa ── */
@@ -504,13 +534,14 @@ $('btnReset').addEventListener('click', async () => {
 /* ── skala / opacitet / alltid överst ── */
 $('scale').addEventListener('input', async () => {
   const v = parseFloat($('scale').value); $('scaleVal').textContent = v.toFixed(2) + '×';
-  const o = ov(selectedId); if (o){ o.scale = v; fitPreview(); }
+  const o = ov(selectedId); if (o) o.scale = v;   // previewn visar naturlig storlek
   try { await invoke('set_scale', { id: selectedId, scale: v }); }
   catch(e){ toast('set_scale: ' + errMsg(e), true); }
 });
 $('opacity').addEventListener('input', async () => {
   const v = parseFloat($('opacity').value); $('opacityVal').textContent = Math.round(v * 100) + '%';
   const o = ov(selectedId); if (o) o.opacity = v;
+  toPreview({ kind: 'config', id: selectedId, opacity: v });   // syns direkt i previewn
   try { await invoke('set_opacity', { id: selectedId, opacity: v }); }
   catch(e){ toast('set_opacity: ' + errMsg(e), true); }
 });
@@ -564,7 +595,12 @@ $('checkUpd').addEventListener('click', async () => {
 /* ── motorstatus via WS ── */
 (function statusLoop(){
   let ws;
-  const set = (cls, txt) => { $('dot').className = 'dot ' + cls; $('statusText').textContent = txt; };
+  const set = (cls, txt) => {
+    $('dot').className = 'dot ' + cls; $('statusText').textContent = txt;
+    // Hjälptexten i previewrutan doldes aldrig — den låg kvar BAKOM en körande
+    // förhandsvisning och skymtade genom den. Den hör bara hemma när motorn är av.
+    const hint = $('pvHint'); if (hint) hint.hidden = (cls !== 'off');
+  };
 
   /* Broadcasting-status. Utan den är fel connectionPassword helt osynligt: ACC
      avvisar registreringen tyst och inga andra bilar dyker någonsin upp. */

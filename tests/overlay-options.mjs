@@ -136,5 +136,31 @@ const FRAME = (o = {}) => ({ throttle: 0, brake: 0, clutch: 0, abs: false, tc: f
         `${h.api.trace.VISIBLE_MS} ms`);
 }
 
+// ── 12. Opaciteten måste också nå förhandsvisningen ──────────────────────
+// Rapporterat: previewn följde med på alternativen men INTE på opacitetsreglaget.
+// Panelen postade bara `option`, aldrig `config` — så skala och opacitet nådde
+// aldrig in i iframen.
+{
+  const h = await loadOverlay('inputs-trace', {
+    html: htmlOf('inputs-trace'),
+    init: { id: 'inputs-trace', scale: 1, opacity: 1, options: { clutch: true, window: 4.5 } },
+  });
+  h.settle(FRAME({ throttle: 1 }), 3);
+  const skrivningar = () => h.writes({ el: 'ui', key: 'opacity' });
+  const före = skrivningar().length;
+
+  h.message({ __simmatrix: true, kind: 'config', id: 'inputs-trace', opacity: 0.35 });
+  const nya = skrivningar().slice(före);
+  check('config med opacitet når overlayn',
+        nya.length > 0 && nya[nya.length - 1].value === '0.35',
+        nya.length ? `satte ${nya[nya.length - 1].value}` : 'ingen skrivning');
+
+  // Och config för en annan overlay ska ignoreras.
+  h.message({ __simmatrix: true, kind: 'config', id: 'delta-bar', opacity: 0.9 });
+  const efter = skrivningar();
+  check('config till annan overlay ignoreras',
+        efter[efter.length - 1].value === '0.35', efter[efter.length - 1].value);
+}
+
 console.log(failed ? `\n${failed} kontroll(er) misslyckades` : '\nAllt OK');
 process.exit(failed ? 1 : 0);
