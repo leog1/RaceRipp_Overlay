@@ -1,6 +1,6 @@
 [package]
 name = "acc-overlay"
-version = "0.4.1"
+version = "0.4.2"
 description = "ACC Overlay Pack"
 edition = "2021"
 
@@ -29,4 +29,7 @@ windows-sys = { version = "0.59", features = [
   "Win32_Security",          # CreateJobObjectW tar SECURITY_ATTRIBUTES
   "Win32_System_JobObjects",
   "Win32_System_Threading",
+  # GetForegroundWindow: ACC skriver sitt delade minne aven utan fokus, sa grinden
+  # kan inte se att man tabbat ut utan att fraga Windows vem som ligger overst.
+  "Win32_UI_WindowsAndMessaging",
 ] }

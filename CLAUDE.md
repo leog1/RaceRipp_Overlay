@@ -130,6 +130,8 @@ Mät referensbilder pixel-exakt FÖRST; bekräfta struktur i EN avstämning inna
 src/shared/tokens.css      designtokens (enda källan)
 src/shared/bus.js          WsBus (prenumerera på WS) + wireShell (config/edit/drag)
                            + fontsReady + startLoop (delad renderloop, §8.5)
+src/shared/preview-backgrounds/  inbyggda bakgrunder till panelens preview (§8.5d);
+                           användarens egna ligger i app-config-mappen
 src/overlays/registry.json KATALOG över overlays (kärnan läser denna)
 src/overlays/<id>/index.html  overlay-moduler
 src/control-panel/index.html  kontrollpanelen (inkl. live-preview i iframe)
@@ -197,6 +199,14 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   Bash — det senare gav tyst ingen output och såg ut som att binären var trasig.
 
 **Kvar att verifiera — läs detta först om du tar över:**
+- **Att ACC känns igen som förgrundsprocess** (§8.5c). Detektionen är körd och
+  fungerar åt båda hållen mot andra program och mot vårt eget fönster, men **aldrig
+  mot ACC**, eftersom spelet inte funnits på maskinen under arbetet. Slår
+  igenkänningen fel göms overlays under HELA loppet — det är den enskilt största
+  regressionsrisken i 0.4.2. Testa: starta ACC, kör ut på banan med "Endast när ACC
+  kör" påslagen, och kontrollera att overlays syns i bilen och försvinner när du
+  alt-tabbar. Gör de inte det är binärnamnet/sökvägen i `ACC_EXE_NAMES` /
+  `ACC_PATH_HINT` fel.
 - **Att 0.3.1/0.3.2-fixarna faktiskt löste det som rapporterades i spelet.** Tre
   buggar kom från riktig körning av 0.3.0: overlays blinkade var 3–4 sekund,
   inputs-trace fick hack, och delta-overlayn visade ett MoTeC-delta ur depån och på
@@ -528,6 +538,97 @@ overlay.
 `acc-overlay.exe`, summera `TotalProcessorTime` över 20 s och dela med tiden. Att
 mäta `msedgewebview2` rakt av ger fel svar — det finns oftast andra program med
 egna WebView2-processer på maskinen (här 14 totalt, varav 8 våra).
+
+### 8.5c Grinden ägde synligheten den inte hade rätt till
+Rapporterat från riktig körning (0.4.1): mitt i en session dök overlays upp när man
+tabbade ur ACC, och gick sedan **inte att stänga av** — ögonknappen såg ut att inte
+göra någonting. Två symptom, två separata fel, och det ena dolde det andra.
+
+**Fel 1: grinden återställde en AVSTÄNGD overlay.** Att tabba ur ACC stallar det
+delade minnet en stund → `connected:false` → grinden döljer fönstret → man tabbar in
+igen → `connected:true` → grinden `show()`:ar fönstret tillbaka. Den återställningen
+brydde sig inte om att användaren stängt av overlayn, så varje ut- och intabbning
+tände den igen.
+
+§8.5b:s regel — *"grinden får BARA visa fönster den själv har dolt"* — såg ut att täcka
+detta men gjorde det inte: grinden **hade** dolt fönstret. Den visste bara inte att
+skalet höll det stängt av ett helt annat skäl. Regeln behöver alltså en andra del:
+**en avstängd overlay ägs helt av skalet, och grinden får varken dölja eller visa
+den.** `lib.rs` skickar `enabled` i `__OVERLAY_INIT__` och ett `enabled`-event vid
+varje ändring; `bus.js:_applyOsVisibility` returnerar direkt när den är av.
+
+Eventet skickas **före** `show()`/`hide()` i `set_enabled`, så bus.js har släppt sitt
+anspråk innan skalet rör fönstret.
+
+**Fel 2: `connected` säger ingenting om fokus.** ACC fortsätter skriva sitt delade
+minne när fönstret inte har fokus, så grinden hade ingen anledning att dölja något —
+overlays låg kvar överst på skrivbordet. Det går bara att lösa genom att fråga
+Windows: `lib.rs:foreground_is_foreign()` läser förgrundsfönstrets process var 400:e
+ms och skickar `foreground`-eventet **vid ändring**.
+
+Funktionen är medvetet **fail-safe**: den svarar `true` bara när den POSITIVT
+identifierat en främmande process. Inget förgrundsfönster, `OpenProcess` nekas
+(förhöjd process), namnet går inte att läsa → `false`, alltså dölj inte. Ett falskt
+positivt hade släckt overlayn mitt i en kurva; ett falskt negativt betyder bara att
+den ligger kvar som förut. Våra egna fönster räknas aldrig som främmande — man ska
+kunna använda kontrollpanelen medan man ser overlayn.
+
+**Det enda verkligt farliga utfallet är att ACC inte känns igen** — då är ACC
+"främmande" och overlays göms under hela loppet. Därför testas TVÅ oberoende
+kännetecken och det räcker att ett slår till: binärnamnet
+(`AC2-Win64-Shipping.exe`, Unreal-namnet) eller att sökvägen innehåller Steams
+mappnamn `assetto corsa competizione`. Båda är stabila, men **ingen av dem är
+verifierad mot spelet igång** — se §7. Går overlays inte att få fram i ACC är detta
+första stället att titta, och användarens nödutgång är att slå av "Endast när ACC
+kör".
+
+Verifierat i drift här: ett annat program i förgrunden ger `foreign=true`, vårt eget
+fönster ger `foreign=false`, och eventet skickas bara vid ändring (två rader i loggen,
+inte 2,5 per sekund).
+
+Beteendet hänger på **"Endast när ACC kör"**, som redan betyder "visa bara overlays
+när ACC är relevant". Det är alltså användarens av-knapp även för detta, och en
+inspelningsrigg som vill ha overlays framme hela tiden slår av den som förut.
+
+Två saker till som föll ut av arbetet:
+- **Ingen hysteres på fokus.** `GATE_HOLD_MS` finns för tappade ramar; att tabba ut är
+  ingen tappad ram. Dölj direkt, visa direkt.
+- **Edit-läget måste vinna över hela grinden, inte bara över fönstret.** Förut
+  tvingades bara OS-synligheten på i edit-läge medan `visibility:hidden` låg kvar —
+  man fick ett synligt men **tomt** fönster att sikta på när overlayn skulle dras på
+  plats. `_applyGate` nollställer nu `hidden` i edit-läge, så både fönstret och
+  innehållet kommer tillbaka.
+
+### 8.5d Förhandsvisningens bakgrunder måste gå via data-URL
+Panelen kan visa en banbild bakom overlayn. Det uppenbara vore att peka en
+`<img>`/CSS-bakgrund på `../shared/preview-backgrounds/spa.webp` — och det fungerar
+för de INBYGGDA bilderna. Men kravet var att man ska kunna **lägga till egna bilder i
+en mapp**, och då håller det inte:
+
+**Den paketerade appen läser sitt webbinnehåll ur ett arkiv inbäddat i exe:n, inte
+från disk.** En fil användaren lägger i katalogen finns alltså inte på någon URL som
+webviewen kan hämta — den skulle listas men aldrig gå att visa. (`bundle.resources`
+lägger visserligen en KOPIA på disk i `resource_dir/web`, men den finns bara för
+motorns OBS-HTTP-server och är inte det webviewen laddar.)
+
+Därför lämnar `get_background` ut bilden som **data-URL**: samma väg för inbyggda och
+egna, i dev som i release, utan att öppna asset-protokollet. Kostnaden är base64 över
+IPC:n, vilket är oväsentligt när det sker vid ett klick — panelen cachar dessutom per
+filnamn.
+
+- Två kataloger: inbyggda i `resource_dir()/web/shared/preview-backgrounds` (dev:
+  repots `src/shared/preview-backgrounds`), egna i
+  `%APPDATA%\com.accoverlay.app\preview-backgrounds`. **Egna vinner vid namnkrock**,
+  och bara den katalogen överlever en uppdatering — installeraren skriver över den
+  andra.
+- `get_background` tar ett FILNAMN, aldrig en sökväg. Utan kontrollen hade `../../..`
+  i id:t lämnat ut vilken fil som helst på disken till webviewen.
+- Listan läses om varje gång menyn öppnas. Det är hela poängen med "lägg en fil i
+  mappen": den ska dyka upp utan omstart.
+- Halftone-rastret är ren CSS (`radial-gradient` + `background-size`), inte en bild:
+  det blir knivskarpt i alla storlekar och på alla DPI. Det ligger ovanför bakgrunden
+  men **under** overlayn — ett raster över själva overlayn hade förstört precis det
+  previewn finns för att bedöma.
 
 ### 8.6 Motorn får aldrig dö tyst
 ACC:s delade minne kan försvinna mitt i en session (alt-F4) och kasta. Utan

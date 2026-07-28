@@ -100,6 +100,16 @@ varje start. Se CLAUDE.md §8.8e.
 OS-kodsignering (SmartScreen) är medvetet uppskjuten — updater-signaturen räcker för
 integritet; utan Authenticode klickar man "kör ändå" första gången.
 
+## Egna bakgrunder i förhandsvisningen
+Kontrollpanelens preview kan visa overlayn mot en banbild. Ikonen uppe till vänster i
+previewrutan bläddrar bland dem — hovra över ett namn för att se bilden direkt.
+
+Egna bilder läggs i **`%APPDATA%\com.accoverlay.app\preview-backgrounds\`** (menyn har
+en rad som öppnar mappen). `.webp`, `.jpg`, `.png` och `.avif` fungerar; filnamnet blir
+etiketten i listan, och listan läses om varje gång menyn öppnas — ingen omstart behövs.
+Den mappen överlever uppdateringar, till skillnad från de inbyggda bilderna som ligger
+i installationskatalogen och skrivs över.
+
 ## Lägga till en ny overlay (utan att röra kärnan)
 1. Skapa `src/overlays/<id>/index.html` som importerar `../../shared/tokens.css` och
    prenumererar på `WsBus` från `../../shared/bus.js`; deklarera vilka kanaler den läser.

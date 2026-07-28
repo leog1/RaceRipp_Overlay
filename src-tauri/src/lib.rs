@@ -192,10 +192,27 @@ struct Settings {
     // global: visa overlays först när motorn är synkad mot ACC (connected==true)
     #[serde(default)]
     hide_until_connected: bool,
+    // Filnamnet på förhandsvisningens bakgrund. Tom sträng = ingen bild, alltså den
+    // gamla gråa rutan — men det är ett AKTIVT val och inte utgångsläget: saknas
+    // fältet (ny installation, äldre settings.json) gäller default_preview_bg().
+    // Bara ett namn, ingen sökväg — se get_background.
+    #[serde(default = "default_preview_bg")]
+    preview_background: String,
+}
+
+// Förhandsvisningen visar en bana som standard: poängen med rutan är att se hur
+// overlayn läser sig MOT något, och en tom grå yta säger inget om det. Finns filen
+// inte (borttagen ur mappen) nollställer panelen valet tyst vid start.
+fn default_preview_bg() -> String {
+    "spa.webp".into()
 }
 
 fn default_settings() -> Settings {
     let mut s = Settings::default();
+    // `#[serde(default = …)]` gäller bara vid INLÄSNING av en fil. En helt ny
+    // installation har ingen fil alls och går den här vägen, så bakgrunden måste
+    // sättas här också — annars fick bara uppgraderande användare den.
+    s.preview_background = default_preview_bg();
     for d in registry() {
         s.overlays.insert(d.id.clone(), default_state_for(d));
     }
@@ -270,6 +287,10 @@ fn create_overlay(
             "scale": st.scale,
             "opacity": st.opacity,
             "gate": hide_until_connected,
+            // Grinden måste veta om overlayn är AVSTÄNGD, annars "återställer" den
+            // fönstret vid varje återanslutning och en avstängd overlay tänds igen
+            // så fort man tabbar in i ACC (§8.5c).
+            "enabled": st.enabled,
             // Skalet har redan dolt fönstret om grinden är på. bus.js måste veta det,
             // annars vägrar den visa fönstret igen när ACC ansluter — den visar med
             // flit bara fönster den själv dolt (§8.5b).
@@ -387,6 +408,14 @@ struct ConfigPayload {
     opacity: f64,
 }
 
+// Av/på. Skalet visar/döljer fönstret själv — detta är så bus.js VET om det och kan
+// låta bli att återställa en avstängd overlay när ACC ansluter igen (§8.5c).
+#[derive(Serialize, Clone)]
+struct EnabledPayload {
+    id: String,
+    enabled: bool,
+}
+
 #[derive(Serialize, Clone)]
 struct OptionPayload {
     id: String,
@@ -423,6 +452,9 @@ fn set_enabled(app: AppHandle, state: State<Mutex<Settings>>, id: String, enable
         if let Some(st) = s.overlays.get_mut(&id) { st.enabled = enabled; }
         save_settings(&app, &s);
     }
+    // Skicka FÖRE show/hide: bus.js ska ha släppt sitt anspråk på fönstret innan
+    // skalet rör det, annars kan grinden hinna dölja det vi just visat.
+    let _ = app.emit("enabled", EnabledPayload { id: id.clone(), enabled });
     if let Some(win) = app.get_webview_window(&id) {
         if enabled { let _ = win.show(); } else { let _ = win.hide(); }
     } else if enabled {
@@ -573,6 +605,172 @@ fn prepare_update(app: AppHandle) {
     stop_engine();
 }
 
+// ── Bakgrunder till förhandsvisningen ───────────────────────────────────────
+// Två kataloger, och skillnaden mellan dem spelar roll:
+//
+//   1. INBYGGDA  — följer med utgåvan. Ligger i `resource_dir()/web/shared/
+//      preview-backgrounds` (i dev: repots `src/shared/preview-backgrounds`).
+//      Skrivs över vid varje uppdatering.
+//   2. EGNA      — `app_config_dir()/preview-backgrounds`. Överlever uppdateringar.
+//      Det är HIT man lägger sina egna bilder; katalogen skapas vid start så den
+//      alltid finns att öppna.
+//
+// Bilderna lämnas ut som data-URL och INTE som en vanlig sökväg. Skälet är att den
+// paketerade appen läser sitt webbinnehåll ur ett inbäddat arkiv i exe:n, inte från
+// disk: en fil som användaren lägger i katalogen finns alltså inte på någon URL som
+// webviewen kan hämta. Data-URL fungerar likadant för båda katalogerna, i dev som i
+// release, utan att öppna asset-protokollet.
+const BG_EXTS: [&str; 5] = ["webp", "jpg", "jpeg", "png", "avif"];
+// Taket finns för att en data-URL går genom IPC:n som text. En bakgrund på 24 MB är
+// ändå fel verktyg — previewrutan är någon tusendel av det.
+const BG_MAX_BYTES: u64 = 24 * 1024 * 1024;
+
+#[derive(Serialize)]
+struct BackgroundInfo {
+    id: String,
+    label: String,
+    custom: bool,
+}
+
+fn bundled_bg_dir(app: &AppHandle) -> Option<std::path::PathBuf> {
+    if let Ok(d) = app.path().resource_dir() {
+        let p = d.join("web/shared/preview-backgrounds");
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+    // Dev: resource_dir pekar på target/debug, där web/ inte finns.
+    let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../src/shared/preview-backgrounds");
+    if p.is_dir() { Some(p) } else { None }
+}
+
+fn custom_bg_dir(app: &AppHandle) -> Option<std::path::PathBuf> {
+    let d = app.path().app_config_dir().ok()?.join("preview-backgrounds");
+    let _ = std::fs::create_dir_all(&d);
+    Some(d)
+}
+
+// Bara ett rent filnamn får passera. Utan detta hade `../../../` i id:t läst vilken
+// fil som helst på disken och lämnat ut den som data-URL till webviewen — id:t kommer
+// från IPC:n och är alltså inte vår text.
+fn is_safe_bg_name(id: &str) -> bool {
+    !id.is_empty()
+        && !id.contains(['/', '\\', ':'])
+        && id != "."
+        && id != ".."
+        && std::path::Path::new(id).components().count() == 1
+}
+
+fn is_bg_file(p: &std::path::Path) -> bool {
+    p.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| BG_EXTS.contains(&e.to_ascii_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+// "spa-francorchamps.webp" → "Spa francorchamps". Filnamnet ÄR etiketten, så att
+// användaren kan styra vad som står i listan genom att döpa om filen.
+fn bg_label(stem: &str) -> String {
+    let s = stem.replace(['-', '_'], " ");
+    let s = s.trim();
+    let mut c = s.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        None => String::new(),
+    }
+}
+
+#[tauri::command]
+fn list_backgrounds(app: AppHandle) -> Vec<BackgroundInfo> {
+    let mut out: Vec<BackgroundInfo> = Vec::new();
+    for (dir, custom) in [(bundled_bg_dir(&app), false), (custom_bg_dir(&app), true)] {
+        let Some(dir) = dir else { continue };
+        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            if !p.is_file() || !is_bg_file(&p) {
+                continue;
+            }
+            let Some(id) = p.file_name().and_then(|s| s.to_str()) else { continue };
+            // En egen fil med samma namn ersätter den inbyggda i stället för att ge
+            // två rader med samma etikett.
+            if let Some(prev) = out.iter_mut().find(|b| b.id.eq_ignore_ascii_case(id)) {
+                prev.custom = custom;
+                continue;
+            }
+            let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or(id);
+            out.push(BackgroundInfo { id: id.to_string(), label: bg_label(stem), custom });
+        }
+    }
+    out.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+    out
+}
+
+#[tauri::command]
+fn get_background(app: AppHandle, id: String) -> Result<String, String> {
+    if !is_safe_bg_name(&id) {
+        return Err("ogiltigt filnamn".into());
+    }
+    let name = std::path::Path::new(&id);
+    // Egna filer först, så att en egen bild med samma namn vinner (som i listan).
+    for dir in [custom_bg_dir(&app), bundled_bg_dir(&app)].into_iter().flatten() {
+        let p = dir.join(name);
+        if !p.is_file() || !is_bg_file(&p) {
+            continue;
+        }
+        match std::fs::metadata(&p) {
+            Ok(m) if m.len() > BG_MAX_BYTES => {
+                return Err(format!("bilden är {} MB — max är {} MB",
+                                   m.len() / 1024 / 1024, BG_MAX_BYTES / 1024 / 1024));
+            }
+            Ok(_) => {}
+            Err(e) => return Err(e.to_string()),
+        }
+        let bytes = std::fs::read(&p).map_err(|e| e.to_string())?;
+        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+        let mime = match ext.as_str() {
+            "jpg" | "jpeg" => "image/jpeg",
+            "png" => "image/png",
+            "avif" => "image/avif",
+            _ => "image/webp",
+        };
+        return Ok(format!("data:{};base64,{}", mime, b64(&bytes)));
+    }
+    Err("hittar inte bakgrunden".into())
+}
+
+// Öppnar katalogen för egna bakgrunder i Utforskaren. Utan den måste man leta upp
+// %APPDATA%\com.accoverlay.app\ för hand, och då används funktionen inte.
+#[tauri::command]
+fn open_background_dir(app: AppHandle) -> Result<(), String> {
+    let dir = custom_bg_dir(&app).ok_or("hittar ingen katalog")?;
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+// Base64 utan extra beroende — det är ett dussin rader och alternativet är en crate
+// till i trädet för en funktion som körs när man byter bakgrund.
+fn b64(data: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut s = String::with_capacity((data.len() + 2) / 3 * 4);
+    for c in data.chunks(3) {
+        let b = [c[0], *c.get(1).unwrap_or(&0), *c.get(2).unwrap_or(&0)];
+        let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
+        s.push(T[(n >> 18) as usize & 63] as char);
+        s.push(T[(n >> 12) as usize & 63] as char);
+        s.push(if c.len() > 1 { T[(n >> 6) as usize & 63] as char } else { '=' });
+        s.push(if c.len() > 2 { T[n as usize & 63] as char } else { '=' });
+    }
+    s
+}
+
 // ── Globala inställningar (gäller alla overlays) ─────────────────────────────
 #[derive(Serialize, Clone)]
 struct GlobalsPayload {
@@ -581,6 +779,8 @@ struct GlobalsPayload {
     // MoTeC-delta kunde dyka upp utan att man kunde se varför — eller ta bort det.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     reference_ld: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    preview_background: String,
 }
 
 #[tauri::command]
@@ -589,7 +789,17 @@ fn get_globals(state: State<Mutex<Settings>>) -> GlobalsPayload {
     GlobalsPayload {
         hide_until_connected: s.hide_until_connected,
         reference_ld: s.reference_ld.clone(),
+        preview_background: s.preview_background.clone(),
     }
+}
+
+// Bakgrunden gäller bara kontrollpanelens förhandsvisning och skickas därför inte som
+// event till overlays — de vet ingenting om den.
+#[tauri::command]
+fn set_preview_background(app: AppHandle, state: State<Mutex<Settings>>, id: String) {
+    let mut s = state.lock().unwrap();
+    s.preview_background = id;
+    save_settings(&app, &s);
 }
 
 // Visa overlays först när motorn är ansluten till ACC. Skickas till alla fönster;
@@ -606,6 +816,7 @@ fn set_hide_until_connected(app: AppHandle, state: State<Mutex<Settings>>, value
     let _ = app.emit("globals", GlobalsPayload {
         hide_until_connected: value,
         reference_ld: String::new(),
+        preview_background: String::new(),
     });
 }
 
@@ -652,7 +863,11 @@ pub fn run() {
             set_reference,
             get_globals,
             set_hide_until_connected,
-            prepare_update
+            prepare_update,
+            list_backgrounds,
+            get_background,
+            open_background_dir,
+            set_preview_background
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -688,6 +903,7 @@ pub fn run() {
 
             app.manage(Mutex::new(settings));
             start_engine(&handle);
+            watch_foreground(handle.clone());
 
             for (def, st) in plan {
                 if let Err(e) = create_overlay(&handle, def, &st, gate) {
@@ -728,6 +944,87 @@ pub fn run() {
                 stop_engine();
             }
         });
+}
+
+// ── Vilket program ligger överst? ───────────────────────────────────────────
+// Rapporterat: overlays låg kvar över skrivbordet när man tabbade ur ACC. Grinden
+// kunde inte se det — ACC fortsätter skriva sitt delade minne utan fokus, så
+// `connected` förblir true. Vi måste alltså fråga Windows vem som har förgrunden.
+//
+// Regeln är medvetet FAIL-SAFE: vi rapporterar "ett annat program är överst" bara när
+// vi POSITIVT kunnat identifiera en främmande process. Går något fel — inget
+// förgrundsfönster, processen går inte att öppna (rättigheter), namnet går inte att
+// läsa — svarar vi false, dvs. dölj inte. Ett falskt positivt hade släckt overlayn
+// mitt i en kurva; ett falskt negativt betyder bara att den ligger kvar som förut.
+// ACC:s binär heter AC2-Win64-Shipping.exe (Unreal-namnet). Sökvägen kontrolleras
+// OCKSÅ, mot Steams mappnamn, eftersom ett felaktigt "det här är inte ACC" är det
+// enda riktigt dåliga utfallet: då göms overlays MITT I ETT LOPP. Två oberoende
+// kännetecken gör det osannolikt, och båda är stabila.
+#[cfg(windows)]
+const ACC_EXE_NAMES: [&str; 2] = ["ac2-win64-shipping.exe", "acc.exe"];
+#[cfg(windows)]
+const ACC_PATH_HINT: &str = "assetto corsa competizione";
+
+#[cfg(windows)]
+fn foreground_is_foreign() -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, MAX_PATH};
+    use windows_sys::Win32::System::Threading::{
+        GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowThreadProcessId,
+    };
+
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.is_null() {
+            return false; // t.ex. under låsskärm — vet inte, alltså dölj inte
+        }
+        let mut pid: u32 = 0;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        // Våra egna fönster räknas aldrig som främmande: kontrollpanelen ska gå att
+        // använda medan man ser overlayn, och overlay-fönstren kan ta fokus i edit-läge.
+        if pid == 0 || pid == GetCurrentProcessId() {
+            return false;
+        }
+        let proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if proc.is_null() {
+            return false; // förhöjd process (t.ex. Aktivitetshanteraren) — vet inte
+        }
+        let mut buf = [0u16; MAX_PATH as usize];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(proc, 0, buf.as_mut_ptr(), &mut len) != 0;
+        CloseHandle(proc);
+        if !ok || len == 0 {
+            return false;
+        }
+        let path = String::from_utf16_lossy(&buf[..len as usize]).to_ascii_lowercase();
+        let exe = path.rsplit(['\\', '/']).next().unwrap_or("");
+        !(ACC_EXE_NAMES.contains(&exe) || path.contains(ACC_PATH_HINT))
+    }
+}
+
+#[cfg(not(windows))]
+fn foreground_is_foreign() -> bool {
+    false
+}
+
+// Skickar bara vid ÄNDRING. Overlays reagerar direkt (ingen hysteres — att tabba ut
+// är inte samma sak som en tappad ram), så takten behöver bara vara snabbare än ögat
+// hinner irritera sig.
+fn watch_foreground(app: AppHandle) {
+    std::thread::spawn(move || {
+        let mut last: Option<bool> = None;
+        loop {
+            let foreign = foreground_is_foreign();
+            if last != Some(foreign) {
+                last = Some(foreign);
+                let _ = app.emit("foreground", serde_json::json!({ "foreign": foreign }));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(400));
+        }
+    });
 }
 
 // ── Motorn (Python-sidecar) ─────────────────────────────────────────────────
@@ -851,5 +1148,78 @@ fn start_engine(app: &AppHandle) {
             }
         }
         Err(e) => eprintln!("[shell] hittar ej sidecar 'acc-engine': {e} (dev: kör motorn manuellt)"),
+    }
+}
+
+// ── Enhetstester ────────────────────────────────────────────────────────────
+// De flesta funktioner här behöver en levande AppHandle och testas i stället genom
+// appen. Undantagen nedan är ren logik — och den ena av dem är en säkerhetsgräns,
+// vilket är precis den sortens kod som ska ha ett test som går att köra i CI.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bg_namn_utanfor_katalogen_avvisas() {
+        // id:t kommer från IPC:n. Släpps en sökväg igenom kan vilken fil som helst
+        // på disken läsas ut som data-URL till webviewen.
+        for bad in [
+            "../settings.json",
+            r"..\settings.json",
+            "sub/dir.webp",
+            r"sub\dir.webp",
+            r"C:\Windows\win.ini",
+            "..",
+            ".",
+            "",
+        ] {
+            assert!(!is_safe_bg_name(bad), "borde ha avvisats: {bad:?}");
+        }
+        for ok in ["spa.webp", "min bana.jpg", "egen-testbild.webp", "a.b.png"] {
+            assert!(is_safe_bg_name(ok), "borde ha släppts igenom: {ok:?}");
+        }
+    }
+
+    #[test]
+    fn bara_bildandelser_listas() {
+        use std::path::Path;
+        for ok in ["a.webp", "a.WEBP", "a.jpg", "a.jpeg", "a.png", "a.avif"] {
+            assert!(is_bg_file(Path::new(ok)), "{ok}");
+        }
+        for no in ["a.txt", "a.exe", "a", "a.webp.exe"] {
+            assert!(!is_bg_file(Path::new(no)), "{no}");
+        }
+    }
+
+    #[test]
+    fn filnamnet_blir_etiketten() {
+        assert_eq!(bg_label("spa"), "Spa");
+        assert_eq!(bg_label("egen-testbild"), "Egen testbild");
+        assert_eq!(bg_label("min_egen_bana"), "Min egen bana");
+        assert_eq!(bg_label(""), "");
+    }
+
+    // Standardbakgrunden pekar på en fil som faktiskt följer med utgåvan. Skrivfel
+    // här ger ingen kompileringsvarning — bara en preview utan bakgrund.
+    #[test]
+    fn standardbakgrunden_finns_i_repot() {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../src/shared/preview-backgrounds")
+            .join(default_preview_bg());
+        assert!(p.is_file(), "saknas: {}", p.display());
+    }
+
+    // Base64 är handskriven (§ i lib.rs) — den ska ge exakt samma sträng som en
+    // riktig implementation, inklusive utfyllnaden vid 1 och 2 kvarvarande bytes.
+    #[test]
+    fn base64_matchar_kanda_varden() {
+        assert_eq!(b64(b""), "");
+        assert_eq!(b64(b"f"), "Zg==");
+        assert_eq!(b64(b"fo"), "Zm8=");
+        assert_eq!(b64(b"foo"), "Zm9v");
+        assert_eq!(b64(b"foob"), "Zm9vYg==");
+        assert_eq!(b64(b"fooba"), "Zm9vYmE=");
+        assert_eq!(b64(b"foobar"), "Zm9vYmFy");
+        assert_eq!(b64(&[0u8, 255, 128]), "AP+A");
     }
 }

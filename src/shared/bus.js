@@ -94,6 +94,19 @@ let _hideUntilConnected = false;
 let _lastConnected = false;
 let _everConnected = false;             // har ACC varit ansluten NÅGON gång?
 let _gateHidden = null;                 // senast skrivna läge (null = aldrig skrivet)
+/* Ligger ett HELT ANNAT program överst? Skalet mäter det (lib.rs:foreground_is_foreign)
+   och skickar bara vid ändring. Falskt tills vi vet bättre — kan skalet inte avgöra
+   vilken process som har förgrunden ska overlayn ALDRIG döljas, för ett falskt
+   positivt gör den osynlig mitt i en kurva. */
+let _foreignFocus = false;
+
+/** Skalet rapporterar att förgrundsfönstret bytt ägare. Exporterad för testerna. */
+export function setForeignFocus(v) {
+  const next = v === true;
+  if (next === _foreignFocus) return;
+  _foreignFocus = next;
+  _applyGate();
+}
 
 // ── Startvärden från skalet ───────────────────────────────────────────────────
 // lib.rs injicerar {id, scale, opacity, gate, hz, options} med initialization_script,
@@ -166,10 +179,37 @@ let _disconnectedAt = 0;
 export function isGated() { return _gateHidden === true; }
 
 let _editMode = false;
+
+/** Edit-läge på/av. Exporterad för testerna; skalet skickar det som event. */
+export function setEditMode(v) {
+  const next = v === true;
+  if (next === _editMode) return;
+  _editMode = next;
+  try { document.body.classList.toggle('edit-mode', _editMode); } catch {}
+  // Både fönstret och CSS-dölningen måste tillbaka — att bara visa fönstret gav en
+  // tom ruta att sikta på när man skulle dra overlayn på plats.
+  _applyGate();
+}
 /* Skalet skapar fönstret redan dolt när grinden är på (lib.rs), och talar om det
    här. Utan initieringen hade bus.js trott att den aldrig dolt fönstret och därför
    vägrat visa det när ACC ansluter — overlayn hade blivit permanent osynlig. */
 let _osHidden = (INIT && INIT.osHidden === true) ? true : null;
+
+/* Är overlayn PÅSLAGEN? Det är skalets beslut (ögonknappen i panelen), inte
+   grindens — grinden lånar bara synligheten tillfälligt medan ACC är borta.
+   Utan Tauri (OBS, webbläsare) finns ingen av/på-knapp; då är den alltid på. */
+let _enabled = !(INIT && INIT.enabled === false);
+
+/** Skalet talar om att overlayn slagits av eller på. Exporterad för testerna. */
+export function setEnabled(v) {
+  const next = v !== false;
+  if (next === _enabled) return;
+  _enabled = next;
+  // Skalet har precis visat eller dolt fönstret själv, så vår bokföring över vad
+  // GRINDEN har gjort är inte längre giltig. Nollställ den innan vi räknar om.
+  _osHidden = null;
+  if (_enabled) _applyOsVisibility(_gateHidden === true);
+}
 
 /* Dölj även OS-FÖNSTRET, inte bara innehållet.
    Mätt: med bara `visibility:hidden` låg WebView2 på 37 % av en kärna med båda
@@ -179,8 +219,17 @@ let _osHidden = (INIT && INIT.osHidden === true) ? true : null;
    CSS-dölningen ligger kvar som första försvar: den verkar direkt, medan
    fönsteranropet är async. */
 function _applyOsVisibility(hidden) {
-  // I edit-läge ska fönstret ALDRIG OS-döljas — då går det inte att dra på plats.
-  const want = hidden && !_editMode;
+  /* En AVSTÄNGD overlay ägs HELT av skalet — grinden får varken dölja eller visa den.
+     Utan detta återställde grinden fönstret vid varje återanslutning: att tabba ut ur
+     ACC stallar det delade minnet (connected:false → grinden döljer), och när man
+     tabbade in igen visade grinden fönstret på nytt — även om användaren just hade
+     stängt av overlayn. Symptomet var att ögonknappen "inte fungerade".
+     §8.5b:s regel "visa bara fönster grinden själv har dolt" räckte inte: grinden HADE
+     dolt det, den visste bara inte att skalet höll det stängt av ett annat skäl. */
+  if (!_enabled) { _osHidden = null; return; }
+  // Edit-läget hanteras i _applyGate (både fönster och CSS); här är `hidden` redan
+  // det slutgiltiga beslutet.
+  const want = hidden;
   if (want === _osHidden) return;
   // Visa BARA fönster vi själva har dolt. Utan det anropades show() på första
   // anslutna ramen, och en AVSTÄNGD overlay (som Rust skapar dold) hade då dykt upp
@@ -209,17 +258,30 @@ let _osHideWarned = false;
 
 function _applyGate() {
   let hidden = false;
-  if (!IN_PREVIEW && _hideUntilConnected && !_lastConnected) {
-    const now = Date.now();
-    if (!_disconnectedAt) _disconnectedAt = now;
-    // Fördröjningen finns för att en enstaka tappad ram MITT UNDER KÖRNING inte ska
-    // släcka overlayn. Den ska inte gälla vid start: har vi aldrig varit anslutna
-    // ska overlayn vara dold direkt. Annars syns den i ~1,5 s vid varje appstart,
-    // vilket var precis vad som rapporterades.
-    hidden = !_everConnected || (now - _disconnectedAt) >= GATE_HOLD_MS;
+  if (!IN_PREVIEW && _hideUntilConnected) {
+    if (!_lastConnected) {
+      const now = Date.now();
+      if (!_disconnectedAt) _disconnectedAt = now;
+      // Fördröjningen finns för att en enstaka tappad ram MITT UNDER KÖRNING inte ska
+      // släcka overlayn. Den ska inte gälla vid start: har vi aldrig varit anslutna
+      // ska overlayn vara dold direkt. Annars syns den i ~1,5 s vid varje appstart,
+      // vilket var precis vad som rapporterades.
+      hidden = !_everConnected || (now - _disconnectedAt) >= GATE_HOLD_MS;
+    } else {
+      _disconnectedAt = 0;
+    }
+    /* Ett ANNAT program i förgrunden döljer direkt, utan hysteres: fördröjningen ovan
+       finns för tappade ramar, och att tabba ur ACC är ingen tappad ram.
+       Skälet till att detta behövs alls: ACC fortsätter skriva sitt delade minne när
+       fönstret inte har fokus, så `connected` förblir true och grinden hade ingen
+       anledning att dölja något — overlays låg kvar överst på skrivbordet. */
+    if (_foreignFocus) hidden = true;
   } else {
     _disconnectedAt = 0;
   }
+  // I edit-läge måste overlayn synas, annars går den inte att dra på plats. Det gäller
+  // även CSS-dölningen: att bara visa FÖNSTRET gav en tom ruta att sikta på.
+  if (_editMode) hidden = false;
   if (hidden === _gateHidden) return;   // skriv bara vid ändring (_emit körs 40 ggr/s)
   _gateHidden = hidden;
   document.documentElement.style.visibility = hidden ? 'hidden' : '';
@@ -353,12 +415,18 @@ export function wireShell(applyConfig, applyOption) {
     if (p.id && label && p.id !== label) return;   // ignorera annan overlays alternativ
     applyOne(applyOption, p.option, p.value);
   });
-  T.event.listen('edit-mode', (e) => {
-    _editMode = e.payload === true;
-    document.body.classList.toggle('edit-mode', _editMode);
-    // Gå ur OS-dölj direkt när edit-läget slås på, annars går overlayn inte att dra.
-    _applyOsVisibility(_gateHidden === true);
+  // Av/på från panelens ögonknapp. Skalet visar/döljer fönstret själv; detta är bara
+  // så grinden VET om det och slutar återställa en avstängd overlay (§8.5c).
+  T.event.listen('enabled', (e) => {
+    const p = e.payload || {};
+    if (p.id && label && p.id !== label) return;
+    setEnabled(p.enabled !== false);
   });
+  // Vilket program ligger överst? ACC skriver sitt delade minne även utan fokus, så
+  // `connected` säger ingenting om att man tabbat ut (§8.5c).
+  T.event.listen('foreground', (e) => setForeignFocus((e.payload || {}).foreign === true));
+
+  T.event.listen('edit-mode', (e) => setEditMode(e.payload === true));
   // I edit-läge: dra overlayn för att positionera (flyttar OS-fönstret).
   // Aldrig i previewn — där hade det dragit kontrollpanelens fönster.
   addEventListener('mousedown', (ev) => {

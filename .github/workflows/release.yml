@@ -40,6 +40,17 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # Skalets rena logik: sokvagsskyddet i get_background (ett id fran IPC:n far
+      # aldrig peka utanfor bakgrundskatalogen), base64-implementationen och att
+      # standardbakgrunden faktiskt finns i repot. Bygger anda om samma trad som
+      # tauri-action anvander, sa steget kostar nastan ingenting.
+      - name: Kor skalets enhetstester
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          cargo test --lib --manifest-path src-tauri/Cargo.toml
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
