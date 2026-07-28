@@ -42,13 +42,53 @@
   --grid:      rgba(255,255,255,0.05);   /* svaga gridlinjer i grafer             */
   --wheel:     #AFAFAF;                  /* ratt-indikator (grå)                  */
 
-  /* ── UI-chrome (kontrollpanel; ej overlay-innehåll) ── */
-  --app-bg:    #0c0e0d;                  /* panelens basbakgrund                  */
-  --rail-bg:   #090b0a;                  /* vänster ikonrad (aning mörkare)       */
+  /* ── UI-chrome (kontrollpanel; ej overlay-innehåll) ─────────────────────
+     Overlays läser INGET härifrån. Det är avsiktligt att panelens chrome ändå
+     bor i tokens: det är samma sanningskälla-regel, och panelen ska kunna
+     stämmas av mot overlayspråket utan att man jagar värden i en HTML-fil.
+     Allt panel-eget prefixas --ui- så det aldrig krockar med ett col-<token>
+     i registry.json (som skriver rakt på --<token>). */
+  --app-bg:    #0b0d0c;                  /* panelens basbakgrund                  */
+  --rail-bg:   #070908;                  /* vänster ikonrad (aning mörkare)       */
   --sel:       rgba(255,255,255,0.06);   /* vald/aktiv rad eller flik             */
   --hover:     rgba(255,255,255,0.04);   /* hover på rad/flik                     */
   --ctrl:      rgba(255,255,255,0.06);   /* knappyta                              */
   --ctrl-hi:   rgba(255,255,255,0.11);   /* knapp hover                           */
+
+  /* Ytor i tre djup. Skillnaden mellan stegen är avsiktligt LITEN (3–5 i
+     luminans): panelen ska läsas som ett stycke maskinerat metall, inte som
+     staplade fönster. Djupet kommer från kant + sheen, inte från kontrast. */
+  --ui-surf:    #101312;                 /* kort/kolumn: ett steg över app-bg     */
+  --ui-surf-hi: #161918;                 /* samma yta upphöjd (hover)             */
+  --ui-inset:   #060807;                 /* nedsänkt: reglagespår, fält, väljare  */
+
+  /* Linjer i två vikter. hair delar innehåll INNE i en yta, edge ramar in ytan. */
+  --ui-hair:    rgba(255,255,255,0.06);
+  --ui-edge:    rgba(255,255,255,0.10);
+  --ui-edge-hi: rgba(255,255,255,0.19);
+
+  /* Fokusring. Medvetet AMBER och inte grön: i panelen betyder grönt "på"
+     (PÅ-texten i listan, påslagna reglage), så en grön ring hade läst som ett
+     tillstånd i stället för som "här står markören". Amber = highlight (§4). */
+  --ui-focus:   #FBBF24;
+
+  /* Geometri och typskala — en skala, inga engångsvärden. */
+  --ui-r-sm: 7px; --ui-r-md: 10px; --ui-r-lg: 14px;
+  --ui-fs-xs: 10px;                      /* railetiketter, taggar                 */
+  --ui-fs-sm: 11px;                      /* rubriker, hjälptext                   */
+  --ui-fs-md: 12.5px;                    /* värden, sekundär text                 */
+  --ui-fs-lg: 13.5px;                    /* radetiketter, listtitlar              */
+  /* Reglage/väljare ligger i en egen kolumn längst till höger. Fast bredd så att
+     ALLA rader — reglage, växlare, färgruta — får samma vertikala linje att
+     landa på. Utan den vandrar högerkanten med kontrolltypen. */
+  --ui-ctl-w: 300px;
+  /* Textkolumnens tak. Utan det står etiketten och sitt reglage 1 100 px isär på
+     en 1440-panel, och raden slutar läsas som en rad. Kolumnen centreras under
+     den fullbreda förhandsvisningen. */
+  --ui-col-max: 820px;
+
+  --ui-lift:  0 10px 26px rgba(0,0,0,0.42);
+  --ui-sheen: inset 0 1px 0 rgba(255,255,255,0.045);
 
   /* delta-cirkelns grågröna kupolyta (topp → botten) */
   --disc-top:  rgb(42,46,43);

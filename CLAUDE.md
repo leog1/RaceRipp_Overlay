@@ -108,6 +108,29 @@ betyder samma sak. Ytor och skuggor har `alpha: true` — `<input type="color">`
 bara ge ogenomskinlig hex, så panelen kombinerar den med ett alfa-reglage och skickar
 `#rrggbbaa`.
 
+**Kontrollpanelens chrome ligger också i tokens**, i ett eget block prefixat `--ui-`
+(ytor, linjevikter, radier, typskala, fokusring, kolumnbredder). Overlays läser inget
+därifrån — prefixet finns för att ett `col-<token>` i registret skriver rakt på
+`--<token>` (§4) och aldrig ska kunna råka träffa panelens värden. Panelen har en egen
+liten uppsättning regler som är värda att kunna innan man ändrar i den:
+- **Djup kommer av kant + sheen, inte av kontrast.** Stegen mellan `--ui-surf`,
+  `--ui-surf-hi` och `--app-bg` är små med flit.
+- **En kontrollkolumn.** Alla rader har etiketten till vänster och kontrollen i en
+  högerkolumn (`--ui-ctl-w`), så reglage, växlare och färgrutor landar på samma
+  vertikala linje. Etiketterna har SAMMA typografi oavsett kontrolltyp — tidigare var
+  reglageraderna versaler i `--dim` och växlarraderna gemener i `--ink`, och de två
+  kortsorterna såg ut att komma från olika program.
+- **Textkolumnen har ett tak** (`--ui-col-max`, 820 px) och centreras. Utan det står
+  etiketten och sitt reglage 1 100 px isär på en 1440-panel.
+- **Grönt betyder "på" i panelen** (PÅ-brickan, påslagna växlare). Därför är
+  fokusringen amber och reglagens fyllnad neutralt vit — ett halvdraget reglage är
+  inget tillstånd.
+- Reglagen är egenritade (`::-webkit-slider-*`); `accent-color` ger systemets. Den
+  fyllda delen ritas som en gradient med brytpunkten i `--p`, som `paintRange()` i
+  panelen sätter. En delegerad `input`-lyssnare täcker alla reglage, även de som byggs
+  generiskt ur registret — men programmatiska värdeändringar utlöser inget `input`,
+  därför körs `paintAll()` när en overlay väljs.
+
 Typografi: **Montserrat**, SemiBold (600) primär; siffror alltid **tabular** (hoppar ej).
 Animation: mjuk lerp mot målvärde; respektera `prefers-reduced-motion`.
 Renderare per element: **SVG** (gauges/bågar/ikoner), **HTML/CSS** (paneler/text/staplar),
@@ -239,6 +262,17 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   kedjan nu **landar i rätt katalog**: installera 0.4.0 (NSIS), uppdatera till 0.4.1,
   starta om och kontrollera att `Om`-fliken visar den nya versionen. Titta också efter
   en kvarlämnad `C:\Program Files\SimMatrix` från MSI-tiden.
+- **Startstorleken på ANDRA skärmar än 1920×1080 @ 100 %** (0.4.3, §8.2b). Att panelen
+  blir exakt 1440×900 är mätt i den riktiga appen med `GetWindowRect` (1456×909 outer
+  minus Windows osynliga resize-ram). Men det är den enda skärm som funnits under
+  arbetet, och där är `set_size` i praktiken en no-op — själva OMRÄKNINGEN är alltså
+  aldrig körd skarpt. Testa på en 4K-skärm (200 % → ska bli 1440×900; 100 % → 2880×1800)
+  och på en 1366×768-laptop (ska klampas till golvet 960×600, inte hamna utanför).
+- **0.4.3:s panelomgång i spelet.** Designen, den statiska previewn, de 15 % mindre
+  overlaysen i previewrutan och de mindre pedalsiffrorna är alla verifierade i
+  webbläsare mot en körande motor (mock-data) — inte med ACC igång. Pedalsiffran
+  mättes dessutom på en egen provsida, inte i drift: se att "100" faktiskt ser rätt ut
+  vid full gas på banan.
 
 ## 8. Fällor som redan kostat tid — LÄS DENNA
 ### 8.1 Sidecarn: `child.kill()` räcker INTE på Windows
@@ -268,6 +302,25 @@ netstat -ano | Select-String ':8777|:8078'          # ska vara tomt
 återställa det andra får fönstren att vandra med skalfaktorn vid varje omstart på
 allt utom 100 % skalning. `save_positions()` konverterar med
 `to_logical(scale_factor())`. Verifierat i tauri 2.11.5-källan, inte gissat.
+
+### 8.2b Panelens startstorlek räknas mot skärmens LOGISKA storlek
+Kontrollpanelen startar i **1440×900 på en 1920×1080-skärm** och håller samma ANDEL av
+skärmen på andra upplösningar (75 % av bredden, 83,3 % av höjden). Ett fast pixelmått
+hade gett en panel som täcker halva skärmen på en 1366-laptop och sitter som ett
+frimärke på en 4K-skärm utan skalning.
+
+Fällan är samma som §8.2: `Monitor::size()` ger **fysiska** pixlar medan
+`set_size(LogicalSize)` tar **logiska**. `size_control_window()` konverterar med
+`to_logical(scale_factor())`. Effekten är precis den man vill ha: en 4K-skärm i
+Windows standardläge (200 %) har den logiska storleken 1920×1080 och panelen blir
+alltså exakt 1440×900 — samma SYNLIGA storlek som på en 1080p-skärm. Körs samma skärm
+utan skalning blir den 2880×1800, dvs. samma andel av ytan.
+
+Två detaljer: golvet (960×600, samma som `minWidth`/`minHeight`) klampas mot skärmen
+FÖRST, annars hamnar fönstret utanför en skärm som är mindre än golvet. Och
+`win.center()` måste köras EFTER `set_size`, eftersom Tauris `center: true` redan har
+centrerat den gamla storleken. `width`/`height` i `tauri.conf.json` är fallbacken om
+skärmen inte går att fråga.
 
 ### 8.3 Startvärden får inte hämtas async — de måste finnas vid första paint
 Detta gav två rapporterade buggar i 0.2.3 som såg helt olika ut men hade samma orsak.
@@ -393,6 +446,12 @@ för om det som faktiskt ritas:
 Mätningen kräver att iframen laddat, och måttet ändras när ett alternativ ändrar
 dimensionerna — därför `refitSoon()` (dubbel rAF) efter load.
 
+Overlayn ritas dessutom medvetet mindre än vad rutan rymmer (`PV_FILL`, 0,85). Fyller
+den ut till kanten läser man den som "så här STOR blir den" i stället för "så här ser
+den ut", och det finns ingen luft kvar för HUD-markeringarna och knapparna som bor i
+rutans kanter. Taket 1 i `Math.min(..., 1)` står kvar separat: en liten overlay ska
+aldrig FÖRSTORAS, för då ljuger previewn uppåt om detaljskärpan.
+
 **En engångsmätning räcker inte.** Overlayn ritas först i fallback-font och byter till
 Montserrat när den laddat, vilket ändrar bredden. Mätte vi bara vid load blev previewn
 avklippt och rättades aldrig. En `ResizeObserver` på `#ui` inne i iframen fångar både
@@ -455,6 +514,39 @@ Två fällor, och de kräver olika kontroller:
 Går ett reglage inte att koppla till något: **ta bort det ur registret.** Ett
 alternativ som inte gör något är sämre än inget alternativ.
 `sanitize_options` städar bort nyckeln ur `settings.json` av sig själv.
+
+### 8.4f Förhandsvisningen ska stå still — och två fel som CSS inte klagar på
+Previewrutan låg i en pane som skrollade **som helhet**, så den försvann uppåt så fort
+man arbetade sig ner genom färgreglagen. Det är precis fel: man ändrar en färg långt
+ner i listan och ska se effekten utan att skrolla upp igen. Skrollen ligger nu på
+`.controls` och panen har `overflow:hidden`; previewrutan är ett fast första barn.
+
+**Lägg inte tillbaka `overflow-y:auto` på `#pane-overlays`.** Det ser ut som en
+harmlös förenkling och tar bort hela poängen. Referens/Om har ingen preview och
+skrollar som vanligt — det är därför reglerna är per pane och inte på `.pane`.
+
+Två saker som inte syns i vare sig `cargo check`, CSS-validering eller något test:
+
+- **Ett `hidden`-attribut som en display-regel slår ut.** Broadcasting-raden i
+  vänsterlisten är `<div class="motor" id="bcRow" hidden>`, och `.motor{display:flex}`
+  vinner över webbläsarens inbyggda `[hidden]{display:none}`. Raden låg alltså framme
+  hela tiden som en tom röd prick under motorstatusen, och `row.hidden = true` i JS
+  gjorde ingenting. Sätter du `display` på en klass vars element kan vara `hidden`,
+  skriv regeln `.klass[hidden]{display:none}` i samma andetag.
+- **En inline-SVG som background-image har ingen egen storlek.** `.osel`:s
+  chevron skalades till hela rutan och blev en stor grå bock tills
+  `background-size` sattes.
+
+### 8.4g En siffra som ändrar bredd med värdet
+Pedalsiffrorna i inputs-trace stod i `0.115·H` (23 px) medan stapeln är
+`0.190·H` (38 px). Montserrat tabular är ~0,70 em per siffra, så `"100"` blir 2,1×
+fontstorleken = 48 px — bredare än stapeln, och de tre talen flöt ihop till ett block.
+Felet syns **bara vid tresiffriga värden**, alltså vid full pedal, vilket är varför det
+låg kvar. Värdet är nu `0.086·H` (17,2 px → 36 px), uppmätt mot riktig rendering och
+inte räknat: `0.092` gav exakt kant i kant och såg fortfarande trångt ut.
+
+Generellt: **räkna alltid bredden på det BREDASTE värdet ett fält kan visa**, inte på
+det som råkar stå där när du tittar. Samma familj som platshållarbredden i §8.5.
 
 ### 8.5 Flicker-mönster att aldrig upprepa
 Alla dessa fanns i delta-baren och gav synligt flimmer:

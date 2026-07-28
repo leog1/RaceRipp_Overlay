@@ -354,6 +354,49 @@ fn apply_size(app: &AppHandle, id: &str, scale: f64) {
     }
 }
 
+// ── Kontrollpanelens startstorlek ───────────────────────────────────────────
+// Referensen är 1440×900 på en 1920×1080-skärm. Ett fast pixelmått hade gett en
+// panel som täcker halva skärmen på en 1366-laptop och sitter som en frimärke mitt
+// på en 4K-skärm som körs utan skalning, så vi håller ANDELEN av skärmen i stället:
+// 75 % av bredden och 83,3 % av höjden.
+//
+// Måtten räknas mot skärmens LOGISKA storlek (§8.2): `Monitor::size()` är fysiska
+// pixlar, medan `set_size(LogicalSize)` tar logiska. På en 4K-skärm i Windows
+// standardläge (200 %) är den logiska storleken 1920×1080 och panelen blir alltså
+// exakt 1440×900 — samma synliga storlek som på en 1080p-skärm, vilket är poängen.
+// Körs samma skärm utan skalning blir den 2880×1800, dvs. samma ANDEL av ytan.
+//
+// `width`/`height` i tauri.conf.json är fallbacken om skärmen inte går att fråga.
+const PANEL_REF: (f64, f64) = (1440.0, 900.0);
+const PANEL_SCREEN_REF: (f64, f64) = (1920.0, 1080.0);
+// Samma golv som minWidth/minHeight i tauri.conf.json — panelens layout (78 px rail
+// + 268 px lista + detaljvy) blir trång under detta.
+const PANEL_MIN: (f64, f64) = (960.0, 600.0);
+
+fn size_control_window(app: &AppHandle) {
+    let Some(win) = app.get_webview_window("control") else { return };
+    // current_monitor() ger skärmen fönstret ligger på — det är redan centrerat av
+    // Tauri, alltså primärskärmen i praktiken, men följer med om användaren har en
+    // annan primär.
+    let Ok(Some(mon)) = win.current_monitor() else { return };
+    let screen = mon.size().to_logical::<f64>(mon.scale_factor());
+    if screen.width < 1.0 || screen.height < 1.0 {
+        return;
+    }
+
+    // Golvet klampas mot skärmen först: på en skärm smalare än golvet ska fönstret
+    // fylla skärmen, inte hamna utanför den.
+    let min_w = PANEL_MIN.0.min(screen.width);
+    let min_h = PANEL_MIN.1.min(screen.height);
+    let w = (screen.width * PANEL_REF.0 / PANEL_SCREEN_REF.0).clamp(min_w, screen.width);
+    let h = (screen.height * PANEL_REF.1 / PANEL_SCREEN_REF.1).clamp(min_h, screen.height);
+
+    let _ = win.set_size(tauri::LogicalSize::new(w.round(), h.round()));
+    // Storleksändringen sker efter Tauris `center: true`, så fönstret måste
+    // centreras om — annars ligger det kvar med sitt gamla vänsterhörn.
+    let _ = win.center();
+}
+
 // ── Kommandon som kontrollpanelen anropar ───────────────────────────────────
 #[derive(Serialize)]
 struct OverlayInfo {
@@ -902,6 +945,7 @@ pub fn run() {
             let gate = settings.hide_until_connected;
 
             app.manage(Mutex::new(settings));
+            size_control_window(&handle);
             start_engine(&handle);
             watch_foreground(handle.clone());
 

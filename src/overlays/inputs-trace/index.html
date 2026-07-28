@@ -18,7 +18,15 @@
   --r:calc(var(--H)*0.0625); --pad:calc(var(--H)*0.060);
   --bar-w:calc(var(--H)*0.190); --bar-h:calc(var(--H)*0.735);
   --bar-gap:calc(var(--H)*0.055); --bar-r:calc(var(--H)*0.022);
-  --col-gap:calc(var(--H)*0.075); --val-fs:calc(var(--H)*0.115);
+  /* Pedalsiffran ska rymmas INOM stapelbredden (--bar-w = 0.190·H = 38 px vid
+     H=200). Montserrat tabular är ~0,70 em per siffra, så "100" blir 2,1× fontens
+     storlek: vid 0.115·H (23 px) är siffran 48 px mot stapelns 38 px och de tre
+     talen flöt ihop till ett block vid full gas. Felet syns BARA vid tresiffriga
+     värden, vilket är varför det slank igenom.
+     0.086·H = 17,2 px → 36 px, alltså innanför stapeln med marginal. Uppmätt mot
+     riktig rendering, inte räknat: 0.092 låg exakt kant i kant och såg fortfarande
+     trångt ut. */
+  --col-gap:calc(var(--H)*0.075); --val-fs:calc(var(--H)*0.086);
 }
 *{box-sizing:border-box;}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:var(--font);}
