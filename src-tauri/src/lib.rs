@@ -264,6 +264,10 @@ fn create_overlay(
             "scale": st.scale,
             "opacity": st.opacity,
             "gate": hide_until_connected,
+            // Skalet har redan dolt fönstret om grinden är på. bus.js måste veta det,
+            // annars vägrar den visa fönstret igen när ACC ansluter — den visar med
+            // flit bara fönster den själv dolt (§8.5b).
+            "osHidden": hide_until_connected && st.enabled,
             "hz": def.hz,
             "options": st.options,
         })
@@ -281,8 +285,10 @@ fn create_overlay(
         .shadow(false)
         .focused(false)
         // Skapa avstängda overlays dolda direkt — annars blinkar de synligt vid start
-        // innan hide() hinner köras.
-        .visible(st.enabled)
+        // innan hide() hinner köras. Samma sak när synk-grinden är på: overlayn ska
+        // ändå döljas så fort sidan laddat, och att skapa den synlig gav ett tydligt
+        // blink på cirka en sekund vid varje appstart.
+        .visible(st.enabled && !hide_until_connected)
         .build()?;
     win.set_ignore_cursor_events(CLICK_THROUGH.load(Ordering::Relaxed))?;
     Ok(())

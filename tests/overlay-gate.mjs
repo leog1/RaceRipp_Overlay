@@ -71,6 +71,39 @@ const hidden = () => (writes.length ? writes[writes.length - 1].value === 'hidde
    buggiga koden. */
 const hideCount = (from = 0) => writes.slice(from).filter((w) => w.value === 'hidden').length;
 
+// ── 0. Vid START ska overlayn vara dold DIREKT, ingen fördröjning ─────────
+// Rapporterat från riktig användning (0.3.6): overlays poppade upp vid appstart och
+// försvann först efter ~1 sekund. GATE_HOLD_MS finns för att en tappad ram MITT
+// UNDER KÖRNING inte ska släcka overlayn — den ska inte gälla innan man ens varit
+// ansluten. Skalet skapar dessutom fönstret dolt, vilket testas separat nedan.
+{
+  const { WsBus } = await loadBus(true);
+  const bus = new WsBus();
+  bus._emit({ connected: false });               // första ramen, aldrig varit ansluten
+  check('dold redan vid första frånkopplade ramen', hidden(),
+        writes.map((w) => w.value || '(synlig)').join(' → ') || 'inga skrivningar');
+  check('ingen synlig-skrivning före döljningen', hideCount() === 1 && writes.length === 1,
+        `${writes.length} skrivningar: ${writes.map((w) => w.value || '(synlig)').join(' → ')}`);
+}
+
+// ── 0b. Skalet säger att fönstret redan är dolt ───────────────────────────
+// lib.rs skapar fönstret med .visible(false) när grinden är på och skickar
+// osHidden:true. Utan det hade bus.js trott sig aldrig ha dolt fönstret och därför
+// vägrat visa det när ACC ansluter — overlayn hade blivit permanent osynlig.
+{
+  winCalls.length = 0;
+  globalThis.__OVERLAY_INIT__ = { id: 'delta-bar', scale: 1, opacity: 1, gate: true, osHidden: true };
+  const url = pathToFileURL(path.join(ROOT, 'src/shared/bus.js')).href;
+  const { WsBus } = await import(`${url}?osh=${++n}`);
+  const bus = new WsBus();
+  bus._emit({ connected: false });
+  check('inget extra hide-anrop när skalet redan dolt fönstret',
+        !winCalls.includes('hide'), winCalls.join(',') || 'inga anrop');
+  bus._emit({ connected: true });
+  check('fönstret visas när ACC ansluter, trots att skalet dolde det',
+        winCalls.includes('show'), winCalls.join(',') || 'inga anrop');
+}
+
 // ── 1. En enstaka tappad ram får inte dölja overlayn ───────────────────────
 // Detta ÄR den rapporterade buggen, mätt.
 {
@@ -134,9 +167,14 @@ const hideCount = (from = 0) => writes.slice(from).filter((w) => w.value === 'hi
 {
   const { WsBus } = await loadBus(true);
   const bus = new WsBus();
+  bus._emit({ connected: true });                 // första ramen: dold → synlig
+  const settled = writes.length;
   for (let i = 0; i < 200; i++) { bus._emit({ connected: true }); NOW += 25; }
-  check('stabil anslutning ger högst en DOM-skrivning', writes.length <= 1,
-        `${writes.length} skrivningar på 200 ramar`);
+  // Poängen är att inget upprepas PER RAM. Att grinden skriver en gång vid start
+  // (dold) och en gång när ACC ansluter (synlig) är rätt — det är två lägesbyten.
+  check('stabil anslutning ger INGA ytterligare DOM-skrivningar',
+        writes.length === settled,
+        `${writes.length - settled} extra på 200 ramar (${settled} vid uppstart)`);
 }
 
 // ── 7. Fönstret ska OS-döljas, inte bara CSS-döljas ───────────────────────
@@ -150,19 +188,25 @@ const hideCount = (from = 0) => writes.slice(from).filter((w) => w.value === 'hi
 {
   const { WsBus } = await loadBus(true);
   const bus = new WsBus();
+  // Grinden döljer redan vid modulladdning (INIT.gate), sedan visar första
+  // anslutna ramen igen. Två anrop är alltså rätt innan mätningen börjar.
   bus._emit({ connected: true });
-  check('inget fönsteranrop medan overlayn syns', winCalls.length === 0,
-        winCalls.join(',') || 'inga anrop');
+  const base = winCalls.length;
+  for (let i = 0; i < 100; i++) { bus._emit({ connected: true }); NOW += 25; }
+  check('inget fönsteranrop per ram medan overlayn syns', winCalls.length === base,
+        `${winCalls.length - base} extra: ${winCalls.join(',')}`);
 
   for (let i = 0; i < 120; i++) { bus._emit({ connected: false }); NOW += 25; }
-  check('fönstret döljs på OS-nivå vid frånkoppling', winCalls.includes('hide'),
-        winCalls.join(',') || 'inga anrop');
+  check('fönstret döljs på OS-nivå vid frånkoppling',
+        winCalls[winCalls.length - 1] === 'hide', winCalls.join(','));
+  const afterHide = winCalls.length;
+  for (let i = 0; i < 100; i++) { bus._emit({ connected: false }); NOW += 25; }
+  check('och döljs bara EN gång, inte per ram', winCalls.length === afterHide,
+        `${winCalls.length - afterHide} extra: ${winCalls.join(',')}`);
 
   bus._emit({ connected: true });
   check('fönstret visas igen vid återanslutning',
         winCalls[winCalls.length - 1] === 'show', winCalls.join(','));
-  check('ett anrop per lägesbyte, inte per ram', winCalls.length === 2,
-        `${winCalls.length} anrop: ${winCalls.join(',')}`);
 }
 
 console.log(failed ? `\n${failed} kontroll(er) misslyckades` : '\nAllt OK');

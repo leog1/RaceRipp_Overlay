@@ -360,6 +360,16 @@ Tre ändringar, ingen med någon synlig effekt:
   renderloop som annars gick medan man kör. Statusraden strypt till 4 Hz — den
   parsade 40 ramar/s för en prick som ändras någon gång per minut.
 
+**En tredje sak som följde av OS-dölningen:** grinden hade en fördröjning
+(`GATE_HOLD_MS`) för att en tappad ram mitt under körning inte ska släcka overlayn.
+Den gällde även VID START, så overlayn syntes i ~1,5 s vid varje appstart innan den
+försvann — rapporterat från riktig användning. Fördröjningen gäller nu bara efter att
+ACC varit ansluten någon gång, och `lib.rs` skapar dessutom fönstret med
+`.visible(false)` när grinden är på, så det aldrig hinner ritas alls. Skalet skickar
+då `osHidden:true` i `__OVERLAY_INIT__` — utan det hade bus.js trott sig aldrig ha
+dolt fönstret och vägrat visa det när ACC ansluter, alltså en permanent osynlig
+overlay.
+
 **Två fällor på vägen, båda värda att minnas:**
 1. `hide()` kräver `core:window:allow-hide` i `capabilities/default.json`. Utan den
    avvisas anropet — och med ett `.catch(() => {})` blev det HELT tyst: overlayn såg

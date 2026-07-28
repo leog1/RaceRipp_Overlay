@@ -62,6 +62,7 @@ export class WsBus {
   _emit(f) {
     this._last = f;
     _lastConnected = !!(f && f.connected);
+    if (_lastConnected) _everConnected = true;
     _applyGate();
     // Isolera prenumeranter: en som kastar får inte sluka framen för de andra.
     for (const fn of this._subs) { try { fn(f); } catch (e) { console.error('[bus]', e); } }
@@ -91,6 +92,7 @@ export class WsBus {
 // är grinden av → overlayn syns alltid.
 let _hideUntilConnected = false;
 let _lastConnected = false;
+let _everConnected = false;             // har ACC varit ansluten NÅGON gång?
 let _gateHidden = null;                 // senast skrivna läge (null = aldrig skrivet)
 
 // ── Startvärden från skalet ───────────────────────────────────────────────────
@@ -164,7 +166,10 @@ let _disconnectedAt = 0;
 export function isGated() { return _gateHidden === true; }
 
 let _editMode = false;
-let _osHidden = null;
+/* Skalet skapar fönstret redan dolt när grinden är på (lib.rs), och talar om det
+   här. Utan initieringen hade bus.js trott att den aldrig dolt fönstret och därför
+   vägrat visa det när ACC ansluter — overlayn hade blivit permanent osynlig. */
+let _osHidden = (INIT && INIT.osHidden === true) ? true : null;
 
 /* Dölj även OS-FÖNSTRET, inte bara innehållet.
    Mätt: med bara `visibility:hidden` låg WebView2 på 37 % av en kärna med båda
@@ -207,7 +212,11 @@ function _applyGate() {
   if (!IN_PREVIEW && _hideUntilConnected && !_lastConnected) {
     const now = Date.now();
     if (!_disconnectedAt) _disconnectedAt = now;
-    hidden = (now - _disconnectedAt) >= GATE_HOLD_MS;
+    // Fördröjningen finns för att en enstaka tappad ram MITT UNDER KÖRNING inte ska
+    // släcka overlayn. Den ska inte gälla vid start: har vi aldrig varit anslutna
+    // ska overlayn vara dold direkt. Annars syns den i ~1,5 s vid varje appstart,
+    // vilket var precis vad som rapporterades.
+    hidden = !_everConnected || (now - _disconnectedAt) >= GATE_HOLD_MS;
   } else {
     _disconnectedAt = 0;
   }
