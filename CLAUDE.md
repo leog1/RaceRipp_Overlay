@@ -716,6 +716,20 @@ två fält lämnades orörda, och båda skulle kosta användardata om de rördes
   Kontrollera med `pnpm tauri inspect wix-upgrade-code` — den skriver ut både den
   härledda och den låsta, och de SKA skilja sig åt nu.
 
+**Det NSIS-installerarna gör vid ett namnbyte gick inte att låsa på samma sätt.**
+NSIS avinstallationsnyckel härleds ur `productName`, så bytet gav en ny nyckel och den
+gamla installationen blev **kvar**. På användarens maskin ligger fortfarande:
+
+```
+ACC Overlay  0.3.3  C:\Users\leo\AppData\Local\ACC Overlay      ← föräldralös
+SimMatrix    0.4.x  C:\Users\leo\AppData\Local\SimMatrix
+```
+
+Den gamla kan avinstalleras för hand (`…\ACC Overlay\uninstall.exe`) och tar inte med
+sig inställningarna — de bor i `%APPDATA%\com.accoverlay.app\` och delas av båda,
+eftersom `identifier` med flit inte byttes. Det är alltså ofarligt att städa, men det
+är också ett skäl till att inte döpa om produkten igen i onödan.
+
 ### 8.8e "Uppdateringen fungerar men försvinner när jag stänger appen"
 Rapporterat från riktig användning av 0.4.0: användaren fick köra **Sök uppdatering
 vid varje start**. Uppdateringen gick igenom, men nästa gång appen startades var den
