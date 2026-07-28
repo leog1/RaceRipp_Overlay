@@ -976,6 +976,17 @@ med `parents[1]`. Kör man dem från `engine/` blir det `engine/tests/...` och P
 säger bara "No such file or directory", vilket är lätt att misstolka som ett trasigt
 test. Samma sak gäller `engine/acc_test.py` och `engine/broadcast_test.py`: kör dem som
 `python engine\acc_test.py` från roten.
+**`externalBin` gäller ALLA cargo-kommandon i `src-tauri/`, inte bara bygget.**
+`tauri-build` validerar sökvägen vid KOMPILERING, så även `cargo check` och
+`cargo test` faller direkt med
+`resource path binaries\acc-engine-...exe doesn't exist` om sidecarn saknas — innan
+en enda rad kod kompilerats. Lokalt märks det aldrig, för där ligger binären kvar
+sedan förra bygget. I CI gör det det: `cargo test`-steget låg först före
+sidecar-steget och fällde hela v0.4.2:s första release (bygget hoppades över, så
+ingenting publicerades — men ingenting släpptes heller). Lägg alltid nya
+cargo-steg **efter** "Bygg Python-motorn (sidecar)". Vill du reproducera felet
+lokalt: byt namn på binären och kör `cargo test`.
+
 `externalBin` **ligger kvar** i `tauri.conf.json`, så `pnpm tauri dev` kräver att
 sidecarn är byggd en gång — och dev startar den automatiskt. Kör därför **inte**
 motorn manuellt samtidigt: de krigar om port 8777 (den andra avslutar snyggt, men du

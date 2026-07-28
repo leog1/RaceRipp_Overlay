@@ -40,17 +40,6 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # Skalets rena logik: sokvagsskyddet i get_background (ett id fran IPC:n far
-      # aldrig peka utanfor bakgrundskatalogen), base64-implementationen och att
-      # standardbakgrunden faktiskt finns i repot. Bygger anda om samma trad som
-      # tauri-action anvander, sa steget kostar nastan ingenting.
-      - name: Kor skalets enhetstester
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $PSNativeCommandUseErrorActionPreference = $true
-          cargo test --lib --manifest-path src-tauri/Cargo.toml
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -80,6 +69,22 @@ jobs:
           New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
           # Tauri kräver target-triple-suffix på externalBin:
           Copy-Item dist/acc-engine.exe src-tauri/binaries/acc-engine-x86_64-pc-windows-msvc.exe -Force
+
+      # MASTE ligga efter sidecar-steget. `tauri-build` validerar `externalBin` vid
+      # KOMPILERING, sa varje cargo-kommando i src-tauri (aven `cargo test`) faller med
+      # "resource path binaries\acc-engine-...exe doesn't exist" innan en enda rad kod
+      # kompilerats. Lokalt marks det inte — dar ligger binaren redan kvar sedan
+      # forra bygget. Det var precis sa v0.4.2 forsta forsoket foll.
+      #
+      # Testerna sjalva ar skalets rena logik: sokvagsskyddet i get_background (ett id
+      # fran IPC:n far aldrig peka utanfor bakgrundskatalogen), base64 och att
+      # standardbakgrunden faktiskt finns i repot.
+      - name: Kor skalets enhetstester
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          cargo test --lib --manifest-path src-tauri/Cargo.toml
 
       - name: Verifiera att sidecarn har allt
         shell: pwsh
