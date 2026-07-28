@@ -69,6 +69,11 @@
   --ui-surf:    #101312;                 /* kort/kolumn: ett steg över app-bg     */
   --ui-surf-hi: #161918;                 /* samma yta upphöjd (hover)             */
   --ui-inset:   #060807;                 /* nedsänkt: reglagespår, fält, väljare  */
+  /* Korten (customization-rutorna) ligger ETT steg under app-bg, inte över — de
+     ska läsas som ingrävda i panelen, inte som skivor staplade ovanpå den. Skillnaden
+     mot --app-bg är avsiktligt liten (samma "3–5 i luminans"-regel som ovan), annars
+     blir intrycket ett hål i stället för en mjuk fördjupning. */
+  --ui-card:    #08090a;                 /* kortyta: ett steg under app-bg        */
 
   /* Linjer i tre vikter. hair delar innehåll INNE i en yta, edge ramar in en liten
      kontroll, edge-dk ramar in en BEHÅLLARE.

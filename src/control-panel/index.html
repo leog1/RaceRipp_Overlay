@@ -387,9 +387,12 @@ body.maximized .tb-btn .ico-max{display:none;}
    en enda knapp i hade sett tom ut. */
 .cards{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:16px;}
 .cards.single{max-width:620px;margin:0 auto;}
+/* Ingrävda, inte upphöjda: ytan är mörkare än app-bg (--ui-card) och skuggreceptet
+   är --ui-recess i stället för --ui-raise, samma par som förhandsvisningen och
+   reglagespåren. Litet steg med flit (§ ovan) — annars blir korten ett hål. */
 .card{border:1px solid var(--ui-edge-dk);border-radius:var(--ui-r-lg);padding:0 20px 12px;
-  background:linear-gradient(180deg,var(--ui-surf-hi),var(--ui-surf));
-  box-shadow:var(--ui-raise),var(--ui-lip);}
+  background:var(--ui-card);
+  box-shadow:var(--ui-recess),var(--ui-lip);}
 .card > h3{padding:16px 0 8px;}
 /* Radhöjden är fast (--ui-row-h) och inte padding-driven: en rad med reglage är
    högre än en med bara text, och listan vek sig i taktlöshet när de blandades. */
