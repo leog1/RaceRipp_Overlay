@@ -259,14 +259,30 @@ export function wireShell(applyConfig, applyOption) {
   }
 
   const T = globalThis.__TAURI__;
-  if (!T || !T.event) return;
 
   // Denna overlays id (så vi kan filtrera config som gäller andra overlays).
   // INIT.id vinner, sedan ?id=: i kontrollpanelens förhandsvisning körs overlayn i
   // en iframe inuti "control"-fönstret, och då är fönstrets label fel.
   let label = (INIT && INIT.id) || null;
   try { if (!label) label = new URLSearchParams(location.search).get('id'); } catch {}
-  if (!label) { try { label = T.window.getCurrentWindow().label; } catch {} }
+  if (!label && T) { try { label = T.window.getCurrentWindow().label; } catch {} }
+
+  /* ANDRA kanalen: postMessage från kontrollpanelen.
+     Tauri-eventen nedan når inte panelens förhandsvisning — den kör i en <iframe>,
+     och `__TAURI__` injiceras inte där. Följden var att previewn aldrig reagerade
+     på att man slog av/på ett alternativ; man fick se skillnaden först i spelet.
+     Den här lyssnaren ligger FÖRE Tauri-kontrollen just därför, och panelen postar
+     ändringen direkt till iframen. Den syns dessutom omedelbart, utan att vänta in
+     rundturen via Rust. */
+  addEventListener('message', (ev) => {
+    const p = ev.data;
+    if (!p || p.__simmatrix !== true) return;
+    if (p.id && label && p.id !== label) return;
+    if (p.kind === 'option') { if (applyOption) applyOption(p.option, p.value); }
+    else if (p.kind === 'config') applyConfig(p);
+  });
+
+  if (!T || !T.event) return;
 
   // Global grind: visa overlays först när ACC är ansluten ("Endast när ACC kör").
   try {

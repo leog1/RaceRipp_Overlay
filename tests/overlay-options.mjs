@@ -107,5 +107,34 @@ const FRAME = (o = {}) => ({ throttle: 0, brake: 0, clutch: 0, abs: false, tc: f
   }
 }
 
+// ── 11. Panelens förhandsvisning måste kunna ta emot ändringar ────────────
+// Previewn kör i en <iframe> och får INTE Tauris event — `__TAURI__` injiceras inte
+// där. Följden var att previewn aldrig reagerade när man slog av/på ett alternativ;
+// skillnaden syntes först i spelet. postMessage är därför en andra kanal, och den
+// ligger FÖRE Tauri-kontrollen i wireShell just för att fungera utan Tauri.
+{
+  const h = await loadOverlay('inputs-trace', {
+    html: htmlOf('inputs-trace'),
+    init: { id: 'inputs-trace', scale: 1, opacity: 1, options: { clutch: true, window: 4.5 } },
+    expose: ['trace'],
+  });
+  h.settle(FRAME({ throttle: 1 }), 5);
+  const före = h.api.trace.VISIBLE_MS;
+
+  h.message({ __simmatrix: true, kind: 'option', id: 'inputs-trace', option: 'window', value: 8 });
+  check('postMessage från panelen når overlayn', h.api.trace.VISIBLE_MS === 8000,
+        `${före} ms → ${h.api.trace.VISIBLE_MS} ms`);
+
+  // Meddelanden för en ANNAN overlay ska ignoreras.
+  h.message({ __simmatrix: true, kind: 'option', id: 'delta-bar', option: 'window', value: 2 });
+  check('meddelande till annan overlay ignoreras', h.api.trace.VISIBLE_MS === 8000,
+        `${h.api.trace.VISIBLE_MS} ms`);
+
+  // Främmande meddelanden (andra bibliotek, andra iframes) ska inte tolkas alls.
+  h.message({ kind: 'option', id: 'inputs-trace', option: 'window', value: 3 });
+  check('meddelande utan vår markör ignoreras', h.api.trace.VISIBLE_MS === 8000,
+        `${h.api.trace.VISIBLE_MS} ms`);
+}
+
 console.log(failed ? `\n${failed} kontroll(er) misslyckades` : '\nAllt OK');
 process.exit(failed ? 1 : 0);

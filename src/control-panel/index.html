@@ -369,6 +369,15 @@ function select(id){
    Typen står i d.type; utelämnad betyder "bool", så äldre poster fungerar oförändrat.
    Rust validerar värdet igen innan det sparas, så kontrollerna här behöver bara vara
    rimliga, inte vattentäta. */
+/* Previewn kor i en iframe och far INTE Tauris event (__TAURI__ injiceras inte
+   dar). Panelen postar darfor andringen direkt till den, sa att man ser skillnaden
+   medan man drar reglaget i stallet for forst i spelet. */
+function toPreview(msg){
+  const pv = $('pv');
+  try { pv && pv.contentWindow && pv.contentWindow.postMessage({ __simmatrix: true, ...msg }, '*'); }
+  catch {}
+}
+
 function renderOptions(o){
   const wrap = $('optRows'), card = $('cardOptions');
   wrap.innerHTML = '';
@@ -381,6 +390,7 @@ function renderOptions(o){
 
     const send = async (v) => {
       const cur = ov(o.id); if (cur){ cur.options = cur.options || {}; cur.options[d.id] = v; }
+      toPreview({ kind: 'option', id: o.id, option: d.id, value: v });   // syns direkt
       try { await invoke('set_option', { id: o.id, option: d.id, value: v }); }
       catch(err){ toast('Kunde inte spara alternativ: ' + errMsg(err), true); }
     };

@@ -132,7 +132,14 @@ export async function loadOverlay(id, opts = {}) {
   globalThis.performance = { now: () => now };
   globalThis.matchMedia = () => ({ matches: false });
   globalThis.requestAnimationFrame = (fn) => { rafQueue.push(fn); return rafQueue.length; };
-  globalThis.addEventListener = () => {};
+  // Overlays lyssnar på 'message' (kontrollpanelens förhandsvisning skickar
+  // ändringar den vägen — Tauris event når inte in i en iframe). Vi sparar
+  // lyssnarna så testet kan skicka meddelanden med h.message().
+  const listeners = new Map();
+  globalThis.addEventListener = (type, fn) => {
+    if (!listeners.has(type)) listeners.set(type, []);
+    listeners.get(type).push(fn);
+  };
   // Varje token måste ge en EGEN färg. Returnerade den samma värde för allt gick
   // det inte att se skillnad på t.ex. --red och --abs, och ett test på att ABS
   // färgar bromstracet gult passerade även när overlayn ritade allt i en färg.
@@ -206,6 +213,8 @@ export async function loadOverlay(id, opts = {}) {
     get now() { return now; },
     /** Skicka en telemetriram till overlayn (som bussen hade gjort). */
     push(frame) { if (sink) sink(frame); },
+    /** Skicka ett postMessage, som kontrollpanelen gör mot förhandsvisningen. */
+    message(data) { for (const fn of (listeners.get('message') || [])) fn({ data }); },
     /** Flytta klockan ett frame och kör overlayns rAF-callback. */
     tick(ms = stepMs) {
       now += ms;

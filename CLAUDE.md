@@ -302,6 +302,23 @@ Kontrollpanelens preview kör overlayn i en **iframe inuti "control"-fönstret**
 fönster och filtreras på payloadens `id` i `bus.js`. Previewen får sitt id via
 `?id=<overlay>` i iframe-URL:en, eftersom fönstrets label där är `control`.
 
+### 8.4b Förhandsvisningen får INTE Tauris event — den kör i en iframe
+§8.4 säger att `config`/`option` skickas till alla fönster och filtreras på id i
+`bus.js`, och att previewn får sitt id via `?id=`. Det stämmer, men räcker inte:
+previewn kör i en `<iframe>` inuti kontrollfönstret, och **`__TAURI__` injiceras inte
+i iframes**. `wireShell` returnerade därför tidigt (`if (!T || !T.event) return;`) och
+previewn reagerade aldrig på att man slog av/på ett alternativ — man fick se
+skillnaden först i spelet.
+
+Lösningen är en ANDRA kanal: kontrollpanelen postar ändringen direkt till iframen
+(`postMessage` med markören `__simmatrix`), och `bus.js` lyssnar på `message`
+**före** Tauri-kontrollen så det fungerar utan Tauri överhuvudtaget. Bonus: previewn
+uppdateras omedelbart, utan att vänta in rundturen via Rust.
+
+Två saker att inte tappa: filtrera på `id` (annars svarar alla overlays på allt) och
+kräv markören (annars tolkas meddelanden från andra bibliotek och iframes som
+inställningar).
+
 ### 8.5 Flicker-mönster att aldrig upprepa
 Alla dessa fanns i delta-baren och gav synligt flimmer:
 - **Tröskel som slår ut ett element helt.** `valueArc()` returnerade `''` när
