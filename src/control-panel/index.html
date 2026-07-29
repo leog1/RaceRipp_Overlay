@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SimMatrix — Control</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700&display=swap" rel="stylesheet">
+<!-- Montserrat vendoreras i tokens.css (@font-face + src/shared/fonts/). Google
+     Fonts-lanken som stod har ar borta med flit: en rigg utan nat ritade annars
+     i fallback-font och hela designen brots. -->
 <link rel="stylesheet" href="../shared/tokens.css">
 <style>
 /* ══════════════════════════════════════════════════════════════════════════
@@ -24,6 +24,11 @@
       Ett reglages fyllnad är varken av dem och ritas därför neutralt vitt.
    ══════════════════════════════════════════════════════════════════════════ */
 *{box-sizing:border-box;margin:0;padding:0;}
+/* Formulärkontroller ärver INTE typsnitt — webbläsaren ger dem systemets. Varje
+   knapp och fält i den här filen hade därför sin egen `font:inherit`, och den som
+   glömdes bort ritades i Segoe UI mitt bland Montserrat. Sätt det en gång här i
+   stället, så kan en ny kontroll aldrig hamna utanför. */
+button,input,select,textarea,optgroup{font-family:inherit;}
 html,body{height:100%;}
 body{font-family:var(--font);color:var(--ink);
   /* Svag ljuskälla uppifrån. Utan den blir en helt platt yta av den här
@@ -51,36 +56,69 @@ body{font-family:var(--font);color:var(--ink);
    Windows-mått (46 px breda, stäng blir röd) — de ska kännas som systemets, inte
    som en egen uppfinning. `data-tauri-drag-region` gör raden dragbar och
    dubbelklick-maximerbar; utan den går fönstret inte att flytta alls. */
+/* Samma yta som vänsterlisten (--rail-bg). Här låg en gradient #0a0c0b → #070908
+   över 36 px, alltså ett osynligt luminanssteg till priset av två råa hex-värden
+   utanför tokens. Med samma värde som listen läser titelraden och listen som EN
+   ram runt innehållet i stället för som två närliggande nyanser. */
 .titlebar{flex:0 0 auto;height:36px;display:flex;align-items:center;position:relative;z-index:6;
-  background:linear-gradient(180deg,#0a0c0b,#070908);
+  background:var(--rail-bg);
   -webkit-user-select:none;user-select:none;}
-.titlebar .tb-logo{display:flex;align-items:baseline;gap:8px;padding:0 4px 0 16px;pointer-events:none;}
-.titlebar .tb-logo img{height:16px;width:auto;display:block;align-self:center;}
-/* "Control" bredvid ordbilden: fönstret har ingen systemtitel kvar att säga vilken
-   vy man är i, och raden ser omotiverat tom ut utan den.
-   Den ska läsas som ordbildens UNDERTEXT, inte som en egen etikett. Första försöket
-   hade avdelarlinje, 700-vikt och 2,2 px spärr — tre signaler om att det här är
-   något eget, och då slutar lockupen vara en lockup. Nu: ingen linje, samma
-   optiska vikt som ett svagt bakgrundsord, och satt på baslinjen med ordbilden. */
-.titlebar .tb-tag{font-size:var(--ui-fs-xs);font-weight:600;letter-spacing:1.4px;
-  text-transform:uppercase;color:var(--faint);opacity:.72;line-height:1;}
+/* Ordbilden ensam. Här stod tidigare "CONTROL" bredvid den, motiverat med att raden
+   annars såg tom ut. Det var fel problem att lösa: appen har ett enda fönster, så
+   etiketten skilde inte den här vyn från någon annan — den bara upprepade vad
+   fönstret redan är. En titelrad med luft i är inte tom, den är lugn.
+   pointer-events:none gör loggan dragbar: `data-tauri-drag-region` utan värde
+   matchar bara DIREKTA klick på .titlebar (§8.4i), så varje barn i raden är annars
+   en död yta. */
+.titlebar .tb-logo{display:flex;align-items:center;padding:0 4px 0 16px;pointer-events:none;}
+/* 20 px och inte 16. Ordbilden är ritad 459×55 med en ljus kontur runt varje
+   bokstav, och vid 16 px (0,29× av originalet) hamnar den konturen under en pixel:
+   bokstävernas inre hål slöts, M och A gick ihop och hela märket blev en röd
+   suddig klump — mätt genom att rendera 16/18/20/22/24 px bredvid varandra, inte
+   uppskattat. Vid 20 px öppnar sig hålen. Höjden ryms med 8 px luft över och under
+   i en 36 px titelrad, vilket är samma proportion som Windows egna appar ger sin
+   ikon. Vill man ha den mindre måste ordbilden ritas om med grövre kontur. */
+.titlebar .tb-logo img{height:20px;width:auto;display:block;}
 .titlebar .tb-drag{flex:1 1 auto;align-self:stretch;}
-/* Motor-/Broadcastingstatus, flyttad hit från rail-foten. Bara prick + text —
-   ingen pill-bakgrund, den bär ingenting en egen yta inte redan gör.
+/* Motor-/Broadcastingstatus, i titelraden sedan 0.4.6. Nu som BRICKOR med egen yta
+   och kant i stället för lös prick + text. Skälet är att de två raderna annars
+   flöt i samma optiska rum som ordbilden och fönsterknapparna, och en titelrad där
+   allt ligger löst intill vartannat läses som en verktygsrad någon glömt att
+   gruppera. En brickas kontur säger "det här är ett värde, inte en knapp".
+   Färgen sitter i YTAN och inte bara i pricken: en 6 px punkt är för lite yta för
+   att bära ett tillstånd man ska kunna se i ögonvrån medan man gör något annat.
+
+   OFFLINE ÄR MEDVETET NEUTRALT och inte en röd bricka — röd yta i titelraden vid
+   varje kallstart läser som ett fel, och att motorn inte hunnit upp än är inget
+   fel. Pricken är röd (--red är en SIGNALfärg, §4); ytan förblir lugn.
    `display:flex` slår ut webbläsarens `[hidden]{display:none}` (samma fälla som
    §8.4f), därför en egen dold-regel nedan.
-   flex:0 0 auto: utan den är statusraderna krympbara (flex-shrink är 1 som
-   standard) och `white-space:nowrap` gör att texten då spiller ut ur sin ruta i
-   stället för att .tb-drag ger med sig. Bredden här är ett designbeslut, inte en
-   restpost — samma resonemang som min-width:0 på .rail (§8.4h). */
-.tb-status{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:0 10px;
+   flex:0 0 auto: utan den är brickorna krympbara (flex-shrink är 1 som standard)
+   och `white-space:nowrap` gör att texten då spiller ut ur sin ruta i stället för
+   att .tb-drag ger med sig. Bredden här är ett designbeslut, inte en restpost —
+   samma resonemang som min-width:0 på .rail (§8.4h). */
+.tb-status{flex:0 0 auto;display:flex;align-items:center;gap:6px;
+  margin:0 4px;padding:4px 10px;border-radius:999px;
+  background:rgba(255,255,255,0.035);border:1px solid var(--ui-hair);
   font-size:var(--ui-fs-xs);font-weight:600;letter-spacing:.3px;color:var(--dim);
-  -webkit-user-select:none;user-select:none;white-space:nowrap;}
+  -webkit-user-select:none;user-select:none;white-space:nowrap;line-height:1;
+  transition:background-color .2s ease,border-color .2s ease,color .2s ease;}
+.tb-status:last-of-type{margin-right:8px;}
 .tb-status[hidden]{display:none;}
-.tb-status .dot{width:6px;height:6px;border-radius:50%;flex:0 0 auto;background:var(--faint);}
-.tb-status .dot.live{background:var(--green);box-shadow:0 0 5px rgba(13,230,34,0.35);}
-.tb-status .dot.mock{background:var(--amber);box-shadow:0 0 5px rgba(251,191,36,0.32);}
-.tb-status .dot.off{background:var(--red);}
+.tb-status .dot{width:6px;height:6px;border-radius:50%;flex:0 0 auto;background:var(--faint);
+  transition:background-color .2s ease;}
+/* Tonad yta + tonad kant + ljus text i samma kulör. Tillståndsklassen sitter på
+   BRICKAN och inte på pricken — `:has()` hade varit kortare men gör utseendet
+   beroende av en väljare som WebView2 fick först i Chromium 105, och en panel som
+   ser trasig ut på en gammal runtime är inte värd tre sparade rader.
+   Den enda glowen som är kvar i panelen sitter på de här prickarna och på
+   växlarknoppen (§4): saker vars enda uppgift är att synas i ögonvrån. Håll den
+   svag — 4 px, inte 8. */
+.tb-status.live{background:rgba(13,230,34,0.09);border-color:rgba(13,230,34,0.26);color:#9fe3ab;}
+.tb-status.mock{background:rgba(251,191,36,0.09);border-color:rgba(251,191,36,0.26);color:#e8ce8e;}
+.tb-status.live .dot{background:var(--green);box-shadow:0 0 4px rgba(13,230,34,0.45);}
+.tb-status.mock .dot{background:var(--amber);box-shadow:0 0 4px rgba(251,191,36,0.40);}
+.tb-status.off  .dot{background:var(--red);}
 .titlebar .tb-btns{display:flex;align-self:stretch;}
 .tb-btn{appearance:none;background:none;border:0;width:46px;align-self:stretch;
   display:flex;align-items:center;justify-content:center;color:var(--dim);cursor:pointer;
@@ -106,44 +144,79 @@ body.maximized .tb-btn .ico-max{display:none;}
 /* trepanelslayout */
 .app{flex:1 1 auto;display:flex;min-height:0;}
 
-/* ── vänster ikonrad ──
-   80 px (10 × 8) och inte 78: listen är panelens vänstra kant och sätter den lodräta
-   linje allt annat mäts mot, så den ska ligga på rastret även om ingen ser talet.
-   Seam åt höger, inte en ljus linje: en mörk kant med en hårfin ljus rad på utsidan
-   läser som två material som möts. En ensam ljusgrå linje läser som en ritad kant. */
-/* min-width:0 är inte kosmetik. Ett flexbarn har `min-width:auto`, alltså ett golv
-   vid sitt MIN-CONTENT — och statusraden nertill innehåller ordet "Broadcasting",
-   som inte går att bryta. Listen växte därför från 80 till 97 px i samma sekund som
-   Broadcasting-raden dök upp, och hela panelen till höger flyttade sig i sidled mitt
-   under körning. `flex:0 0 80px` hindrar inte det; bara min-width gör det. */
-.rail{flex:0 0 80px;min-width:0;border-right:1px solid var(--ui-edge-dk);
+/* ── vänster ikonlist ────────────────────────────────────────────────────────
+   REN IKONLIST, 60 px. Här stod fram till nu en 80 px list där varje flik hade en
+   versal etikett på 10 px under ikonen. Den lösningen sprack två gånger på samma
+   sätt, och andra gången var den redan dokumenterad: "BROADCASTING" sprängde
+   listen i 0.4.1, och "INSTÄLLNINGAR" rann ut ur den i 0.4.6 — vilket löstes genom
+   att DÖPA OM fliken till något kortare. När man börjar välja ord efter hur många
+   pixlar de tar är det inte ordet som är fel, det är att etiketten står där.
+
+   Ikon + tooltip vid hover i stället. Vinsterna är konkreta:
+   - 20 px tillbaka till innehållet, som är det man faktiskt arbetar i.
+   - En ny flik kan heta vad den ska heta. Fliken som fick heta "Allmänt" för att
+     "Inställningar" inte fick plats kan heta "Inställningar" igen.
+   - Tooltipen har hela panelens bredd att växa i, så etiketten kan vara gemen och
+     läsbar i stället för versal och hoptryckt.
+   Priset är att man måste kunna ikonerna, och det priset är litet vid fem flikar
+   som dessutom byts sällan — men det är just därför tooltipen måste komma SNABBT
+   (60 ms) och inte efter systemets sekund: en tooltip man hinner ge upp på är
+   samma sak som ingen tooltip.
+
+   min-width:0 står kvar. Ett flexbarn har `min-width:auto`, alltså ett golv vid
+   sitt min-content, och `flex:0 0 60px` låser ingenting utan det (§8.4h). Med bara
+   ikoner finns i och för sig ingen obrytbar text kvar att växa av — men regeln
+   gäller varje flexbarn vars bredd är ett designbeslut, och den kostar inget. */
+.rail{flex:0 0 60px;min-width:0;position:relative;z-index:5;
+  border-right:1px solid var(--ui-edge-dk);
   box-shadow:1px 0 0 rgba(255,255,255,0.028);
-  background:linear-gradient(180deg,#080a09,#060807);
-  display:flex;flex-direction:column;align-items:stretch;padding:12px 0 12px;}
-.nav{position:relative;appearance:none;background:none;border:0;color:var(--dim);font:inherit;
-  cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 4px;
-  transition:color .15s ease,background .15s ease;}
-.nav svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;
+  /* --rail-bg och inte en gradient mellan två råa hex-värden. Gradienten som stod
+     här gick från #080a09 till #060807, alltså två luminanssteg över 767 px — den
+     gick inte att se, och priset var att tokens.css inte längre var enda källan
+     för panelens färger (dess egen huvudregel). */
+  background:var(--rail-bg);
+  display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0;}
+/* 40×40 med 10 px luft åt varje håll i en 60 px list. Radien följer --ui-r-sm:e
+   knappar och fält i panelen, så flikbrickan inte konkurrerar med kortens 14 px. */
+.nav{position:relative;appearance:none;background:none;border:0;color:var(--dim);
+  cursor:pointer;flex:0 0 auto;width:40px;height:40px;border-radius:var(--ui-r-sm);
+  display:flex;align-items:center;justify-content:center;
+  transition:color .15s ease,background-color .15s ease;}
+.nav svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.7;
   stroke-linecap:round;stroke-linejoin:round;}
-.nav span{font-size:var(--ui-fs-xs);font-weight:700;letter-spacing:.9px;text-transform:uppercase;}
-.nav:hover{color:var(--ink);background:var(--hover);}
-.nav:focus-visible{outline:2px solid var(--ui-focus);outline-offset:-3px;}
-.nav[aria-selected="true"]{color:var(--ink);background:var(--sel);}
-/* Markören animeras i höjdled i stället för att bara tändas: den korta rörelsen
-   säger vilken flik man LÄMNADE, vilket en tänd/släckt kant inte gör. */
-.nav::before{content:"";position:absolute;left:0;top:50%;width:3px;height:28px;
-  border-radius:0 3px 3px 0;background:var(--ui-brand);
-  transform:translateY(-50%) scaleY(0);transform-origin:center;
-  transition:transform .2s cubic-bezier(.2,.8,.3,1);}
-.nav[aria-selected="true"]::before{transform:translateY(-50%) scaleY(1);}
+.nav:hover{color:var(--ink);background-color:var(--hover);}
+.nav:focus-visible{outline:2px solid var(--ui-focus);outline-offset:-2px;}
+/* Aktiv flik: tonad brandyta och ikonen i den ljusa tinten. Här satt tidigare en
+   3 px röd stapel i vänsterkanten som animerades i höjdled. Den var fin men bar
+   färgen på ett ställe blicken inte tittar (kanten) medan brickan själv bara blev
+   marginellt ljusare — så på en skärmdump gick det inte att se vilken flik som var
+   vald. Nu bär BRICKAN tillståndet, vilket är det som pekas på och klickas. */
+.nav[aria-selected="true"]{color:var(--ui-brand-lt);background-image:var(--ui-brand-fill);}
+.nav[aria-selected="true"]:hover{color:var(--ui-brand-lt);}
+/* Tooltip. Ligger utanför listen, alltså ovanpå overlay-listan till höger — därför
+   z-index:5 på .rail. pointer-events:none så den aldrig kan komma i vägen för en
+   knapp den råkar täcka, och visibility i övergången så den inte går att träffa
+   med musen medan den tonar bort.
+   Texten är RIKTIG text i DOM:en och inte ett title-attribut: dels ger den
+   knappen dess tillgängliga namn (utan den vore fem knappar namnlösa för en
+   skärmläsare), dels ritar Windows sitt eget title-verktygstips efter ~1 s i en
+   helt annan typografi — två tooltips på samma knapp. */
+.nav .tip{position:absolute;left:calc(100% + 10px);top:50%;
+  transform:translateY(-50%) translateX(-4px);
+  white-space:nowrap;pointer-events:none;
+  padding:5px 10px;border-radius:var(--ui-r-sm);
+  background:var(--ui-surf-hi);border:1px solid var(--ui-edge-dk);
+  box-shadow:var(--ui-lift);
+  font-size:var(--ui-fs-md);font-weight:600;letter-spacing:.2px;color:var(--ink);
+  opacity:0;visibility:hidden;
+  transition:opacity .12s ease,transform .12s cubic-bezier(.2,.8,.3,1),visibility 0s linear .12s;}
+.nav:hover .tip,.nav:focus-visible .tip{opacity:1;visibility:visible;
+  transform:translateY(-50%);transition-delay:60ms,60ms,0s;}
+/* En vald flik behöver ingen tooltip: dess namn står som rubrik i vyn bredvid, och
+   en tooltip som ploppar upp när man råkar dra musen över den flik man redan är på
+   är bara brus. */
+.nav[aria-selected="true"] .tip{display:none;}
 .rail-spacer{flex:1 1 auto;}
-/* Minimal statusprick i listens fot — den fulla texten bor i titelraden (.tb-status)
-   nu, det här är bara ett tecken kvar i ögonvrån om man tittar på listen i stället. */
-.rail-dot{align-self:center;width:7px;height:7px;border-radius:50%;flex:0 0 auto;
-  margin:10px 0 4px;background:var(--faint);}
-.rail-dot.live{background:var(--green);box-shadow:0 0 0 3px rgba(13,230,34,0.12),0 0 6px rgba(13,230,34,0.30);}
-.rail-dot.mock{background:var(--amber);box-shadow:0 0 0 3px rgba(251,191,36,0.12),0 0 6px rgba(251,191,36,0.26);}
-.rail-dot.off{background:var(--red);box-shadow:0 0 0 3px rgba(255,59,59,0.10);}
 
 /* ── mittkolumn: overlay-lista ── */
 .list{flex:0 0 264px;border-right:1px solid var(--ui-edge-dk);
@@ -212,24 +285,29 @@ body.maximized .tb-btn .ico-max{display:none;}
 /* Höjden är 38,2 % — den mindre delen av gyllene snittet (1 − 1/φ). Rutan och
    inställningarna under den är panelens två block, och 40/60 låg tillräckligt nära
    halva för att se ut som ett obeslutsamt 50/50. 38,2/61,8 läser som ett val.
-   DJUPET: mörk kant utåt, ljus sheen längs INSIDANS överkant och en hårfin ljus rad
-   på UTSIDANS underkant. Det är samma tre lager som på en riktig infräst panel —
-   ljuset kommer uppifrån, så överkanten ligger i skugga och underkantens lip fångar
-   det. En ljusgrå 1 px-kant runt om (som här stod förut) ger motsatt intryck: rutan
-   ser pålagd ut, som ett klistermärke på panelen. */
+
+   DJUPET: en hårfin LJUS kant, en mörkare yta än panelen, och ingenting mer.
+   Här låg tidigare tre lager på en gång — mörk kant utåt, en `--ui-lift` på
+   0 10px 26px/0,42 under rutan, och ett heltäckande ::after med `--ui-recess`
+   ovanpå innehållet. Summan blev en mörk bård runt hela förhandsvisningen och en
+   sotig rand tvärs över overlayn man satt och bedömde. Två fel:
+   1. Rutan SVÄVAR INTE. Den sitter still i sitt flöde med 20 px marginal, och en
+      suddig skugga under något som inte kan röra sig i z-led är dekoration.
+   2. Skuggan låg över det enda i panelen som ska bedömas exakt. Previewn finns för
+      att man ska se hur en overlay verkligen ser ut; att lägga en gradient över
+      den gör den sämre på sitt enda jobb.
+   Att kanten nu är LJUS och inte mörk är avsiktligt trots regeln i §4 om att en
+   behållare får mörk kant: den regeln finns för att en ruta ska sluta läsa som ett
+   klistermärke ovanpå panelen. En yta som är MÖRKARE än sin omgivning läser aldrig
+   som pålagd — den läser som ett hål, och ett hål har en ljus kant där ljuset
+   uppifrån träffar den bortre överkanten. Det är samma antagande som resten av
+   panelen, tillämpat åt andra hållet. */
 #previewBox{position:relative;z-index:2;flex:0 0 38.2%;min-height:216px;max-height:560px;
   margin:16px 20px 0;border-radius:var(--ui-r-lg);
   background:radial-gradient(120% 130% at 50% -20%, rgba(255,255,255,0.030), transparent 62%),
-             var(--plot);
-  border:1px solid var(--ui-edge-dk);box-shadow:var(--ui-lip),var(--ui-lift);}
+             var(--ui-stage);
+  border:1px solid var(--ui-hair);}
 .pv-clip{position:absolute;inset:0;overflow:hidden;border-radius:var(--ui-r-lg);}
-/* Innerskuggan måste ligga ÖVER innehållet. En `inset`-skugga på #previewBox målas
-   under sina barn, och previewn fyller hela rutan — djupet hade alltså syns bara
-   där ingenting ritades. Det här är ett eget lager, sist i DOM:en och utan z-index,
-   så det hamnar ovanför .pv-clip men under knapparna (som har z-index 3–4). */
-#previewBox::after{content:"";position:absolute;inset:0;pointer-events:none;
-  border-radius:var(--ui-r-lg);
-  box-shadow:var(--ui-recess);}
 
 /* Bakgrundsbild. cover + center så bilden aldrig blir uttänjd, och den ligger
    UNDER overlayn — previewn ska visa hur overlayn ser ut mot en bana, inte
@@ -368,9 +446,13 @@ body.maximized .tb-btn .ico-max{display:none;}
   scrollbar-gutter:stable;padding-right:calc(20px - var(--ui-scrollbar));}
 /* Knapparna ligger ovanpå previewn, så ytan är ogenomskinlig: en halvtransparent
    knapp över en rörlig overlay går inte att läsa. */
+/* Skuggan här var `--ui-raise, --ui-lip` — en 20 px suddig slagskugga under en
+   32 px knapp, alltså en skugga nästan lika stor som knappen. Fem sådana i samma
+   ruta gav previewn fyra mörka fläckar i hörnen som man såg innan man såg
+   knapparna. Kvar: kanten, och en 2 px-antydan om att knappen ligger ovanpå. */
 .sbtn{width:32px;height:32px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
   background:rgba(7,9,8,0.90);border:1px solid var(--ui-edge-dk);border-radius:var(--ui-r-md);
-  color:var(--dim);cursor:pointer;box-shadow:var(--ui-raise),var(--ui-lip);
+  color:var(--dim);cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.28),var(--ui-lip);
   transition:background .15s ease,color .15s ease,border-color .15s ease,transform .1s ease;}
 .sbtn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;
   stroke-linecap:round;stroke-linejoin:round;}
@@ -399,12 +481,22 @@ body.maximized .tb-btn .ico-max{display:none;}
    en enda knapp i hade sett tom ut. */
 .cards{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:16px;}
 .cards.single{max-width:620px;margin:0 auto;}
-/* Ingrävda, inte upphöjda: ytan är mörkare än app-bg (--ui-card) och skuggreceptet
-   är --ui-recess i stället för --ui-raise, samma par som förhandsvisningen och
-   reglagespåren. Litet steg med flit (§ ovan) — annars blir korten ett hål. */
+/* Kortet är en YTA man rör vid, inte ett hål man tittar i. Det låg tidigare på
+   #08090a med --ui-recess, alltså mörkare än panelen och med samma djuprecept som
+   förhandsvisningen — och när rutan man BEDÖMER och rutan man STÄLLER IN har samma
+   färg och samma skugga finns ingen hierarki kvar att läsa, bara ett grumligt fält.
+   Dessutom sitter kontrollerna på --ui-inset (mörkare än allt annat): ett nedsänkt
+   fält i ett nedsänkt kort har ingenstans att ta vägen, och reglagespåren syntes
+   som svart på svart.
+   Nu ligger kortet ETT STEG ÖVER panelen med --ui-card-in — en ljus rad överst och
+   en mycket svag skuggning i underkanten, ingen yttre slagskugga. Ett kort som
+   löper kant i kant med sin behållare kan inte sväva över den, och en suddig
+   skugga under det ser ut som ett renderingsfel.
+   Kanten förblir mörk (--ui-edge-dk): den ramar in en BEHÅLLARE, till skillnad från
+   de små kontrollerna inuti som har ljus kant (§4). */
 .card{border:1px solid var(--ui-edge-dk);border-radius:var(--ui-r-lg);padding:0 20px 12px;
   background:var(--ui-card);
-  box-shadow:var(--ui-recess),var(--ui-lip);}
+  box-shadow:var(--ui-card-in);}
 .card > h3{padding:16px 0 8px;}
 /* Avdelarrubrik INNE i ett kort (Storlek/Av-på/Utseende i samma kort). Skiljer sig
    från .list-head/.card>h3 på ett avgörande sätt: etiketten är NEUTRALT grå
@@ -581,7 +673,7 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
 </head>
 <body>
   <div class="titlebar" data-tauri-drag-region>
-    <div class="tb-logo"><img src="../shared/simmatrix-logo.svg" alt="SimMatrix"><span class="tb-tag">Control</span></div>
+    <div class="tb-logo"><img src="../shared/simmatrix-logo.svg" alt="SimMatrix"></div>
     <div class="tb-drag" data-tauri-drag-region></div>
     <!-- data-tauri-drag-region="deep" och INTE bara attributet: tauri-2.11.5:s
          drag.js (window/scripts/drag.js:66) returnerar `el === composedPath[0]`
@@ -591,10 +683,10 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
          Varför inte pointer-events:none som .tb-logo har: #bcRow bär
          Broadcasting-felet i sitt title-attribut, och det är enda stället felet
          syns. Utan pekhändelser ingen tooltip. -->
-    <div class="tb-status" data-tauri-drag-region="deep"><span class="dot off" id="dot"></span><span id="statusText">Motor offline</span></div>
+    <div class="tb-status off" id="engRow" data-tauri-drag-region="deep"><span class="dot" id="dot"></span><span id="statusText">Motor offline</span></div>
     <!-- Broadcasting (andra bilars data). Dold tills motorn faktiskt försöker —
          annars ser den ut som ett fel på riggar som inte har ACC installerat. -->
-    <div class="tb-status" id="bcRow" data-tauri-drag-region="deep" hidden><span class="dot off" id="bcDot"></span><span id="bcText"></span></div>
+    <div class="tb-status off" id="bcRow" data-tauri-drag-region="deep" hidden><span class="dot"></span><span id="bcText"></span></div>
     <div class="tb-btns">
       <button class="tb-btn" id="tbMin" title="Minimera" aria-label="Minimera">
         <svg viewBox="0 0 10 10"><path d="M0 5h10"/></svg>
@@ -611,42 +703,37 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
   <div class="brandbar"></div>
   <div class="app" id="app" data-section="overlays">
 
-    <!-- ── vänster ikonrad ── -->
+    <!-- ── vänster ikonlist ──
+         Bara ikoner. `.tip`-spannet är både tooltip OCH knappens tillgängliga namn
+         (se CSS) — ta inte bort det och ersätt det inte med ett title-attribut.
+         Fliknamnen är inte längre bundna av listens bredd: tooltipen växer fritt åt
+         höger, så "Inställningar" får heta det igen efter att ha hetat "Allmänt"
+         enbart för att den versala etiketten inte fick plats i 72 px.
+         Statuspricken som stod här nere är borta — motorstatusen står i titelraden
+         med sin text sedan 0.4.6, och en färgad punkt utan text som upprepar den
+         är en andra plats att titta på för samma sak. -->
     <nav class="rail">
-      <!-- Här satt en kompakt 3×3-matrisikon som andra märke. Den togs bort: appens
-           ordbild står redan i titelraden 40 px ovanför, och ett märke till i samma
-           blickfång gör att man frågar sig om det är två olika saker. Listen börjar
-           nu direkt med flikarna.
-           Motor-/Broadcastingstatusen bodde också här nere fram till 0.4.6 och bor
-           numera i titelraden (.tb-status) — kvar står bara pricken längst ner. -->
       <button class="nav" data-sec="layout" aria-selected="false">
         <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="18" rx="1.5"/><rect x="14" y="3" width="7" height="8" rx="1.5"/><rect x="14" y="15" width="7" height="6" rx="1.5"/></svg>
-        <span>Layout</span>
+        <span class="tip">Layout</span>
       </button>
       <button class="nav" data-sec="overlays" aria-selected="true">
         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/></svg>
-        <span>Overlays</span>
+        <span class="tip">Overlays</span>
       </button>
       <button class="nav" data-sec="referens" aria-selected="false">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 13V9M9 2h6"/></svg>
-        <span>Referens</span>
+        <span class="tip">Referensvarv</span>
       </button>
       <button class="nav" data-sec="om" aria-selected="false">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
-        <span>Om</span>
+        <span class="tip">Om SimMatrix</span>
       </button>
       <div class="rail-spacer"></div>
       <button class="nav" data-sec="installningar" aria-selected="false">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        <!-- "Allmänt" och inte "Inställningar", av samma skäl som statusraden en
-             gång sprängde listen (§8.4h): versalt "INSTÄLLNINGAR" är ~95 px vid
-             10 px med 0,9 px spärr, och listen har 72 px innanför sin padding.
-             Etiketten rann alltså ut på båda sidor om listen — mätt i en
-             renderad panel, inte gissat. "ALLMÄNT" är ~56 px och får luft över.
-             Kugghjulet bär betydelsen; ordet behöver bara namnge fliken. -->
-        <span>Allmänt</span>
+        <span class="tip">Inställningar</span>
       </button>
-      <span class="rail-dot off" id="railDot" title="Motorstatus"></span>
     </nav>
 
     <!-- ── mittkolumn: overlay-lista ── -->
@@ -800,9 +887,10 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
         </div>
       </div>
 
-      <!-- ALLMÄNT — skal än så länge, ska utvecklas till en egen flik med innehåll.
-           Rubriken får stå "Inställningar": den sitter i en 1000 px bred panel,
-           inte i den 80 px smala listen där etiketten måste vara kort. -->
+      <!-- INSTÄLLNINGAR — skal än så länge, ska utvecklas till en egen flik med
+           innehåll. Fliken hette "Allmänt" i 0.4.6 enbart för att "INSTÄLLNINGAR"
+           inte fick plats som versal railetikett (§8.4h). Etiketterna är borta
+           sedan 0.4.7 och namnet är därför tillbaka — både här och i tooltipen. -->
       <div class="pane" id="pane-installningar">
         <div class="titleband">
           <h2>Inställningar</h2>
@@ -1399,10 +1487,11 @@ $('checkUpd').addEventListener('click', async () => {
 (function statusLoop(){
   let ws;
   const set = (cls, txt) => {
-    $('dot').className = 'dot ' + cls; $('statusText').textContent = txt;
-    // Pricken i listen har ingen text bredvid sig — utan en titel som följer med
-    // är den bara en färgad punkt man får gissa betydelsen av.
-    $('railDot').className = 'rail-dot ' + cls; $('railDot').title = txt;
+    // Tillståndet sitter på BRICKAN (ytan + kanten + texten färgas), inte på
+    // pricken — se .tb-status i CSS:en.
+    $('engRow').className = 'tb-status ' + cls; $('statusText').textContent = txt;
+    // Statusen skrevs tidigare till TVÅ ställen: hit och till en prick i
+    // vänsterlisten. Pricken är borta — den upprepade det här värdet utan sin text.
     // Hjälptexten i previewrutan doldes aldrig — den låg kvar BAKOM en körande
     // förhandsvisning och skymtade genom den. Den hör bara hemma när motorn är av.
     const hint = $('pvHint'); if (hint) hint.hidden = (cls !== 'off');
@@ -1424,7 +1513,7 @@ $('checkUpd').addEventListener('click', async () => {
     const spec = BC[status];
     if (!spec){ row.hidden = true; return; }
     row.hidden = false;
-    $('bcDot').className = 'dot ' + spec[0];
+    row.className = 'tb-status ' + spec[0];
     $('bcText').textContent = spec[1];
     // Felet får inte plats i den smala listen — lägg det i tooltipen.
     row.title = err ? `Broadcasting: ${err}` : '';

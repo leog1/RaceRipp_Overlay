@@ -4,6 +4,50 @@
    Medvetet EN palett för sammanhållning (RaceLab varierar mellan widgets; vi
    standardiserar).
    ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Montserrat, VENDORERAD ────────────────────────────────────────────────
+   Fonten hämtades tidigare från Google Fonts i varje HTML-fil (tre <link>-rader).
+   Det var en medveten skuld och den kostade två saker: en rigg utan nät ritade i
+   fallback-font och hela designen bröts, och panelens preview mätte fel bredd
+   tills fonten bytts in mitt under körning (§8.4c).
+
+   Filerna är Google Fonts VARIABLA snitt, alltså ETT snitt per unicode-block för
+   HELA viktskalan 100–900 i stället för ett per vikt. Det är därför wght-raden
+   är ett intervall och inte ett tal: skriver du någon gång 500 eller 800 i
+   panelen finns vikten redan, utan en ny nedladdning.
+   Bara latin och latin-ext ingår. Svenska ryms i latin (å ä ö är U+00E4/E5/F6),
+   men förarnamn ur ACC:s Broadcasting-entry list är polska, tjeckiska och
+   turkiska lika ofta som svenska — därför latin-ext också.
+   Sökvägen är relativ till DENNA fil, så den håller för alla tre konsumenterna
+   (panelen, båda overlays) och för både dev, OBS-HTTP och det inbäddade arkivet.
+
+   Licens: Montserrat är SIL Open Font License 1.1 (fri att bunta och distribuera,
+   även i ett MIT-projekt — OFL ställer inga krav på appens egen licens).
+
+   `swap` och inte `block`: filen ligger lokalt och laddas i praktiken direkt, men
+   skulle den någon gång saknas i ett bygge ska texten synas i fallback i stället
+   för att vara osynlig i tre sekunder. Overlays gatar ändå sitt första frame på
+   `fontsReady()` i bus.js. */
+@font-face{
+  font-family:'Montserrat';
+  font-style:normal;
+  font-weight:100 900;
+  font-display:swap;
+  src:url('fonts/montserrat-latin-ext.woff2') format('woff2');
+  unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+                U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF,
+                U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face{
+  font-family:'Montserrat';
+  font-style:normal;
+  font-weight:100 900;
+  font-display:swap;
+  src:url('fonts/montserrat-latin.woff2') format('woff2');
+  unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+                U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+                U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 :root{
   /* ── Standardstorlek ────────────────────────────────────────────────────
      Alla overlays ritar 200 px hoga vid skala 1,0. Det ar HELA poangen med
@@ -49,7 +93,7 @@
      Allt panel-eget prefixas --ui- så det aldrig krockar med ett col-<token>
      i registry.json (som skriver rakt på --<token>). */
   --app-bg:    #0b0d0c;                  /* panelens basbakgrund                  */
-  --rail-bg:   #070908;                  /* vänster ikonrad (aning mörkare)       */
+  --rail-bg:   #070908;                  /* vänster ikonlist (aning mörkare)      */
 
   /* Panelens RÖDA är ordbildens röda — exakt #A41F1F, samma värde som fyller varje
      path i simmatrix-logo.svg. Poängen är att appen bara ska ha EN röd: står loggan
@@ -58,22 +102,59 @@
      Blanda inte ihop den med --rail (#D10404), som är OVERLAYERNAS brand-rail och
      dessutom ställbar per overlay via col-rail. Panelens chrome rör aldrig den. */
   --ui-brand:  #A41F1F;
+  /* Ljus tint av SAMMA röda, för det som ska LÄSAS mot en tonad brandyta: en ikon i
+     #A41F1F på en 12 %-tonad #A41F1F-platta försvinner (kontrast ~1,4:1), och att
+     lösa det med vit ikon hade tagit bort just den färgsignal plattan finns för.
+     Det är fortfarande EN röd i panelen (§4) — en tint är inte en andra kulör. */
+  --ui-brand-lt: #E0857F;
+  /* Brandytan under en aktiv flik. Tonad och inte fylld: en helfylld #A41F1F-ruta i
+     en 60 px list läser som en varningsknapp, inte som "du är här". */
+  --ui-brand-fill: linear-gradient(180deg, rgba(164,31,31,0.30), rgba(164,31,31,0.13));
   --sel:       rgba(255,255,255,0.06);   /* vald/aktiv rad eller flik             */
   --hover:     rgba(255,255,255,0.04);   /* hover på rad/flik                     */
-  --ctrl:      rgba(255,255,255,0.06);   /* knappyta                              */
   --ctrl-hi:   rgba(255,255,255,0.11);   /* knapp hover                           */
+  /* Här stod också --ctrl (knappyta, samma värde som --sel). Ingen regel läste den
+     — tokens är enda sanningskällan, och en variabel som ingen använder gör den
+     källan otillförlitlig: nästa person tror att den styr något och ändrar den. */
 
-  /* Ytor i tre djup. Skillnaden mellan stegen är avsiktligt LITEN (3–5 i
-     luminans): panelen ska läsas som ett stycke maskinerat metall, inte som
-     staplade fönster. Djupet kommer från kant + sheen, inte från kontrast. */
-  --ui-surf:    #101312;                 /* kort/kolumn: ett steg över app-bg     */
-  --ui-surf-hi: #161918;                 /* samma yta upphöjd (hover)             */
+  /* FYRA ytdjup, uppifrån och ner. Skillnaden mellan stegen är avsiktligt LITEN
+     (3–5 i luminans): panelen ska läsas som ett stycke maskinerat metall, inte som
+     staplade fönster. Djupet kommer från kant + sheen, inte från kontrast.
+       --ui-surf-hi  hovrad/vald yta            (ljusast)
+       --ui-card     kort, se nedan             ett steg över --app-bg
+       --ui-stage    förhandsvisningen          ett steg under --app-bg
+       --ui-inset    reglagespår, fält, väljare (mörkast)
+     Riktningen är informationsbärande: över panelen = något man rör vid, under
+     panelen = något man tittar in i eller trycker ner. */
+  --ui-surf-hi: #161918;                 /* kortyta upphöjd (hover / vald rad)    */
   --ui-inset:   #060807;                 /* nedsänkt: reglagespår, fält, väljare  */
-  /* Korten (customization-rutorna) ligger ETT steg under app-bg, inte över — de
-     ska läsas som ingrävda i panelen, inte som skivor staplade ovanpå den. Skillnaden
-     mot --app-bg är avsiktligt liten (samma "3–5 i luminans"-regel som ovan), annars
-     blir intrycket ett hål i stället för en mjuk fördjupning. */
-  --ui-card:    #08090a;                 /* kortyta: ett steg under app-bg        */
+  /* Korten låg fram till nu ETT steg UNDER app-bg (#08090a), motiverat med att de
+     skulle läsas som ingrävda. Det gjorde två saker fel på samma gång.
+     Dels hamnade korten i samma djup som FÖRHANDSVISNINGEN, som också var mörkare
+     och också hade recess-skugga — och de två är inte samma sorts sak. Previewn är
+     ett HÅL man tittar genom; kortet är en YTA man rör vid. När båda är urgröpta ur
+     panelen blir hela högerkolumnen ett grumligt fält utan hierarki.
+     Dels ligger själva kontrollerna (reglagespår, fält, väljare) på --ui-inset, som
+     är ännu mörkare — ett nedsänkt fält i ett nedsänkt kort har ingenstans att ta
+     vägen, och skåran syntes bara som ännu ett svart på svart.
+     Nu: previewn ligger under app-bg, kortet ETT STEG ÖVER. Samma lilla luminanssteg
+     som förut, men åt rätt håll, och riktningarna berättar vad sakerna är. */
+  --ui-card:    #101312;                 /* kortyta: ett steg över app-bg         */
+  /* Förhandsvisningens inre yta: ett steg UNDER app-bg. Rutan stod tidigare på
+     --plot (#141613), vilket är LJUSARE än panelen — den läste alltså som en skiva
+     ovanpå och behövde en slagskugga för att se ut att höra hemma någonstans.
+     Fel på två sätt: --plot är dessutom en OVERLAY-token (grafrutans yta inne i en
+     overlay), och panelens chrome ska aldrig läsa overlayspråket — det är hela
+     skälet till --ui-prefixet (§4).
+     Mörkare än panelen behöver ingen skugga alls för att läsas som en urgröpning. */
+  --ui-stage:   #08090a;                 /* previewrutans yta: ett steg under bg  */
+  /* Kortets enda djup. INGEN yttre slagskugga: kortet ligger direkt på panelen och
+     fyller hela dess bredd, och en 20 px suddig skugga under något som går kant i
+     kant med sin behållare ser ut som ett renderingsfel, inte som djup.
+     En ljus rad överst (ljuset kommer uppifrån) och en mycket svag skuggning i
+     underkanten räcker för att kortet ska ha tjocklek. */
+  --ui-card-in: inset 0 1px 0 rgba(255,255,255,0.032),
+                inset 0 -8px 16px rgba(0,0,0,0.22);
 
   /* Linjer i tre vikter. hair delar innehåll INNE i en yta, edge ramar in en liten
      kontroll, edge-dk ramar in en BEHÅLLARE.
@@ -92,15 +173,26 @@
      Därför ligger den ljusa raden överst på något som skjuter upp ur panelen och
      underst på något som är urgröpt ur den — det är den enda skillnaden mellan de
      två, och den räcker för att ögat ska läsa rätt håll utan en enda gradient till.
-     raise  = kort och menyer som ligger PÅ panelen
-     recess = ytor som är URGRÄVDA ur den (förhandsvisningen, väljare)
+     raise  = MENYER OCH FLYTANDE LAGER (bakgrundsväljaren, tooltipen, toasten)
+     recess = ytor som är URGRÄVDA ur panelen (reglagespår, fält, väljare)
      lip    = hårfin ljusfångst i UNDERkanten. Den ger en behållare tjocklek i
-              stället för bara en kontur, och används av båda. */
-  --ui-raise:  inset 0 1px 0 rgba(255,255,255,0.055),
-               0 8px 20px rgba(0,0,0,0.34);
-  --ui-recess: inset 0 2px 6px rgba(0,0,0,0.55),
-               inset 0 -1px 0 rgba(255,255,255,0.030);
-  --ui-lip:    0 1px 0 rgba(255,255,255,0.032);
+              stället för bara en kontur.
+
+     ALLA TRE ÄR DÄMPADE mot vad de var. Skälet är värt att spara, för det är lätt
+     att göra om: varje enskild skugga här var försvarbar, men de låg på kort OCH
+     preview OCH varje liten knapp OCH varje fält samtidigt, och summan läste som
+     ett gränssnitt som försöker övertyga någon om att det är tredimensionellt.
+     Regeln som gäller nu: en yttre slagskugga betyder att elementet FLYTTAR SIG i
+     z-led — en meny som fälls ut, en tooltip, en toast. Ett kort som ligger stilla
+     i sitt flöde får inte en. Behöver något djup ändå: kant och sheen, inte oskärpa.
+     `raise` har därför bytt roll (den satt tidigare på korten också) och tappat
+     nästan en tredjedel av sin styrka; `recess` gick från 0,55/6 px till 0,42/5 px,
+     vilket räcker för att en skåra ska läsas utan att fältet ser sotigt ut. */
+  --ui-raise:  inset 0 1px 0 rgba(255,255,255,0.05),
+               0 6px 16px rgba(0,0,0,0.24);
+  --ui-recess: inset 0 2px 5px rgba(0,0,0,0.42),
+               inset 0 -1px 0 rgba(255,255,255,0.026);
+  --ui-lip:    0 1px 0 rgba(255,255,255,0.030);
 
   /* Fokusring. Medvetet AMBER och inte grön: i panelen betyder grönt "på"
      (PÅ-texten i listan, påslagna reglage), så en grön ring hade läst som ett
@@ -134,7 +226,11 @@
      blev för lång. Ändrar du remsan, ändra detta. */
   --ui-scrollbar: 12px;
 
-  --ui-lift:  0 10px 26px rgba(0,0,0,0.42);
+  /* Slagskuggan för det som VERKLIGEN svävar — en utfälld meny, en tooltip, en
+     toast. Den satt tidigare även på förhandsvisningen, som inte svävar över något
+     alls, och det var den skuggan man såg som en mörk bård längs rutans kanter.
+     Dämpad från 0 10px 26px / 0,42. */
+  --ui-lift:  0 8px 20px rgba(0,0,0,0.30);
   --ui-sheen: inset 0 1px 0 rgba(255,255,255,0.045);
 
   /* delta-cirkelns grågröna kupolyta (topp → botten) */
@@ -160,7 +256,9 @@
   --glass: none;
 
   /* ── Typografi ── */
-  --font: 'Montserrat', system-ui, sans-serif;   /* 500 / 600 (primär) / 700 */
+  /* Vendorerad ovan — ingen nätverkshämtning, inget fallback-frame. Fallbacken
+     står kvar för en trasig installation, inte som normalfall. */
+  --font: 'Montserrat', system-ui, sans-serif;   /* variabel: 100–900 tillgängligt */
 }
 
 /* Harled de svagare skuggorna ur --shadow sa att col-shadow styr ALLA lager, med

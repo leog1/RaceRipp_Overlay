@@ -120,15 +120,30 @@ utlöser något `input`.
 därifrån — prefixet finns för att ett `col-<token>` i registret skriver rakt på
 `--<token>` (§4) och aldrig ska kunna råka träffa panelens värden. Panelen har en egen
 liten uppsättning regler som är värda att kunna innan man ändrar i den:
-- **Djup kommer av kant + sheen, inte av kontrast.** Stegen mellan `--ui-surf`,
-  `--ui-surf-hi` och `--app-bg` är små med flit. Kanten på en BEHÅLLARE är mörk
-  (`--ui-edge-dk`), kanten på en liten KONTROLL är ljus (`--ui-edge`): en ljus kant
-  säger "den här ytan fångar ljus", en mörk säger "här slutar materialet". En stor
-  ruta med ljusgrå kant flyter ovanpå panelen som ett klistermärke. Tre färdiga
-  recept finns — `--ui-raise` (ligger på panelen), `--ui-recess` (urgröpt ur den) och
-  `--ui-lip` (ljusfångst i underkanten, ger tjocklek i stället för kontur). Alla utgår
-  från att **ljuset kommer uppifrån**; det är den enda regeln som avgör om den ljusa
-  raden ska ligga överst eller underst.
+- **Djup kommer av kant + sheen, inte av kontrast.** Stegen mellan ytorna är små med
+  flit. Kanten på en BEHÅLLARE är mörk (`--ui-edge-dk`), kanten på en liten KONTROLL
+  är ljus (`--ui-edge`): en ljus kant säger "den här ytan fångar ljus", en mörk säger
+  "här slutar materialet". Recepten — `--ui-raise`, `--ui-recess`, `--ui-lip`,
+  `--ui-card-in` — utgår alla från att **ljuset kommer uppifrån**; det är den enda
+  regeln som avgör om den ljusa raden ska ligga överst eller underst.
+- **Ytornas RIKTNING bär betydelse (omgjort i 0.4.7).** Fyra djup:
+  `--ui-surf-hi` (hovrad/vald rad) · `--ui-card` **ett steg ÖVER** `--app-bg` ·
+  `--ui-stage` (förhandsvisningen) **ett steg UNDER** · `--ui-inset` (spår och fält,
+  mörkast). Över panelen = något man RÖR VID, under = något man TITTAR IN I eller
+  trycker ner. Fram till 0.4.6 låg korten på #08090a, alltså under panelen och med
+  samma `--ui-recess` som previewn — rutan man BEDÖMER och rutan man STÄLLER IN såg
+  då likadana ut och högerkolumnen blev ett grumligt fält utan hierarki. Dessutom
+  ligger kontrollerna på `--ui-inset`: ett nedsänkt fält i ett nedsänkt kort har
+  ingenstans att ta vägen, och reglagespåren syntes som svart på svart.
+- **En yttre slagskugga betyder att elementet FLYTTAR SIG i z-led.** Alltså: menyer,
+  tooltips, toasten. Ett kort eller en förhandsvisning som ligger stilla i sitt flöde
+  får ingen — och särskilt inte ett kort som går kant i kant med sin behållare, där
+  en suddig skugga under kanten läser som ett renderingsfel. Previewn bar tidigare
+  `--ui-lift` UNDER sig och ett heltäckande `::after` med `--ui-recess` ÖVER sig;
+  summan var en mörk bård runt rutan och en sotig rand tvärs över själva overlayn
+  man satt och bedömde. Samtliga recept är dessutom dämpade i 0.4.7 (`--ui-lift`
+  0,42 → 0,30, `--ui-raise` 0,34 → 0,24, `--ui-recess` 0,55/6 px → 0,42/5 px).
+  **Behöver något djup: kant och sheen, inte oskärpa.**
 - **Glow är en signal, inte en yta.** Panelen hade lysande halon på brandbaren,
   flikmarkören, rubrikstrecken, varje påslagen växlare och varje aktiv knapp. Var och
   en försvarbar, allihop tillsammans = amatörmässigt, och det var det första
@@ -175,6 +190,26 @@ liten uppsättning regler som är värda att kunna innan man ändrar i den:
 - **Grönt betyder "på" i panelen** (PÅ-brickan, påslagna växlare). Därför är
   fokusringen amber och reglagens fyllnad neutralt vit — ett halvdraget reglage är
   inget tillstånd.
+- **Vänsterlisten är en REN IKONLIST på 60 px (0.4.7).** Inga etiketter; namnet
+  kommer i en tooltip vid hover/fokus. Aktiv flik = 40×40 bricka i `--ui-brand-fill`
+  med ikonen i `--ui-brand-lt` (en ljus tint av samma röda — en tint är inte en
+  andra kulör). Etiketterna sprängde listen två gånger (§8.4h) och tvingade fram
+  fliknamn valda efter pixelbredd i stället för efter betydelse. **Ett fliknamn är
+  därför inte längre bundet av listens bredd** — tooltipen växer fritt åt höger, och
+  fliken som fick heta "Allmänt" heter "Inställningar" igen.
+  Tooltip-spannet (`.nav .tip`) är RIKTIG text i DOM:en, inte ett `title`-attribut:
+  det ger knappen dess tillgängliga namn (annars är fem knappar namnlösa för en
+  skärmläsare) och Windows ritar inte sitt eget verktygstips ovanpå vårt.
+- **Titelraden bär ordbilden ensam och statusen som brickor.** "CONTROL" som stod
+  bredvid ordbilden är borta — appen har ett enda fönster, så etiketten skilde inte
+  den här vyn från någon annan. Ordbilden är 20 px hög och inte 16: den är ritad
+  459×55 med en ljus kontur per bokstav, och vid 16 px hamnar konturen under en
+  pixel så bokstävernas hål sluts (mätt genom att rendera 16/18/20/22/24 bredvid
+  varandra). Motor-/Broadcastingstatusen är tonade brickor vars YTA bär tillståndet
+  — en 6 px prick är för lite yta för något man ska se i ögonvrån. **Offline är
+  medvetet neutralt**, inte en röd bricka: en röd yta vid varje kallstart läser som
+  ett fel, och att motorn inte hunnit upp är inget fel. Tillståndsklassen sitter på
+  brickan och inte på pricken, för `:has()` finns först i Chromium 105.
 - Reglagen är egenritade (`::-webkit-slider-*`); `accent-color` ger systemets. Den
   fyllda delen ritas som en gradient med brytpunkten i `--p`, som `paintRange()` i
   panelen sätter. En delegerad `input`-lyssnare täcker alla reglage, även de som byggs
@@ -318,6 +353,25 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   arbetet, och där är `set_size` i praktiken en no-op — själva OMRÄKNINGEN är alltså
   aldrig körd skarpt. Testa på en 4K-skärm (200 % → ska bli 1440×900; 100 % → 2880×1800)
   och på en 1366×768-laptop (ska klampas till golvet 960×600, inte hamna utanför).
+- **0.4.7:s designomgång i den riktiga appen.** Ikonlisten med tooltips, kortens nya
+  yta och riktning, borttagna skuggor runt preview och kort, ordbilden 20 px,
+  statusbrickorna, borttagen "CONTROL"-etikett och borttagen railprick.
+  Verifierat genom att rendera panelen i Chrome headless mot en Tauri-stub i
+  1440×900 / 1100×900 / 960×600 och MÄTA: preview och kort ligger på exakt samma
+  x och bredd i alla tre (1060/720/580 px), ingen vågrät skroll någonstans,
+  `--ui-card` = rgb(16,19,18), `--ui-stage` = rgb(8,9,10), previewns `box-shadow`
+  är `none`. Tooltipen och den aktiva flikbrickan är sedda i skärmdump. Alla fem
+  flikarna renderade. **Men ingenting är sett i den riktiga appen** — stubben har
+  ingen fönsterhantering, så att titelraden fortfarande går att DRA i (ordbilden har
+  `pointer-events:none`, brickorna `data-tauri-drag-region="deep"`, §8.4i) och att
+  `#bcRow`:s felmeddelande syns som tooltip går inte att bevisa där. Testa båda.
+- **Att Montserrat verkligen laddas i WebView2 och i OBS.** Vendoreringen är
+  verifierad i Chrome: `document.fonts.check` sant för 500/600/700/800, båda
+  `@font-face`-blocken `loaded`, och Åäö + ŁŚČğ ritas ur rätt block. Delta-baren
+  renderad över HTTP visar Montserrat i "DELTA"/"P.SESSION BEST"/"PREDICTED".
+  WebView2 är Chromium och bör bete sig likadant, men det är inte kört där, och
+  OBS-vägen (motorns `http_static.py` med den nya `.woff2`-mappningen) är bara
+  testad mot Pythons egen `http.server`, inte mot vår handler i drift.
 - **0.4.6:s panelomgång i drift.** Motor-/Broadcastingstatusen flyttad till
   titelraden, två nya flikar (Layout, Allmänt) som ännu är tomma skal, och de tre
   inställningskorten sammanslagna till ett med avdelarrubriker. Verifierat genom att
@@ -645,11 +699,16 @@ overlay vald — och det är precis det som gör dem dyra.
 **Samma fälla slog till igen i 0.4.6**, nu med en FLIKETIKETT. Den nya kugghjuls-
 fliken hette först "Inställningar": versalt "INSTÄLLNINGAR" är ~95 px vid 10 px med
 0,9 px spärr, och listen har 72 px innanför sin padding. Etiketten rann ut på båda
-sidor om listen. `min-width:0` skyddar numera panelen från att FLYTTA sig, men det
-gör bara felet snyggare — texten spiller fortfarande. Fliken heter därför "Allmänt"
-(~56 px) medan panens rubrik får heta "Inställningar", för den sitter i en 1000 px
-bred vy. **Räkna bredden på railetiketten innan du döper en ny flik**, och kom ihåg
-att ~7 tecken är taket.
+sidor om listen. `min-width:0` skyddar panelen från att FLYTTA sig, men det gör bara
+felet snyggare — texten spillde fortfarande. Fliken fick därför heta "Allmänt".
+
+**0.4.7 tog bort etiketterna helt** och därmed hela den här fällan: listen är en ren
+ikonlist på 60 px och fliknamnet står i en tooltip (§4). När man två gånger har fått
+välja ord efter hur många pixlar de tar är det inte ordet som är fel — det är att
+etiketten står där. Fliken heter "Inställningar" igen.
+`min-width:0` står kvar på `.rail`: regeln gäller varje flexbarn vars bredd är ett
+designbeslut, och det finns ingen anledning att vänta på att något obrytbart flyttar
+in i listen igen.
 
 ### 8.4i `data-tauri-drag-region` gäller BARA direkta klick
 Titelraden är egen (`decorations:false`), och `.titlebar` bär `data-tauri-drag-region`.
@@ -1134,10 +1193,19 @@ fungerar på både legacy (12–13) och nya (14–16), så `Bus.start()` är ver
 Handlern tar **ett** argument (`ws`), inte `(ws, path)`.
 
 ### 8.10 Öppna frågor / medvetna skulder
-- **Fonten hämtas från Google Fonts** i alla tre HTML-filerna. `fontsReady()` gör att
-  starten inte hänger utan nät, men en offline-rigg ritar i fallback-font och
-  designen bryts. Rätt fix: vendorera Montserrat WOFF2 till `src/shared/fonts/`
-  och lägga in `@font-face`. Kräver binärfilerna.
+- ~~Fonten hämtas från Google Fonts.~~ **LÖST i 0.4.7.** Montserrat ligger nu i
+  `src/shared/fonts/` som **variabla** woff2 (latin + latin-ext), med `@font-face`
+  i `tokens.css` — alltså en enda fil per unicode-block för hela viktskalan 100–900,
+  och `wght`-raden är därför ett intervall och inte ett tal. Alla tre HTML-filerna
+  importerar redan tokens, så `<link>`-raderna till Google kunde tas bort rakt av.
+  Latin-ext ingår för att förarnamn ur Broadcasting-entry list är polska, tjeckiska
+  och turkiska lika ofta som svenska. Licens: SIL OFL 1.1, fri att bunta i ett
+  MIT-projekt. `http_static.py` mappar `.woff2` explicit — Pythons `mimetypes` känner
+  den inte (kontrollerat: `guess_type` ger `None`), och en OBS-källa som ritar i fel
+  font för att servern ljuger om innehållet är svår att hitta.
+  Panelen sätter dessutom `font-family:inherit` på `button,input,select,textarea` en
+  gång globalt: formulärkontroller ärver inte typsnitt, så varje ny kontroll som
+  glömde sin egen `font:inherit` ritades i Segoe UI mitt bland Montserrat.
 - `dist/` och `build/` (PyInstaller-output, ~140 MB) låg committade i historiken fram
   till 2026-07-27 och är nu avspårade + gitignorerade. Blobbarna finns kvar i äldre
   commits; en `git filter-repo` + force-push krävs för att verkligen ta bort dem.

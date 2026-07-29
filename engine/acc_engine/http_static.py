@@ -23,5 +23,18 @@ class _Server(http.server.ThreadingHTTPServer):
 
 
 class _Quiet(http.server.SimpleHTTPRequestHandler):
+    # Montserrat vendoreras sedan 0.4.7 i src/shared/fonts/, alltså serveras den
+    # HÄRIFRÅN till OBS i stället för från Google Fonts. Pythons mimetypes känner
+    # inte .woff2 (kontrollerat: guess_type ger None), och SimpleHTTPRequestHandler
+    # faller då tillbaka på application/octet-stream. Webbläsare laddar visserligen
+    # ett typsnitt även med den typen — @font-face gör ingen strikt MIME-kontroll,
+    # till skillnad från CSS och moduler — men en OBS-källa som ritar i fel font för
+    # att servern ljuger om innehållet är precis den sortens fel man aldrig hittar.
+    extensions_map = {
+        **http.server.SimpleHTTPRequestHandler.extensions_map,
+        ".woff2": "font/woff2",
+        ".woff": "font/woff",
+    }
+
     def log_message(self, *a):  # tyst
         pass
