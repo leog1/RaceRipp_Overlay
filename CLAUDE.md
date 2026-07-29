@@ -38,6 +38,35 @@ känner inte till en enda overlay vid namn. `type` får utelämnas och betyder d
 Rust validerar värdet mot schemat innan det sparas eller skickas (§8.3b).
 `hz` i registret sätter overlayns rendertakt (§8.5).
 
+**`presets` i registret följer samma regel** (nytt i 0.4.8). En preset är ett sparat
+UTSEENDE — `scale`, `opacity` och de `options` den nämner:
+```json
+"presets": [{ "id": "natt", "label": "Natt", "opacity": 0.8,
+              "options": { "col-green": "#0DE622" } }]
+```
+Fyra saker som är avsiktliga och lätta att råka bryta:
+- **Presetten är PARTIELL.** Fält den inte nämner lämnas ORÖRDA. `sanitize_preset`
+  får därför INTE anropa `sanitize_options`, som fyller i registrets standardvärden —
+  då hade en färgpreset tyst nollställt varje annat alternativ i samma overlay.
+  Det finns ett test som faller på precis den förväxlingen.
+- **`scale` bör utelämnas i en INBYGGD preset.** Skalan är monitorberoende, och en
+  färgpreset som samtidigt tvingar 1,2× på någon som kört in sin layout är
+  påträngande. En preset man sparar SJÄLV fångar däremot allt, för då är det just den
+  kombinationen man vill tillbaka till.
+- **Position och av/på ingår inte.** Position är layout, inte utseende; och en preset
+  ska aldrig kunna släcka en overlay man just tänt.
+- **Inbyggda i `registry.json`, egna i `settings.json`** (`presets`-kartan, per
+  overlay-id). Skälet är att en inbyggd ska finnas på en NY installation — en fil i
+  app-config-mappen följer per definition inte med en nedladdning. Egna presets ligger
+  utanför `OverlayState` med flit, så de överlever `reset_overlay`: "nollställ
+  utseendet" ska inte kasta de utseenden man sparat.
+  Vill du BEFORDRA en egen preset till inbyggd: kopiera objektet ur `settings.json`
+  in i `presets` i registret. `list_presets` returnerar hela värdet, så panelen kan
+  visa det som ska klistras in.
+- Registret har tre TOMMA platshållare per overlay. Panelen visar dem streckade och
+  oklickbara. Att i stället dölja dem hade gjort att platserna såg ut att inte finnas
+  förrän de fylldes — och då vet man inte att de går att fylla.
+
 Faktisk processkedja i drift (mätt) — se §8.1, den är inte självklar:
 ```
 acc-overlay.exe → acc-engine.exe (PyInstaller-bootloader) → acc-engine.exe (motorn, äger portarna)
@@ -155,6 +184,26 @@ liten uppsättning regler som är värda att kunna innan man ändrar i den:
   overlay. Två röda intill varandra läser som två varumärken. Undantaget är
   `--red` (#FF3B3B) på motorstatusens offline-prick, som är en SIGNALfärg (§4:
   färg = betydelse), inte varumärke.
+  Rött används numera BARA på varumärkesbärande ytor: brandbaren, den aktiva
+  flikbrickan och ordbilden. `.subhead`-staplarna inne i kortet är **amber** sedan
+  0.4.8 — de sitter tre gånger i samma kort, där ordbildens färg inte identifierar
+  något, och amber är redan appens highlightfärg.
+- **Brandbaren är TVÅ linjer à 1 px: röd överst, vit (`--ink`) under (0.4.8).**
+  Summan är samma 2 px som den enkla linjen förut, alltså ingen layoutändring. Två
+  tunna linjer i olika kulör läser som en rand på en bilsida; en enda 2 px-linje
+  läser bara som "här slutar titelraden". Vitt är dessutom redan ordbildens andra
+  färg (konturen runt varje bokstav), så paret upprepar loggan i stället för att
+  införa något nytt. Gör dem inte 2 px var — då blir det en 4 px bård som
+  konkurrerar med titelraden.
+- **Kanterna är dämpade (0.4.8): `--ui-edge-dk` 0,66 → 0,45.** Den mörka kanten satt
+  på kortet, listen, listkolumnen, menyerna, verktygsblocket och varje liten knapp
+  samtidigt, och en nästan svart 1 px-linje mot en yta som bara är några
+  luminanssteg ljusare tecknar hårdare än den ska — konturerna lästes före
+  innehållet. Kanten ska säga "här slutar materialet", inte rita en ram.
+  Kortet har i stället `--ui-card-wash`, en ljusvask på 2,2 % över övre dryga
+  tredjedelen. **Den ska förbli precis på gränsen till omärklig:** en gradient man
+  KAN SE på ett kort blir en gradient man ser åtta gånger när kortet har åtta rader,
+  och då läser ytan som blank plast i stället för som material.
 - **4-punktsraster.** Alla mått i panelen — padding, gap, radhöjd (`--ui-row-h`),
   radie, ikonstorlek, listbredd — är multiplar av 4. Typskalan har inga halvpixlar
   (12,5 px renderades som 12 på en skärm och 13 på nästa). Behöver du ett mellanting:
@@ -200,6 +249,23 @@ liten uppsättning regler som är värda att kunna innan man ändrar i den:
   Tooltip-spannet (`.nav .tip`) är RIKTIG text i DOM:en, inte ett `title`-attribut:
   det ger knappen dess tillgängliga namn (annars är fem knappar namnlösa för en
   skärmläsare) och Windows ritar inte sitt eget verktygstips ovanpå vårt.
+- **Presetraden ligger MELLAN förhandsvisningen och kortet (0.4.8).** Inte godtyckligt:
+  en preset är en genväg till hela kortets innehåll, så den hör ovanför det den
+  skriver — inte nere bland de reglage den skriver över. Den är syskon till
+  `.controls` (som äger skrollen, §8.4f), så den står kvar bredvid previewn där man
+  ser effekten. Ingen egen kortyta och ingen kant: raden är en KONTROLL för kortet
+  under, och med ram och bakgrund läser vyn som tre staplade lådor.
+  Etiketten heter **PRESET och inte UTSEENDE** — kortet under har redan en
+  avdelarrubrik med det ordet, och samma ord två gånger för två olika omfattningar
+  läser som att det ena är rubrik för det andra.
+  **Aktiv preset RÄKNAS UT** ur nuvarande värden (`presetMatches`), den lagras inte
+  som "senast valda". Rör man ett reglage efter att ha valt en preset stämmer en
+  lagring inte längre, och en markör som ljuger är värre än ingen markör — med
+  uträkning släcks den av sig själv. Markören är amber: grönt betyder "på" i panelen
+  och en preset är inget tillstånd man slår på. `markActivePreset()` togglar BARA
+  klassen och bygger inte om DOM:en; den anropas även 60 ggr/s medan man drar ett
+  reglage, och en ombyggnad hade dödat hover (×-knappen försvinner under pekaren)
+  och startat om chipsens sidoskroll.
 - **Titelraden bär ordbilden ensam och statusen som brickor.** "CONTROL" som stod
   bredvid ordbilden är borta — appen har ett enda fönster, så etiketten skilde inte
   den här vyn från någon annan. Ordbilden är 20 px hög och inte 16: den är ritad
@@ -353,6 +419,19 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   arbetet, och där är `set_size` i praktiken en no-op — själva OMRÄKNINGEN är alltså
   aldrig körd skarpt. Testa på en 4K-skärm (200 % → ska bli 1440×900; 100 % → 2880×1800)
   och på en 1366×768-laptop (ska klampas till golvet 960×600, inte hamna utanför).
+- **0.4.8:s presetsystem i drift.** Rustsidan är täckt av fyra enhetstester som var
+  och en är körd mot en MEDVETET trasig variant och faller där (partiell preset som
+  fyller i defaults, ingen optionsvalidering, ingen finite-kontroll på skala, ingen
+  fallback på tomt slug) — den vägen är alltså bevisad, inte bara grön.
+  Panelens fem tillstånd är mätta i skärmdump: tom platshållare (streckad), egen
+  preset, aktiv preset (amber), bekräfta-borttagning och sparfältet.
+  **Men ingen har klickat i den riktiga appen.** Tre saker stubben inte kan bevisa:
+  att `apply_preset` verkligen ändrar overlay-FÖNSTRETS storlek när presetten bär en
+  skala (koden gör samma sak som `reset_overlay`, men det är otestat), att en sparad
+  preset finns kvar efter omstart, och att `save_preset` skriver över i stället för
+  att skapa en tvilling när man återanvänder ett namn.
+  Notera också att de tre inbyggda platshållarna är TOMMA — de gör ingenting förrän
+  någon fyller dem i registret, och det är meningen.
 - **0.4.7:s designomgång i den riktiga appen.** Ikonlisten med tooltips, kortens nya
   yta och riktning, borttagna skuggor runt preview och kort, ordbilden 20 px,
   statusbrickorna, borttagen "CONTROL"-etikett och borttagen railprick.
@@ -649,6 +728,16 @@ harmlös förenkling och tar bort hela poängen. Referens/Om har ingen preview o
 skrollar som vanligt — det är därför reglerna är per pane och inte på `.pane`.
 
 Två saker som inte syns i vare sig `cargo check`, CSS-validering eller något test:
+
+**Den första av de två slog till en TREDJE gång i 0.4.8**, på presetradens
+sparaknapp: `.pb-btn{display:flex}` utan en `[hidden]`-regel, så `btn.hidden = true`
+gjorde ingenting och knappen låg kvar bakom textfältet som skulle ersätta den. Att
+felet var dokumenterat räckte alltså inte — regeln måste stå i CSS:en, inte i
+huvudet. **Skriv `.klass[hidden]{display:none}` i samma andetag som `display`**, varje
+gång, även när elementet "aldrig" ska döljas: nästa person som lägger till ett
+växlande tillstånd hittar den inte annars. Felet är osynligt i CSS-validering, i
+`cargo check` och i varje test som inte tittar på pixlar — JS:en är rätt, attributet
+sätts, ingenting händer.
 
 - **Ett `hidden`-attribut som en display-regel slår ut.** Broadcasting-raden i
   vänsterlisten är `<div class="motor" id="bcRow" hidden>`, och `.motor{display:flex}`

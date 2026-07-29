@@ -71,14 +71,15 @@ body{font-family:var(--font);color:var(--ink);
    matchar bara DIREKTA klick på .titlebar (§8.4i), så varje barn i raden är annars
    en död yta. */
 .titlebar .tb-logo{display:flex;align-items:center;padding:0 4px 0 16px;pointer-events:none;}
-/* 20 px och inte 16. Ordbilden är ritad 459×55 med en ljus kontur runt varje
-   bokstav, och vid 16 px (0,29× av originalet) hamnar den konturen under en pixel:
-   bokstävernas inre hål slöts, M och A gick ihop och hela märket blev en röd
-   suddig klump — mätt genom att rendera 16/18/20/22/24 px bredvid varandra, inte
-   uppskattat. Vid 20 px öppnar sig hålen. Höjden ryms med 8 px luft över och under
-   i en 36 px titelrad, vilket är samma proportion som Windows egna appar ger sin
-   ikon. Vill man ha den mindre måste ordbilden ritas om med grövre kontur. */
-.titlebar .tb-logo img{height:20px;width:auto;display:block;}
+/* 17 px — en avvägning mellan två fel, inte ett optimum.
+   Ordbilden är ritad 459×55 med en ljus kontur runt varje bokstav. Vid 16 px
+   (0,29× av originalet) hamnar konturen under en pixel: bokstävernas inre hål
+   slöts och märket blev en röd suddig klump. Vid 20 px öppnar hålen sig, men
+   märket blir 167 px brett och tar över en titelrad som bara är 36 px hög —
+   det var för dominant. 17 px ger 142 px bredd och behåller det mesta av
+   läsbarheten. Vill man ha den mindre än så måste ordbilden ritas om med grövre
+   kontur; det är ritningen som sätter golvet, inte den här raden. */
+.titlebar .tb-logo img{height:17px;width:auto;display:block;}
 .titlebar .tb-drag{flex:1 1 auto;align-self:stretch;}
 /* Motor-/Broadcastingstatus, i titelraden sedan 0.4.6. Nu som BRICKOR med egen yta
    och kant i stället för lös prick + text. Skälet är att de två raderna annars
@@ -139,7 +140,17 @@ body.maximized .tb-btn .ico-max{display:none;}
    dessutom vad varenda seriöst verktyg gör med sin accentlinje.
    Ingen glow: en lysande röd linje tvärs fönstret drar blicken hela tiden, och den
    här linjen har inget att berätta — den identifierar bara appen. */
-.brandbar{height:2px;flex:0 0 auto;background:var(--ui-brand);}
+/* TVÅ linjer à 1 px i stället för en à 2: röd överst, vit under. Det är ett
+   liveryband, inte en avdelare — två tunna linjer i olika kulör läser som en rand
+   på en bilsida, medan en enda 2 px-linje bara läser som "här slutar titelraden".
+   Vitt är dessutom redan ordbildens andra färg (konturen runt varje bokstav), så
+   paret upprepar loggan i stället för att införa något nytt.
+   Höjden måste vara 1 px per linje och inte 2: summan blir då samma 2 px som förut,
+   alltså ingen layoutändring — och två 2 px-linjer hade blivit en 4 px bård som
+   konkurrerar med titelraden ovanför.
+   Ingen glow på någondera: linjerna identifierar appen, de har inget att larma om. */
+.brandbar{height:1px;flex:0 0 auto;background:var(--ui-brand);}
+.brandbar.alt{background:var(--ink);}
 
 /* trepanelslayout */
 .app{flex:1 1 auto;display:flex;min-height:0;}
@@ -427,6 +438,89 @@ body.maximized .tb-btn .ico-max{display:none;}
    bokstäverna och ordbilden ÄR redan varumärket. */
 .titleband h2.wordmark::after{display:none;}
 
+/* ── presetrad ───────────────────────────────────────────────────────────────
+   Samma 20 px vågrätt som #previewBox och .controls, annars bryter den den enda
+   lodräta linjen hela högerkolumnen håller (§4).
+   Ingen egen kortyta och ingen kant: raden är en KONTROLL för kortet under, inte
+   ett tredje block. Ger man den ram och bakgrund läser vyn som tre staplade lådor
+   i stället för som en preview med sina inställningar. */
+.presetbar{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:16px 20px 0;min-width:0;}
+.pb-label{flex:0 0 auto;font-size:var(--ui-fs-sm);font-weight:700;letter-spacing:1.4px;
+  text-transform:uppercase;color:var(--dim);}
+/* Chipsen skrollar i sidled i stället för att radbryta: presetraden har en fast höjd
+   som layouten under räknar med, och en rad som växer till två knuffar kortet neråt
+   varje gång man sparar en preset till. Skrollbaren döljs — det finns fem synliga
+   chips och kanten klipper synligt, vilket räcker som affordans. */
+.pb-chips{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;
+  overflow-x:auto;overflow-y:hidden;scrollbar-width:none;padding:2px 0;}
+.pb-chips::-webkit-scrollbar{height:0;}
+/* Avdelare mellan INBYGGDA och EGNA. Ett hårstreck och inte en rubrik: skillnaden
+   är värd att se men inte värd två ord som äter halva raden. */
+.pb-sep{flex:0 0 1px;align-self:stretch;background:var(--ui-hair);margin:0 4px;}
+.chip{flex:0 0 auto;position:relative;appearance:none;cursor:pointer;
+  display:flex;align-items:center;gap:6px;height:28px;padding:0 12px;
+  border-radius:999px;border:1px solid var(--ui-edge);background:var(--ui-inset);
+  color:var(--dim);font:inherit;font-size:var(--ui-fs-md);font-weight:600;
+  white-space:nowrap;transition:color .14s ease,border-color .14s ease,background-color .14s ease;}
+.chip:hover{color:var(--ink);border-color:var(--ui-edge-hi);}
+.chip:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
+/* AKTIV = overlayns nuvarande värden matchar presetten exakt. Amber, inte grönt:
+   grönt betyder "på" i panelen (§4) och en preset är inget tillstånd man slår på —
+   den är ett val som gäller tills man rör ett reglage. Rör man ett släcks markören
+   av sig själv, vilket är hela poängen med att räkna ut den i stället för att lagra
+   "senast valda preset". */
+.chip.on{color:var(--amber);border-color:rgba(251,191,36,0.45);background:rgba(251,191,36,0.10);}
+/* Tom platshållare: syns, men går inte att klicka. Alternativet — att dölja dem —
+   hade gjort att de tre inbyggda platserna såg ut att inte finnas förrän de fylldes,
+   och då vet man inte att de går att fylla. */
+.chip.empty{color:var(--faint);border-style:dashed;border-color:var(--ui-hair);
+  background:none;cursor:default;}
+.chip.empty:hover{color:var(--faint);border-color:var(--ui-hair);}
+/* Ta bort: × syns först vid hover/fokus på chipet, så raden är lugn när man bara
+   läser den. Två steg — första klicket ber om bekräftelse (§ chipet blir rött och
+   byter text), andra tar bort. En preset man tunat i tio minuter ska inte kunna
+   försvinna på en felklickad pixel. */
+.chip .x{display:none;margin:0 -6px 0 0;width:16px;height:16px;flex:0 0 auto;
+  align-items:center;justify-content:center;border-radius:50%;color:var(--faint);}
+.chip:hover .x,.chip:focus-within .x{display:flex;}
+.chip .x:hover{color:var(--red);background:rgba(255,59,59,0.14);}
+.chip .x svg{width:9px;height:9px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;}
+.chip.confirm{color:var(--red);border-color:rgba(255,59,59,0.5);background:rgba(255,59,59,0.12);}
+.chip.confirm .x{display:flex;color:var(--red);}
+/* Spara: samma höjd som chipsen men annan form (rektangel, inte pill) — den
+   UTFÖR något medan chipsen VÄLJER något, och två runda knappar intill varandra
+   hade sett ut som ännu en preset. */
+.pb-save{flex:0 0 auto;}
+.pb-btn{display:flex;align-items:center;gap:6px;height:28px;padding:0 12px;cursor:pointer;
+  border:1px solid var(--ui-edge);border-radius:var(--ui-r-sm);background:var(--ui-inset);
+  color:var(--dim);font:inherit;font-size:var(--ui-fs-md);font-weight:600;white-space:nowrap;
+  transition:color .14s ease,border-color .14s ease;}
+.pb-btn:hover{color:var(--ink);border-color:var(--ui-edge-hi);}
+.pb-btn:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
+.pb-btn svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;}
+/* [hidden]-regeln MÅSTE stå här, i samma andetag som display. Webbläsarens
+   inbyggda `[hidden]{display:none}` har lägre specificitet än en klassväljare, så
+   `btn.hidden = true` i JS gör ingenting när klassen sätter display — knappen låg
+   kvar bakom textfältet. Exakt samma fälla som Broadcasting-raden i §8.4f, och den
+   är osynlig i CSS-validering, i cargo check och i varje test som inte tittar på
+   pixlar: JS:en är rätt, attributet sätts, ingenting händer. */
+.pb-btn[hidden]{display:none;}
+.pb-form{display:flex;align-items:center;gap:4px;}
+.pb-form[hidden]{display:none;}
+.pb-form input{width:180px;height:28px;padding:0 10px;appearance:none;
+  border:1px solid var(--ui-edge);border-radius:var(--ui-r-sm);background:var(--ui-inset);
+  color:var(--ink);font:inherit;font-size:var(--ui-fs-md);font-weight:600;
+  box-shadow:var(--ui-recess);}
+.pb-form input:focus{outline:2px solid var(--ui-focus);outline-offset:1px;border-color:var(--ui-edge-hi);}
+.pb-ok,.pb-cancel{width:28px;height:28px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;border:1px solid var(--ui-edge);border-radius:var(--ui-r-sm);background:var(--ui-inset);
+  color:var(--dim);transition:color .14s ease,border-color .14s ease;}
+.pb-ok:hover{color:var(--green);border-color:rgba(13,230,34,0.45);}
+.pb-cancel:hover{color:var(--red);border-color:rgba(255,59,59,0.45);}
+.pb-ok:focus-visible,.pb-cancel:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
+.pb-ok svg,.pb-cancel svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round;}
+
 /* ── kort och rader ──
    Vågrät padding är 20 px, exakt samma som #previewBox:s margin. Det är det som gör
    att korten står kant i kant med förhandsvisningen i stället för i en egen,
@@ -495,7 +589,7 @@ body.maximized .tb-btn .ico-max{display:none;}
    Kanten förblir mörk (--ui-edge-dk): den ramar in en BEHÅLLARE, till skillnad från
    de små kontrollerna inuti som har ljus kant (§4). */
 .card{border:1px solid var(--ui-edge-dk);border-radius:var(--ui-r-lg);padding:0 20px 12px;
-  background:var(--ui-card);
+  background:var(--ui-card-wash),var(--ui-card);
   box-shadow:var(--ui-card-in);}
 .card > h3{padding:16px 0 8px;}
 /* Avdelarrubrik INNE i ett kort (Storlek/Av-på/Utseende i samma kort). Skiljer sig
@@ -505,7 +599,12 @@ body.maximized .tb-btn .ico-max{display:none;}
    bort ur listrubrikerna). Stapeln är --ui-brand: panelens chrome har bara EN röd. */
 .subhead{display:flex;align-items:center;gap:8px;padding:20px 0 4px;}
 .card > .subhead:first-child{padding-top:16px;}
-.subhead .bar{width:2px;height:12px;border-radius:2px;background:var(--ui-brand);flex:0 0 auto;}
+/* Stapeln är AMBER och inte --ui-brand sedan 0.4.8. Amber är appens highlightfärg
+   (§4) och bär redan kortrubrikerna; rött är varumärket, och en röd markör vid varje
+   avdelning gjorde att ordbildens färg upprepades tre gånger nere i ett kort där den
+   inte identifierar något. Regeln "bara EN signal bär färgen" gäller fortfarande —
+   etiketten är kvar neutralt grå, det är bara kulören på stapeln som bytts. */
+.subhead .bar{width:2px;height:12px;border-radius:2px;background:var(--amber);flex:0 0 auto;}
 .subhead span:last-child{font-size:var(--ui-fs-sm);font-weight:700;letter-spacing:1.4px;
   text-transform:uppercase;color:var(--dim);}
 /* Radhöjden är fast (--ui-row-h) och inte padding-driven: en rad med reglage är
@@ -701,6 +800,7 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
     </div>
   </div>
   <div class="brandbar"></div>
+  <div class="brandbar alt"></div>
   <div class="app" id="app" data-section="overlays">
 
     <!-- ── vänster ikonlist ──
@@ -787,6 +887,38 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
             <button class="sbtn" id="btnReset" title="Nollställ läge och utseende">
               <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg>
             </button>
+          </div>
+        </div>
+        <!-- ── presetrad ──
+             Ligger MELLAN förhandsvisningen och kortet, och det är inte godtyckligt:
+             en preset är en genväg till hela kortets innehåll, så den hör hemma
+             ovanför det den skriver — inte nere bland de reglage den skriver över.
+             Raden skrollar inte med korten (den är syskon till .controls, som äger
+             skrollen, §8.4f) utan står kvar bredvid previewn där man ser effekten. -->
+        <div class="presetbar" id="presetBar">
+          <!-- "PRESET" och inte "UTSEENDE": kortet under har redan en avdelarrubrik
+               som heter UTSEENDE, och samma ord två gånger på samma skärm för två
+               olika omfattningar (hela overlayn kontra en sektion i kortet) läser
+               som att det ena är en rubrik för det andra. -->
+          <span class="pb-label">Preset</span>
+          <div class="pb-chips" id="presetChips"></div>
+          <!-- Sparaknappen förvandlas till ett textfält på plats i stället för att
+               öppna en dialogruta: en modal för ETT kort namn stjäl fokus från
+               previewn, som är det man just bedömt och vill döpa efter. -->
+          <div class="pb-save" id="presetSave">
+            <button class="pb-btn" id="btnPresetSave" title="Spara nuvarande utseende som en egen preset">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+              <span>Spara</span>
+            </button>
+            <form class="pb-form" id="presetForm" hidden>
+              <input type="text" id="presetName" maxlength="32" placeholder="Namn på presetten" aria-label="Namn på presetten">
+              <button type="submit" class="pb-ok" title="Spara">
+                <svg viewBox="0 0 24 24"><path d="m4 12.5 5 5L20 6.5"/></svg>
+              </button>
+              <button type="button" class="pb-cancel" id="btnPresetCancel" title="Avbryt">
+                <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </button>
+            </form>
           </div>
         </div>
         <div class="controls">
@@ -1120,7 +1252,164 @@ function select(id){
   // sattes programmatiskt (inget `input`-event att haka på).
   paintAll();
   setPreview(o);
+  loadPresets(o.id);
 }
+
+/* ── presets ─────────────────────────────────────────────────────────────────
+   En preset är ett sparat UTSEENDE: skala, opacitet och alternativen. Inte
+   position (det är layout) och inte av/på — den ska aldrig kunna släcka en
+   overlay man just tänt. Rust äger både listan och valideringen; panelen ritar.
+
+   Inbyggda presets ligger i registry.json och följer med appen; egna ligger i
+   settings.json. Panelen skiljer dem bara åt på `builtin`-flaggan, så en ny
+   inbyggd preset är en rad i registret och noll kod här — samma regel som för
+   options (§2). */
+let presets = [];
+let confirmChip = null;                    // id på det chip som frågar "ta bort?"
+
+async function loadPresets(id){
+  try { presets = await invoke('list_presets', { id }); }
+  catch { presets = []; }
+  renderPresets();
+}
+
+/* Aktiv preset RÄKNAS UT ur nuvarande värden i stället för att lagras som "senast
+   valda". Skälet: rör man ett reglage efter att ha valt en preset stämmer lagringen
+   inte längre, och en markör som ljuger är värre än ingen markör. Med uträkning
+   släcks den av sig själv i samma sekund man ändrar något. */
+function presetMatches(o, p){
+  if (p.empty) return false;
+  const near = (a, b) => Math.abs(a - b) < 1e-6;
+  if (p.scale != null && !near(p.scale, o.scale)) return false;
+  if (p.opacity != null && !near(p.opacity, o.opacity)) return false;
+  for (const [k, v] of Object.entries(p.options || {})){
+    const cur = (o.options || {})[k];
+    // Färger jämförs skiftlägesokänsligt: panelen skickar gemener till Rust men
+    // hexfältet visar versaler, och registry.json kan ha vilketdera som helst.
+    if (typeof v === 'string' && typeof cur === 'string'){
+      if (v.toLowerCase() !== cur.toLowerCase()) return false;
+    } else if (cur !== v) return false;
+  }
+  return true;
+}
+
+/* Uppdaterar BARA .on-klassen. Anropas varje gång ett värde ändras — även 60 ggr/s
+   medan man drar ett reglage — så den får inte bygga om DOM:en: en ombyggnad hade
+   dödat hover-tillståndet mitt i en rörelse (×-knappen försvinner under muspekaren)
+   och startat om chipsens sidoskroll. */
+function markActivePreset(){
+  const wrap = $('presetChips'); if (!wrap) return;
+  const o = ov(selectedId); if (!o) return;
+  for (const b of wrap.querySelectorAll('.chip')){
+    const p = presets.find(q => q.id === b.dataset.pid);
+    b.classList.toggle('on', !!p && presetMatches(o, p));
+  }
+}
+
+function renderPresets(){
+  const wrap = $('presetChips'); if (!wrap) return;
+  wrap.innerHTML = '';
+  confirmChip = null;
+  const o = ov(selectedId); if (!o) return;
+
+  let sawUser = false;
+  for (const p of presets){
+    // Avdelaren ritas vid ÖVERGÅNGEN inbyggd → egen, alltså bara om det finns
+    // både och. En ensam avdelare i kanten av raden ser ut som ett fel.
+    if (!p.builtin && !sawUser && presets.some(q => q.builtin)){
+      const sep = document.createElement('span'); sep.className = 'pb-sep';
+      wrap.appendChild(sep); sawUser = true;
+    }
+    const b = document.createElement('button');
+    b.className = 'chip' + (p.empty ? ' empty' : '') + (presetMatches(o, p) ? ' on' : '');
+    b.dataset.pid = p.id;
+    b.type = 'button';
+    if (p.empty){
+      b.disabled = true;
+      b.title = 'Tom plats — fyll i den i registry.json så följer den med appen';
+    } else {
+      b.title = p.builtin ? 'Inbyggd preset' : 'Egen preset';
+    }
+    const nm = document.createElement('span'); nm.textContent = p.label;
+    b.appendChild(nm);
+    if (!p.builtin){
+      const x = document.createElement('span');
+      x.className = 'x'; x.title = 'Ta bort presetten';
+      x.innerHTML = `<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>`;
+      x.addEventListener('click', ev => { ev.stopPropagation(); askDelete(b, p); });
+      b.appendChild(x);
+    }
+    b.addEventListener('click', () => { if (!p.empty) applyPreset(p); });
+    wrap.appendChild(b);
+  }
+}
+
+/* Två steg för att ta bort. Första klicket byter chipets text till "Ta bort?" och
+   färgar det rött; andra klicket på × tar bort. Klickar man någon annanstans, eller
+   låter det vara i fem sekunder, ångrar sig chipet självt. */
+function askDelete(btn, p){
+  if (confirmChip === p.id){ doDelete(p); return; }
+  renderPresets();                                   // nollställ ev. annat chip
+  const b = $('presetChips').querySelector(`.chip[data-pid="${CSS.escape(p.id)}"]`);
+  if (!b) return;
+  confirmChip = p.id;
+  b.classList.add('confirm');
+  b.querySelector('span').textContent = 'Ta bort?';
+  b.querySelector('.x').addEventListener('click', ev => { ev.stopPropagation(); doDelete(p); });
+  setTimeout(() => { if (confirmChip === p.id) renderPresets(); }, 5000);
+}
+
+async function doDelete(p){
+  try {
+    await invoke('delete_preset', { id: selectedId, preset: p.id });
+    toast(`Presetten «${p.label}» borttagen`);
+  } catch(e){ toast('Kunde inte ta bort: ' + errMsg(e), true); }
+  loadPresets(selectedId);
+}
+
+/* Applicera. Rust skriver settings, ändrar fönstrets storlek och skickar
+   config/option till overlayn — men panelens EGEN bild av overlayn (och därmed
+   reglagen och previewn) uppdateras inte av det, eftersom `overlays` är en lokal
+   kopia. Därför speglas värdena in här och vyn ritas om via select().
+   Alternativet, att läsa om allt med get_overlays, hade tappat vilken overlay som
+   var vald och kostat en rundtur för varje klick. */
+async function applyPreset(p){
+  try { await invoke('apply_preset', { id: selectedId, preset: p.id }); }
+  catch(e){ return toast('Kunde inte använda presetten: ' + errMsg(e), true); }
+  const o = ov(selectedId); if (!o) return;
+  if (p.scale != null) o.scale = p.scale;
+  if (p.opacity != null) o.opacity = p.opacity;
+  o.options = { ...(o.options || {}), ...(p.options || {}) };
+  select(o.id);                       // ritar om reglage, kort, chips och preview
+  pushPreviewState(o);
+  refitSoon();                        // ett alternativ kan ha ändrat måtten
+  toast(`Utseendet «${p.label}» använt`);
+}
+
+(function presetUi(){
+  const form = $('presetForm'), btn = $('btnPresetSave'), inp = $('presetName');
+  if (!form || !btn) return;
+  const open = (on) => {
+    form.hidden = !on; btn.hidden = on;
+    if (on){ inp.value = ''; inp.focus(); }
+  };
+  btn.addEventListener('click', () => open(true));
+  $('btnPresetCancel').addEventListener('click', () => open(false));
+  // Escape stänger fältet. Utan det är enda vägen ut att träffa den lilla
+  // kryssknappen, och ett textfält man inte kan backa ur känns som en fälla.
+  inp.addEventListener('keydown', e => { if (e.key === 'Escape'){ e.preventDefault(); open(false); } });
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const name = inp.value.trim();
+    if (!name) return inp.focus();
+    try {
+      await invoke('save_preset', { id: selectedId, name });
+      open(false);
+      toast(`Utseendet sparat som «${name}»`);
+      loadPresets(selectedId);
+    } catch(err){ toast('Kunde inte spara: ' + errMsg(err), true); }
+  });
+})();
 
 /* Alternativ byggs GENERISKT ur registry.json:s schema — panelen känner inte till
    en enda overlay vid namn. Ny overlay = ny rad i registret, ingen ändring här.
@@ -1153,6 +1442,7 @@ function renderOptions(o){
 
     const send = async (v) => {
       const cur = ov(o.id); if (cur){ cur.options = cur.options || {}; cur.options[d.id] = v; }
+      markActivePreset();
       toPreview({ kind: 'option', id: o.id, option: d.id, value: v });   // syns direkt
       refitSoon();                                    // dimensionerna kan ha ändrats
       try { await invoke('set_option', { id: o.id, option: d.id, value: v }); }
@@ -1416,12 +1706,14 @@ $('btnReset').addEventListener('click', async () => {
 $('scale').addEventListener('input', async () => {
   const v = parseFloat($('scale').value); $('scaleVal').textContent = v.toFixed(2) + '×';
   const o = ov(selectedId); if (o) o.scale = v;   // previewn visar naturlig storlek
+  markActivePreset();                            // presetmarkoren slocknar nar man ror nagot
   try { await invoke('set_scale', { id: selectedId, scale: v }); }
   catch(e){ toast('set_scale: ' + errMsg(e), true); }
 });
 $('opacity').addEventListener('input', async () => {
   const v = parseFloat($('opacity').value); $('opacityVal').textContent = Math.round(v * 100) + '%';
   const o = ov(selectedId); if (o) o.opacity = v;
+  markActivePreset();
   toPreview({ kind: 'config', id: selectedId, opacity: v });   // syns direkt i previewn
   try { await invoke('set_opacity', { id: selectedId, opacity: v }); }
   catch(e){ toast('set_opacity: ' + errMsg(e), true); }

@@ -79,6 +79,65 @@ struct OverlayDef {
     hz: Option<f64>,
     #[serde(default)]
     options: Vec<OverlayOption>,
+    // Presets som FÖLJER MED appen. De ligger i registry.json och inte i settings,
+    // eftersom de ska finnas på en ny installation — en användarpreset bor i
+    // app-config-mappen och följer per definition inte med en nedladdning.
+    // Att lägga till en preset är därmed samma sorts ändring som att lägga till en
+    // option: en rad i registret, noll kod i kärnan.
+    #[serde(default)]
+    presets: Vec<Preset>,
+}
+
+// ── Presets ─────────────────────────────────────────────────────────────────
+// Ett sparat UTSEENDE för en overlay: skala, opacitet och alternativen. INTE
+// position (det är layout, inte utseende) och INTE av/på — en preset ska aldrig
+// kunna släcka en overlay man just tänt.
+//
+// `scale` och `opacity` är Option med flit. En INBYGGD preset bör oftast utelämna
+// skalan: den är monitorberoende, och en färgpreset som samtidigt tvingar 1,2× på
+// någon som kört in sin layout är påträngande. En preset man sparar SJÄLV fångar
+// däremot allt, för då är det just den kombinationen man vill tillbaka till.
+// Fält som är None lämnas orörda när presetten appliceras.
+#[derive(Deserialize, Serialize, Clone)]
+struct Preset {
+    id: String,
+    label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    scale: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    opacity: Option<f64>,
+    #[serde(default)]
+    options: HashMap<String, serde_json::Value>,
+}
+
+// Panelens reglage går 0,6–1,6 respektive 0,2–1. En preset ur registry.json eller ur
+// en handredigerad settings.json kan säga vad som helst, och samma resonemang gäller
+// som för options (§8.3b): klampa här, inte i overlayn.
+const SCALE_MIN: f64 = 0.6;
+const SCALE_MAX: f64 = 1.6;
+const OPACITY_MIN: f64 = 0.2;
+const OPACITY_MAX: f64 = 1.0;
+// Tak på antalet egna presets per overlay. Inte för att någon skulle spara 200 för
+// hand, utan för att en fastnad panel-loop annars kan blåsa upp settings.json.
+const MAX_USER_PRESETS: usize = 40;
+
+fn clamp_opt(v: Option<f64>, lo: f64, hi: f64) -> Option<f64> {
+    v.filter(|n| n.is_finite()).map(|n| n.clamp(lo, hi))
+}
+
+// Samma behandling som sanitize_options: okända nycklar bort, resten mot schemat.
+// Skillnaden är att en preset får vara PARTIELL — den behöver inte nämna varje
+// option, och de den inte nämner ska lämnas som de är i stället för att fyllas med
+// registrets standardvärde (vilket sanitize_options gör).
+fn sanitize_preset(d: &OverlayDef, p: &mut Preset) {
+    p.scale = clamp_opt(p.scale, SCALE_MIN, SCALE_MAX);
+    p.opacity = clamp_opt(p.opacity, OPACITY_MIN, OPACITY_MAX);
+    p.options.retain(|k, _| d.options.iter().any(|o| &o.id == k));
+    for o in &d.options {
+        if let Some(cur) = p.options.get(&o.id).cloned() {
+            p.options.insert(o.id.clone(), sanitize_option(o, &cur));
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -188,6 +247,16 @@ fn default_state_for(d: &OverlayDef) -> OverlayState {
 #[derive(Serialize, Deserialize, Default)]
 struct Settings {
     overlays: HashMap<String, OverlayState>,
+    // Egna presets, per overlay-id. Ligger utanför OverlayState med flit: en preset
+    // överlever `reset_overlay` (som ersätter hela staten), och det är precis vad
+    // man vill — "nollställ utseendet" ska inte kasta de utseenden man sparat.
+    //
+    // Nytt fält i 0.4.8. Nedgraderingsvägen är kontrollerad (§8.3b): serde ignorerar
+    // OKÄNDA fält vid inläsning, så en äldre build läser den här filen utan att
+    // kvävas — den tappar bara presetsen tyst. Det är alltså inte samma fälla som
+    // 0.3.0:s typbyte på ett BEFINTLIGT fält, som gjorde hela filen oläsbar.
+    #[serde(default)]
+    presets: HashMap<String, Vec<Preset>>,
     reference_ld: String,
     // global: visa overlays först när motorn är synkad mot ACC (connected==true)
     #[serde(default)]
@@ -244,7 +313,19 @@ fn load_settings(app: &AppHandle) -> Settings {
             for d in registry() {
                 let st = s.overlays.entry(d.id.clone()).or_insert_with(|| default_state_for(d));
                 sanitize_options(d, &mut st.options);
+                // Samma skäl som för options: en handredigerad eller åldrad preset
+                // (en option som tagits bort ur registret, ett tal utanför reglagets
+                // intervall) ska rättas HÄR och inte nå en overlay.
+                if let Some(list) = s.presets.get_mut(&d.id) {
+                    for p in list.iter_mut() {
+                        sanitize_preset(d, p);
+                    }
+                    list.truncate(MAX_USER_PRESETS);
+                }
             }
+            // Presets för overlays som inte längre finns i registret städas bort —
+            // annars ligger de kvar för alltid och växer med varje borttagen modul.
+            s.presets.retain(|k, _| def_of(k).is_some());
             s
         }
         Err(_) => default_settings(),
@@ -603,6 +684,191 @@ fn reset_overlay(app: AppHandle, state: State<Mutex<Settings>>, id: String) {
     }
 }
 
+// ── Presets ─────────────────────────────────────────────────────────────────
+#[derive(Serialize)]
+struct PresetInfo {
+    id: String,
+    label: String,
+    // Panelen behöver skilja dem åt: en inbyggd går inte att ta bort eller döpa om,
+    // och en TOM inbyggd (platshållare utan värden) ska visas dämpad i stället för
+    // att se ut som en preset som inte gör något när man klickar.
+    builtin: bool,
+    empty: bool,
+    // Hela värdet med, så panelen kan markera vilken preset som är aktiv utan en
+    // extra rundtur — och så en egen preset går att kopiera som JSON in i
+    // registry.json när man vill befordra den till inbyggd.
+    scale: Option<f64>,
+    opacity: Option<f64>,
+    options: HashMap<String, serde_json::Value>,
+}
+
+fn preset_infos(s: &Settings, d: &OverlayDef) -> Vec<PresetInfo> {
+    let mk = |p: &Preset, builtin: bool| {
+        let mut q = p.clone();
+        sanitize_preset(d, &mut q);
+        PresetInfo {
+            empty: q.scale.is_none() && q.opacity.is_none() && q.options.is_empty(),
+            id: q.id,
+            label: q.label,
+            builtin,
+            scale: q.scale,
+            opacity: q.opacity,
+            options: q.options,
+        }
+    };
+    // Inbyggda först, egna sedan. Ordningen är listans ordning i respektive källa —
+    // egna presets ligger i sparad ordning, vilket är den enda ordning användaren
+    // själv kan förutsäga.
+    let mut out: Vec<PresetInfo> = d.presets.iter().map(|p| mk(p, true)).collect();
+    if let Some(list) = s.presets.get(&d.id) {
+        out.extend(list.iter().map(|p| mk(p, false)));
+    }
+    out
+}
+
+// Skriver ett helt utseende till en overlay: skala, opacitet och de alternativ
+// presetten nämner. Vägen är MEDVETET identisk med reset_overlay:s — fönstret får
+// ny storlek, och config/option-eventen skickas ut så både overlayn och panelens
+// förhandsvisning följer med. Missar man fönsterstorleken ritas overlayn i ny skala
+// i ett fönster med gammal storlek, alltså avkapad (§8.3).
+#[tauri::command]
+fn apply_preset(
+    app: AppHandle,
+    state: State<Mutex<Settings>>,
+    id: String,
+    preset: String,
+) -> Result<(), String> {
+    let def = def_of(&id).ok_or("okänd overlay")?;
+    let (scale, opacity, changed) = {
+        let mut s = state.lock().unwrap();
+        let mut p = preset_infos(&s, def)
+            .into_iter()
+            .find(|p| p.id == preset)
+            .ok_or("okänd preset")?;
+        let st = s.overlays.entry(id.clone()).or_insert_with(|| default_state_for(def));
+        if let Some(v) = p.scale { st.scale = v; }
+        if let Some(v) = p.opacity { st.opacity = v; }
+        let mut changed = HashMap::new();
+        for (k, v) in p.options.drain() {
+            st.options.insert(k.clone(), v.clone());
+            changed.insert(k, v);
+        }
+        let (scale, opacity) = (st.scale, st.opacity);
+        save_settings(&app, &s);
+        (scale, opacity, changed)
+    };
+    if let Some(win) = app.get_webview_window(&id) {
+        let _ = win.set_size(tauri::LogicalSize::new(def.base_width * scale, def.base_height * scale));
+    }
+    let _ = app.emit("config", ConfigPayload { id: id.clone(), scale, opacity });
+    for (option, value) in changed {
+        let _ = app.emit("option", OptionPayload { id: id.clone(), option, value });
+    }
+    Ok(())
+}
+
+// Gör ett id av namnet så settings.json går att läsa för hand — "u1730214000123"
+// säger ingenting om vad presetten är. Kollisioner får ett löpnummer.
+fn slug(name: &str) -> String {
+    let mut out = String::new();
+    let mut dash = false;
+    for c in name.chars().flat_map(char::to_lowercase) {
+        if c.is_alphanumeric() {
+            out.push(c);
+            dash = false;
+        } else if !dash && !out.is_empty() {
+            out.push('-');
+            dash = true;
+        }
+    }
+    let s = out.trim_end_matches('-');
+    if s.is_empty() { "preset".into() } else { s.chars().take(40).collect() }
+}
+
+// Sparar overlayens NUVARANDE utseende under ett namn. Fångar allt (skala, opacitet,
+// samtliga alternativ) — till skillnad från en inbyggd preset, som gärna utelämnar
+// skalan. Skälet står vid Preset-structen.
+#[tauri::command]
+fn save_preset(
+    app: AppHandle,
+    state: State<Mutex<Settings>>,
+    id: String,
+    name: String,
+) -> Result<String, String> {
+    let def = def_of(&id).ok_or("okänd overlay")?;
+    let label: String = name.trim().chars().take(32).collect();
+    if label.is_empty() {
+        return Err("Ge presetten ett namn.".into());
+    }
+    let mut s = state.lock().unwrap();
+    // Läs staten FÖRE den muterbara lånet på presets — annars lånas `s` både
+    // muterbart och omuterbart samtidigt.
+    let st = s.overlays.get(&id).cloned().unwrap_or_else(|| default_state_for(def));
+    let list = s.presets.entry(id.clone()).or_default();
+    // Samma namn igen = skriv ÖVER den, inte skapa en tvilling. Att spara om en
+    // preset man just justerat är det vanligaste man vill göra, och två rader med
+    // identisk etikett hade varit omöjliga att skilja åt i listan.
+    let existing = list.iter().position(|p| p.label.eq_ignore_ascii_case(&label));
+    if existing.is_none() && list.len() >= MAX_USER_PRESETS {
+        return Err(format!("Max {MAX_USER_PRESETS} egna presets per overlay."));
+    }
+    let pid = match existing {
+        // Behåll id:t vid överskrivning: panelen kan ha det som "aktiv preset".
+        Some(i) => list[i].id.clone(),
+        None => {
+            let base = slug(&label);
+            let mut pid = base.clone();
+            let mut n = 2;
+            while list.iter().any(|p| p.id == pid) {
+                pid = format!("{base}-{n}");
+                n += 1;
+            }
+            pid
+        }
+    };
+    let mut p = Preset {
+        id: pid.clone(),
+        label,
+        scale: Some(st.scale),
+        opacity: Some(st.opacity),
+        options: st.options.clone(),
+    };
+    sanitize_preset(def, &mut p);
+    match existing {
+        Some(i) => list[i] = p,
+        None => list.push(p),
+    }
+    save_settings(&app, &s);
+    Ok(pid)
+}
+
+// Bara EGNA presets går att ta bort. En inbyggd ligger i registry.json och kan inte
+// raderas ur settings — hade kommandot låtsats lyckas vore listan osynkad med disken
+// vid nästa start.
+#[tauri::command]
+fn delete_preset(
+    app: AppHandle,
+    state: State<Mutex<Settings>>,
+    id: String,
+    preset: String,
+) -> Result<(), String> {
+    let mut s = state.lock().unwrap();
+    let list = s.presets.get_mut(&id).ok_or("inga egna presets")?;
+    let before = list.len();
+    list.retain(|p| p.id != preset);
+    if list.len() == before {
+        return Err("Bara egna presets går att ta bort.".into());
+    }
+    save_settings(&app, &s);
+    Ok(())
+}
+
+#[tauri::command]
+fn list_presets(state: State<Mutex<Settings>>, id: String) -> Vec<PresetInfo> {
+    let s = state.lock().unwrap();
+    def_of(&id).map(|d| preset_infos(&s, d)).unwrap_or_default()
+}
+
 // Slå på/av edit-läge från panelen (samma effekt som hotkey Ctrl+Alt+Space).
 // I edit-läge blir overlay-fönstren interaktiva så de kan dras på plats.
 #[tauri::command]
@@ -902,6 +1168,10 @@ pub fn run() {
             set_always_on_top,
             set_option,
             reset_overlay,
+            list_presets,
+            apply_preset,
+            save_preset,
+            delete_preset,
             set_edit_mode,
             set_reference,
             get_globals,
@@ -1251,6 +1521,125 @@ mod tests {
             .join("../src/shared/preview-backgrounds")
             .join(default_preview_bg());
         assert!(p.is_file(), "saknas: {}", p.display());
+    }
+
+    // ── Presets ─────────────────────────────────────────────────────────────
+    // Hjälpare: bygg ett schema som täcker alla fyra optionstyperna, så testerna
+    // nedan går på samma väg som en riktig overlay.
+    fn testdef() -> OverlayDef {
+        fn opt(id: &str, kind: &str, default: serde_json::Value) -> OverlayOption {
+            OverlayOption {
+                id: id.into(),
+                kind: kind.into(),
+                label: id.into(),
+                default,
+                min: None,
+                max: None,
+                step: None,
+                unit: None,
+                alpha: false,
+                values: vec![],
+            }
+        }
+        let mut num = opt("fonster", "float", serde_json::json!(4.5));
+        num.min = Some(1.0);
+        num.max = Some(10.0);
+        let mut val = opt("stil", "enum", serde_json::json!("kompakt"));
+        val.values = vec![
+            OverlayOptionValue { value: serde_json::json!("kompakt"), label: "Kompakt".into() },
+            OverlayOptionValue { value: serde_json::json!("full"), label: "Full".into() },
+        ];
+        OverlayDef {
+            id: "t".into(),
+            title: "T".into(),
+            desc: String::new(),
+            url: "t.html".into(),
+            base_width: 100.0,
+            base_height: 50.0,
+            default_x: 0,
+            default_y: 0,
+            default_scale: 1.0,
+            hz: None,
+            options: vec![
+                opt("visa", "bool", serde_json::json!(true)),
+                opt("farg", "color", serde_json::json!("#0DE622")),
+                num,
+                val,
+            ],
+            presets: vec![],
+        }
+    }
+
+    fn p(options: serde_json::Value) -> Preset {
+        Preset {
+            id: "x".into(),
+            label: "X".into(),
+            scale: None,
+            opacity: None,
+            options: serde_json::from_value(options).unwrap(),
+        }
+    }
+
+    // En preset är PARTIELL: den ska bara skriva de alternativ den nämner. Fyllde
+    // sanitize_preset i registrets standardvärden (som sanitize_options gör) skulle
+    // en färgpreset tysta nollställa varje annat alternativ i samma overlay.
+    #[test]
+    fn preset_lamnar_onamnda_alternativ_ifred() {
+        let d = testdef();
+        let mut q = p(serde_json::json!({"farg": "#FF0000"}));
+        sanitize_preset(&d, &mut q);
+        assert_eq!(q.options.len(), 1, "bara det nämnda alternativet: {:?}", q.options);
+        assert_eq!(q.options["farg"], serde_json::json!("#FF0000"));
+    }
+
+    // Samma skydd som §8.3b ger options: en handredigerad eller åldrad preset får
+    // aldrig nå en overlay med skräp i.
+    #[test]
+    fn preset_stadar_skrap() {
+        let d = testdef();
+        let mut q = p(serde_json::json!({
+            "farg":    "rgb(1,2,3)",   // inte hex  → standardvärdet
+            "fonster": 999.0,          // över max  → klampas till 10
+            "stil":    "finns-inte",   // okänd enum→ standardvärdet
+            "visa":    "ja",           // inte bool → standardvärdet
+            "borttagen": 1,            // finns ej i schemat → bort
+        }));
+        sanitize_preset(&d, &mut q);
+        assert_eq!(q.options["farg"], serde_json::json!("#0DE622"));
+        assert_eq!(q.options["fonster"], serde_json::json!(10.0));
+        assert_eq!(q.options["stil"], serde_json::json!("kompakt"));
+        assert_eq!(q.options["visa"], serde_json::json!(true));
+        assert!(!q.options.contains_key("borttagen"), "okänd nyckel skulle städats bort");
+    }
+
+    // Skala och opacitet klampas till panelens reglageintervall. En preset med
+    // scale:0 hade gett ett fönster på 0×0 px, alltså en overlay som ser borta ut.
+    #[test]
+    fn preset_klampar_skala_och_opacitet() {
+        let d = testdef();
+        let mut q = Preset { scale: Some(9.0), opacity: Some(-1.0), ..p(serde_json::json!({})) };
+        sanitize_preset(&d, &mut q);
+        assert_eq!(q.scale, Some(SCALE_MAX));
+        assert_eq!(q.opacity, Some(OPACITY_MIN));
+
+        // NaN/oändligt är inte "utanför intervallet" utan ogiltigt: fältet ska bli
+        // None (= lämna värdet orört) i stället för att klampas till en gräns.
+        let mut bad = Preset { scale: Some(f64::NAN), opacity: Some(f64::INFINITY), ..p(serde_json::json!({})) };
+        sanitize_preset(&d, &mut bad);
+        assert_eq!(bad.scale, None);
+        assert_eq!(bad.opacity, None);
+    }
+
+    // Id:t hamnar i settings.json och läses av människor. Det ska gå att känna igen
+    // presetten på det, inte bara på etiketten.
+    #[test]
+    fn slug_ger_lasbara_id() {
+        assert_eq!(slug("Natt"), "natt");
+        assert_eq!(slug("Stream-läge 2"), "stream-läge-2");
+        assert_eq!(slug("  mycket   luft  "), "mycket-luft");
+        assert_eq!(slug("!!!"), "preset");        // inget kvar → fallback
+        assert_eq!(slug(""), "preset");
+        assert!(slug(&"a".repeat(80)).chars().count() <= 40);
     }
 
     // Base64 är handskriven (§ i lib.rs) — den ska ge exakt samma sträng som en

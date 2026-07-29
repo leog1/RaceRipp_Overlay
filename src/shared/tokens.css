@@ -155,6 +155,14 @@
      underkanten räcker för att kortet ska ha tjocklek. */
   --ui-card-in: inset 0 1px 0 rgba(255,255,255,0.032),
                 inset 0 -8px 16px rgba(0,0,0,0.22);
+  /* Ljusvask över kortets ÖVRE dryga tredjedel. Medvetet precis på gränsen till
+     omärklig — 2,2 % vitt som klingar av till noll — och den ska förbli det: en
+     gradient man KAN SE på ett kort blir en gradient man ser åtta gånger när kortet
+     har åtta rader, och då läser ytan som blank plast i stället för som material.
+     Ligger som eget lager ovanpå --ui-card, inte som två hex-värden, så baskulören
+     fortfarande går att ändra på ETT ställe.
+     Samma ljus uppifrån som resten av djupsystemet. */
+  --ui-card-wash: linear-gradient(180deg, rgba(255,255,255,0.022), rgba(255,255,255,0) 38%);
 
   /* Linjer i tre vikter. hair delar innehåll INNE i en yta, edge ramar in en liten
      kontroll, edge-dk ramar in en BEHÅLLARE.
@@ -164,10 +172,15 @@
      en ljus sheen längs överkanten läser samma ruta som infräst i panelen.
      Små kontroller (knappar, väljare, färgrutor) behåller den LJUSA kanten — de ska
      sticka ut ur ytan de ligger på, inte sjunka in i den. */
-  --ui-hair:    rgba(255,255,255,0.06);
-  --ui-edge:    rgba(255,255,255,0.10);
-  --ui-edge-hi: rgba(255,255,255,0.19);
-  --ui-edge-dk: rgba(0,0,0,0.66);
+  --ui-hair:    rgba(255,255,255,0.055);
+  --ui-edge:    rgba(255,255,255,0.085);
+  --ui-edge-hi: rgba(255,255,255,0.17);
+  /* 0,45 och inte 0,66. Den mörka kanten satt på KORTET, listen, listkolumnen,
+     menyerna, previewens verktygsblock och varje liten knapp samtidigt — och en
+     nästan svart 1 px-linje mot en yta som bara är några luminanssteg ljusare
+     tecknar hårdare än den ska. Resultatet var att konturerna lästes före
+     innehållet. Kanten ska säga "här slutar materialet", inte rita en ram. */
+  --ui-edge-dk: rgba(0,0,0,0.45);
 
   /* Tre färdiga djuprecept, alla byggda på samma antagande: ljuset kommer UPPIFRÅN.
      Därför ligger den ljusa raden överst på något som skjuter upp ur panelen och

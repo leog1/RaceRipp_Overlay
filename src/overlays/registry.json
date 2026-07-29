@@ -69,6 +69,23 @@
           "default": "#0000008c",
           "alpha": true
         }
+      ],
+      "presets": [
+        {
+          "id": "slot-1",
+          "label": "Preset 1",
+          "options": {}
+        },
+        {
+          "id": "slot-2",
+          "label": "Preset 2",
+          "options": {}
+        },
+        {
+          "id": "slot-3",
+          "label": "Preset 3",
+          "options": {}
+        }
       ]
     },
     {
@@ -174,6 +191,23 @@
           "label": "Skugga",
           "default": "#0000008c",
           "alpha": true
+        }
+      ],
+      "presets": [
+        {
+          "id": "slot-1",
+          "label": "Preset 1",
+          "options": {}
+        },
+        {
+          "id": "slot-2",
+          "label": "Preset 2",
+          "options": {}
+        },
+        {
+          "id": "slot-3",
+          "label": "Preset 3",
+          "options": {}
         }
       ]
     }
