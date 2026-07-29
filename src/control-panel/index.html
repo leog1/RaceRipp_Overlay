@@ -30,7 +30,7 @@
    stället, så kan en ny kontroll aldrig hamna utanför. */
 button,input,select,textarea,optgroup{font-family:inherit;}
 html,body{height:100%;}
-body{font-family:var(--font);color:var(--ink);
+body{font-family:var(--ui-font);color:var(--ink);
   /* Svag ljuskälla uppifrån. Utan den blir en helt platt yta av den här
      storleken död — gradienten är knappt mätbar men ögat ser rummet. */
   background:radial-gradient(150% 100% at 50% -18%, rgba(255,255,255,0.035), transparent 60%),
@@ -71,15 +71,11 @@ body{font-family:var(--font);color:var(--ink);
    matchar bara DIREKTA klick på .titlebar (§8.4i), så varje barn i raden är annars
    en död yta. */
 .titlebar .tb-logo{display:flex;align-items:center;padding:0 4px 0 16px;pointer-events:none;}
-/* 17 px — en avvägning mellan två fel, inte ett optimum.
-   Ordbilden är ritad 459×55 med en ljus kontur runt varje bokstav. Vid 16 px
-   (0,29× av originalet) hamnar konturen under en pixel: bokstävernas inre hål
-   slöts och märket blev en röd suddig klump. Vid 20 px öppnar hålen sig, men
-   märket blir 167 px brett och tar över en titelrad som bara är 36 px hög —
-   det var för dominant. 17 px ger 142 px bredd och behåller det mesta av
-   läsbarheten. Vill man ha den mindre än så måste ordbilden ritas om med grövre
-   kontur; det är ritningen som sätter golvet, inte den här raden. */
-.titlebar .tb-logo img{height:17px;width:auto;display:block;}
+/* Ordbilden är ritad 459×55 med en ljus kontur runt varje bokstav. Under ~16 px
+   (0,29× av originalet) hamnar konturen under en pixel och bokstävernas inre hål
+   sluts — det är golvet, satt av ritningen och inte av den här raden. 15 px ligger
+   precis över det golvet och ger en mindre, mer tillbakadragen ordbild i titelraden. */
+.titlebar .tb-logo img{height:15px;width:auto;display:block;}
 .titlebar .tb-drag{flex:1 1 auto;align-self:stretch;}
 /* Motor-/Broadcastingstatus, i titelraden sedan 0.4.6. Nu som BRICKOR med egen yta
    och kant i stället för lös prick + text. Skälet är att de två raderna annars
@@ -108,15 +104,14 @@ body{font-family:var(--font);color:var(--ink);
 .tb-status[hidden]{display:none;}
 .tb-status .dot{width:6px;height:6px;border-radius:50%;flex:0 0 auto;background:var(--faint);
   transition:background-color .2s ease;}
-/* Tonad yta + tonad kant + ljus text i samma kulör. Tillståndsklassen sitter på
-   BRICKAN och inte på pricken — `:has()` hade varit kortare men gör utseendet
-   beroende av en väljare som WebView2 fick först i Chromium 105, och en panel som
-   ser trasig ut på en gammal runtime är inte värd tre sparade rader.
+/* Bara pricken och texten bär färgen, ytan förblir neutral (.tb-status). Tillstånds-
+   klassen sitter på BRICKAN och inte på pricken — `:has()` hade varit kortare men gör
+   utseendet beroende av en väljare som WebView2 fick först i Chromium 105.
    Den enda glowen som är kvar i panelen sitter på de här prickarna och på
    växlarknoppen (§4): saker vars enda uppgift är att synas i ögonvrån. Håll den
    svag — 4 px, inte 8. */
-.tb-status.live{background:rgba(13,230,34,0.09);border-color:rgba(13,230,34,0.26);color:#9fe3ab;}
-.tb-status.mock{background:rgba(251,191,36,0.09);border-color:rgba(251,191,36,0.26);color:#e8ce8e;}
+.tb-status.live{color:#9fe3ab;}
+.tb-status.mock{color:#e8ce8e;}
 .tb-status.live .dot{background:var(--green);box-shadow:0 0 4px rgba(13,230,34,0.45);}
 .tb-status.mock .dot{background:var(--amber);box-shadow:0 0 4px rgba(251,191,36,0.40);}
 .tb-status.off  .dot{background:var(--red);}

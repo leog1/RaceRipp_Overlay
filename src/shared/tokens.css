@@ -94,6 +94,12 @@
      i registry.json (som skriver rakt på --<token>). */
   --app-bg:    #0b0d0c;                  /* panelens basbakgrund                  */
   --rail-bg:   #070908;                  /* vänster ikonlist (aning mörkare)      */
+  /* Panelens EGET typsnitt, skilt från --font (Montserrat, overlayernas siffror).
+     Montserrat över hela panelen läste som en AI-genererad app; systemets typsnitt
+     (Segoe UI på Windows, San Francisco på mac) läser i stället som ett vanligt
+     Windows-program. tabular-nums stöds av båda så preset-/reglagevärden håller sig
+     stilla. */
+  --ui-font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 
   /* Panelens RÖDA är ordbildens röda — exakt #A41F1F, samma värde som fyller varje
      path i simmatrix-logo.svg. Poängen är att appen bara ska ha EN röd: står loggan
@@ -147,7 +153,7 @@
      overlay), och panelens chrome ska aldrig läsa overlayspråket — det är hela
      skälet till --ui-prefixet (§4).
      Mörkare än panelen behöver ingen skugga alls för att läsas som en urgröpning. */
-  --ui-stage:   #08090a;                 /* previewrutans yta: ett steg under bg  */
+  --ui-stage:   #060707;                 /* previewrutans yta: ett steg under bg  */
   /* Kortets enda djup. INGEN yttre slagskugga: kortet ligger direkt på panelen och
      fyller hela dess bredd, och en 20 px suddig skugga under något som går kant i
      kant med sin behållare ser ut som ett renderingsfel, inte som djup.
