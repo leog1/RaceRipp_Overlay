@@ -30,6 +30,11 @@ function check(name, ok, detail) {
 }
 
 const FRAME = (o = {}) => ({ throttle: 0, brake: 0, clutch: 0, abs: false, tc: false, ...o });
+/* Referensvarvet kommer ur ramens `refs`, en post per källa som gäller just nu
+   (frame.py). Overlayn väljer med reglaget `delta-source`; standardvalet är 'best'.
+   REF() bygger en ram med spökvärden i EN källa så testet kan skilja källorna åt. */
+const REF = (throttle, brake, source = 'best') =>
+  ({ refs: { [source]: { delta: -0.2, totalMs: 138120, throttle, brake, src: 'lap' } } });
 
 // ── 1. Overlayn ritar faktiskt ──────────────────────────────────────────────
 // Utan detta kan allt nedan passera på en overlay som aldrig renderade.
@@ -114,7 +119,7 @@ const FRAME = (o = {}) => ({ throttle: 0, brake: 0, clutch: 0, abs: false, tc: f
 // framför din egen insats, vilket är precis fel.
 {
   const h = await open();
-  h.settle(FRAME({ throttle: 0.8, brake: 0.2, refThrottle: 0.5, refBrake: 0.6 }), 20);
+  h.settle(FRAME({ throttle: 0.8, brake: 0.2, ...REF(0.5, 0.6) }), 20);
   const med = h.writes({ el: 'trace', key: 'stroke' }).length;
   check('spökspåren ritas när referensen finns', med > 0, `${med} stroke`);
 
@@ -130,11 +135,12 @@ const FRAME = (o = {}) => ({ throttle: 0, brake: 0, clutch: 0, abs: false, tc: f
 }
 
 // ── 7. Spöket försvinner när referensen slutar gälla ──────────────────────
-// deltaSource != 'motec' (ut-varv, fel bana, ingen fil) → motorn skickar null.
+// Gäller källan inte (ut-varv, fel bana, ingen fil, inget varv inspelat) saknas
+// nyckeln i `refs` helt.
 // Enstaka null ska latchas (§8.5), men ihållande ska släcka spöket helt.
 {
   const h = await open({ expose: ['trace'] });
-  h.settle(FRAME({ throttle: 0.9, refThrottle: 0.4, refBrake: 0.1 }), 20);
+  h.settle(FRAME({ throttle: 0.9, ...REF(0.4, 0.1) }), 20);
   check('referensmärket visas på stapeln', h.el('m-throttle').style.display !== 'none',
         `display=${JSON.stringify(h.el('m-throttle').style.display)}`);
 
@@ -147,12 +153,13 @@ const FRAME = (o = {}) => ({ throttle: 0, brake: 0, clutch: 0, abs: false, tc: f
         `display=${JSON.stringify(h.el('m-throttle').style.display)}`);
 }
 
-// ── 8. Ghost-alternativet stänger av allt ────────────────────────────────
+// ── 8. delta-source='off' stänger av allt ───────────────────────────────
 {
   const h = await open({ expose: ['trace'], init: { id: 'inputs-trace', scale: 1, opacity: 1,
-                                                    options: { clutch: true, window: 4.5, ghost: false } } });
-  h.settle(FRAME({ throttle: 0.8, refThrottle: 0.5, refBrake: 0.6 }), 20);
-  check('med ghost=false ritas inget referensmärke',
+                                                    options: { clutch: true, window: 4.5,
+                                                               'delta-source': 'off' } } });
+  h.settle(FRAME({ throttle: 0.8, ...REF(0.5, 0.6) }), 20);
+  check("med delta-source='off' ritas inget referensmärke",
         h.el('m-throttle').style.display === 'none',
         `display=${JSON.stringify(h.el('m-throttle').style.display)}`);
   check('och overlayn ritar fortfarande sina egna spår',
@@ -163,10 +170,41 @@ const FRAME = (o = {}) => ({ throttle: 0, brake: 0, clutch: 0, abs: false, tc: f
 {
   const h = await open();
   for (const bad of ['x', null, NaN, -5, 99]) {
-    h.settle(FRAME({ throttle: 0.5, refThrottle: bad, refBrake: bad }), 6);
+    h.settle(FRAME({ throttle: 0.5, ...REF(bad, bad) }), 6);
   }
   const nan = h.writes({ el: 'm-throttle' }).filter((w) => String(w.value).includes('NaN')).length;
   check('skräp i referensvärden ger aldrig NaN på märket', nan === 0, `${nan} NaN-skrivningar`);
+}
+
+// ── 10. Spöket följer VALD källa, inte vilken som helst ──────────────────────
+// Detta var buggen som rapporterades: utan MoTeC-fil ritades inget spökspår alls,
+// fastän motorn nu spelar in förra och bästa varvet själv. Och när valet finns måste
+// det gälla — ett spöke ur fel källa är osynligt fel.
+{
+  const init = (source) => ({ id: 'inputs-trace', scale: 1, opacity: 1,
+                              options: { clutch: true, window: 4.5, 'delta-source': source } });
+
+  const best = await open({ expose: ['trace'], init: init('best') });
+  best.settle(FRAME({ throttle: 0.9, ...REF(0.4, 0.1, 'best') }), 20);
+  check('utan MoTeC-fil ritas spöket mot inspelat varv (best)',
+        best.el('m-throttle').style.display !== 'none',
+        `display=${JSON.stringify(best.el('m-throttle').style.display)}`);
+
+  const motec = await open({ expose: ['trace'], init: init('motec') });
+  motec.settle(FRAME({ throttle: 0.9, ...REF(0.4, 0.1, 'best') }), 20);
+  check('vald källa motec ritar INTE bästa varvets spöke',
+        motec.el('m-throttle').style.display === 'none',
+        `display=${JSON.stringify(motec.el('m-throttle').style.display)}`);
+
+  // Byte under körning: den gamla källans kurva får inte ligga kvar i historiken och
+  // skrolla ut i flera sekunder — då är halva spökspåret från fel varv.
+  const sw = await open({ expose: ['trace'], init: init('best') });
+  sw.settle(FRAME({ throttle: 0.9, ...REF(0.4, 0.1, 'best') }), 20);
+  sw.message({ __simmatrix: true, kind: 'option', option: 'delta-source', value: 'motec' });
+  sw.push(FRAME({ throttle: 0.9, ...REF(0.4, 0.1, 'best') })); sw.tick();
+  check('byte av källa släcker det gamla spöket omedelbart',
+        sw.el('m-throttle').style.display === 'none',
+        `display=${JSON.stringify(sw.el('m-throttle').style.display)}`);
 }
 
 console.log(failed ? `\n${failed} kontroll(er) misslyckades` : '\nAllt OK');

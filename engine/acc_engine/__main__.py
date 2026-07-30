@@ -16,11 +16,13 @@ Kör fristående (utan appen):
 from __future__ import annotations
 import argparse, asyncio, json, sys, time
 from pathlib import Path
+from typing import Optional
 
 from .bus import Bus
 from . import http_static
 from .frame import Frame
 from .delta import Reference
+from .laps import LapRecorder
 from .sources.mock import MockSource
 from .sources.acc import AccSource
 from .sources.acc_broadcast import AccBroadcast, find_config
@@ -56,40 +58,99 @@ ENTRIES_RESEND_S = 5.0
 _ref_notice: set = set()
 
 
-def apply_reference(f: Frame, ref: Reference) -> None:
-    """Väljer vilken referens deltat ska komma från och märker ramen med källan.
+def _curve_entry(curve, f: Frame, src: str) -> Optional[dict]:
+    """En referenskälla som den ser ut i ramens `refs` — eller None om den inte gäller.
 
-    Ordningen är hela poängen. MoTeC-referensen skrev tidigare ALLTID över ACC:s eget
-    delta så fort en fil var laddad — även på fel bana och även på ut-varvet direkt ur
-    depån, där siffran är rent nonsens. Den kommer nu bara till användning när den
-    faktiskt är giltig; annars behålls ACC:s eget delta mot session-bästa, vilket är
-    precis vad man vill se när ingen fil är vald.
+    Samma grind för alla sorter: ger kurvan inget delta här (mållinjens spikskydd,
+    §8.8) ska varken siffra eller spökspår visas. Att låta spöket ligga kvar när
+    deltat försvann hade visat en referens motorn samtidigt sagt sig inte lita på.
     """
-    if ref.loaded and not ref.matches_track(f.trackId):
+    d = curve.delta(f.position, f.curLapMs)
+    if d is None:
+        return None
+    ch = curve.channels_at(f.position)
+    return {"delta": d, "totalMs": curve.total_ms(),
+            "throttle": ch.get("throttle"), "brake": ch.get("brake"), "src": src}
+
+
+def _motec_applies(f: Frame, ref: Reference) -> bool:
+    """Gäller MoTeC-filen för det varv som körs NU? Loggar skälet en gång per skäl.
+
+    Utan de här två villkoren skrev filen ALLTID över deltat så fort den var laddad —
+    även på fel bana och även på ut-varvet direkt ur depån, där siffran är rent
+    nonsens. Båda felen var rapporterade från riktig körning (§8.8b).
+    """
+    if not ref.loaded:
+        return False
+    if not ref.matches_track(f.trackId):
         key = ("track", ref.venue, f.trackId)
         if key not in _ref_notice:
             _ref_notice.add(key)
             print(f"[delta] referensen är inspelad på {ref.venue!r} men banan är "
-                  f"{f.trackId!r} — använder ACC:s eget delta mot session-bästa i stället.")
-    elif ref.loaded and f.outLap:
+                  f"{f.trackId!r} — MoTeC-källan hoppas över.")
+        return False
+    if f.outLap:
         if "outlap" not in _ref_notice:
             _ref_notice.add("outlap")
             print("[delta] ut-varv (startade i depån) — referensdelta hoppas över "
                   "tills du passerat mållinjen.")
-    elif ref.loaded:
-        # Giltig referens: den vinner över ACC:s. `delta()` kan ge None vid mållinjen
-        # (spikskyddet, §8.8) — då ska INGET delta visas, inte ACC:s. Att växla mellan
-        # två olika referenser mellan ramar hade fått siffran att hoppa.
-        f.delta = ref.delta(f.position, f.curLapMs)
-        f.refTotalMs = ref.total_ms()
-        f.deltaSource = "motec" if f.delta is not None else None
-        # Spökkanalerna följer deltat: finns det inget giltigt delta här ska inte
-        # heller spökspåren ritas, annars visar overlayn en referens som motorn
-        # samtidigt sagt sig inte lita på.
-        if f.deltaSource == "motec":
-            ch = ref.channels_at(f.position)
-            f.refThrottle = ch.get("throttle")
-            f.refBrake = ch.get("brake")
+        return False
+    return True
+
+
+def apply_reference(f: Frame, ref: Reference, laps=None) -> None:
+    """Fyller ramens `refs` med ALLA referenskällor som gäller, och sätter de gamla
+    fälten (`delta`/`deltaSource`/`refThrottle`/`refBrake`) som förut.
+
+    Motorn VÄLJER inte längre åt overlayn — den levererar de källor som finns och
+    låter reglaget "Delta source" i varje overlay bestämma. Se frame.py för kartans
+    form och för varför valet hör hemma där.
+
+    De gamla fälten står kvar oförändrade: en OBS-källa eller en äldre overlay som
+    läser `delta` ska fortsätta se MoTeC-filen när den gäller och annars ACC:s eget
+    mått mot session-bästa.
+    """
+    acc_delta = f.delta                  # ACC:s eget mått mot session-bästa
+    refs: dict = {}
+
+    # Egna inspelningar: förra varvet och sessionens bästa. Samma ut-varvsregel som
+    # för filen — ett varv som börjat i depån går inte att jämföra med ett flygande.
+    if laps is not None and not f.outLap:
+        for key, curve in (("last", laps.last), ("best", laps.best)):
+            if curve is None:
+                continue
+            entry = _curve_entry(curve, f, "lap")
+            if entry:
+                refs[key] = entry
+
+    # ACC:s eget delta är fallback för "best" tills vi hunnit spela in ett eget varv:
+    # det är samma jämförelse (mot sessionens bästa) och det finns direkt. Ingen kurva
+    # följer med, så spökspåret uteblir — men siffran gör inte det.
+    if "best" not in refs and acc_delta is not None:
+        refs["best"] = {"delta": acc_delta, "totalMs": f.sessionBestMs,
+                        "throttle": None, "brake": None, "src": "acc"}
+
+    motec_ok = _motec_applies(f, ref)
+    motec = _curve_entry(ref, f, "motec") if motec_ok else None
+    if motec:
+        refs["motec"] = motec
+
+    f.refs = refs or None
+
+    # ── Gamla fälten (bakåtkompatibilitet) ─────────────────────────────────────
+    if motec_ok:
+        # Giltig fil: den vinner. `delta()` kan ge None vid mållinjen (spikskyddet)
+        # — då ska INGET delta visas, inte ACC:s. Att växla mellan två olika
+        # referenser mellan ramar hade fått siffran att hoppa.
+        if motec:
+            f.delta = motec["delta"]
+            f.refTotalMs = motec["totalMs"]
+            f.deltaSource = "motec"
+            f.refThrottle = motec["throttle"]
+            f.refBrake = motec["brake"]
+        else:
+            f.delta = None
+            f.deltaSource = None
         return
     f.deltaSource = "acc" if f.delta is not None else None
 
@@ -98,6 +159,10 @@ async def run():
     args = parse_args()
     bus = Bus()
     ref = Reference()
+    # Motorns egna varvinspelningar (förra varvet + sessionens bästa). Matas bara med
+    # RIKTIGA ACC-ramar: mock-telemetri får aldrig blandas in i en referens som
+    # overlays sedan jämför äkta körning mot (samma regel som §8.6e).
+    laps = LapRecorder()
 
     root = Path(args.root)
     if root.exists():
@@ -173,7 +238,16 @@ async def run():
                         rp = data.get("reference_ld", "")
                         if rp and rp != ref.path:
                             _ref_notice.clear()   # ny fil → nya skäl får loggas igen
-                            print(f"[engine] ny referens: {rp} → {'OK' if ref.load(rp) else 'MISSLYCKADES'}")
+                            # Inläsningen körs i en TRÅD. En ACC-export är 55 kanaler
+                            # och tiotusentals sampel; ldparser + numpy tar tiondelar
+                            # av en sekund till ett par sekunder, och gjordes det här
+                            # i loopen stannade ALL telemetri så länge — mitt i en
+                            # session, vilket är precis när man laddar en referens.
+                            # Racet är ofarligt: load() nollar `loaded` först och
+                            # sätter den sist, så en ram under inläsningen ser en
+                            # oladdad referens och använder ACC:s eget delta.
+                            ok = await asyncio.to_thread(ref.load, rp)
+                            print(f"[engine] ny referens: {rp} → {'OK' if ok else 'MISSLYCKADES'}")
                         elif not rp and ref.loaded:
                             # Referensen bortvald i panelen: sluta använda den. Utan
                             # detta låg den kvar tills motorn startades om.
@@ -193,7 +267,11 @@ async def run():
                 try:
                     f = acc.read()
                     if f.connected:
-                        apply_reference(f, ref)
+                        # Spela in FÖRE apply_reference: ramen som just passerade
+                        # mållinjen är den som gör bufferten till ett varv, och det
+                        # varvet ska kunna vara referens redan i samma ram.
+                        laps.update(f)
+                        apply_reference(f, ref, laps)
                         frame = f
                     acc_errs = 0
                 except Exception as e:

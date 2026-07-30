@@ -66,8 +66,24 @@ class MockSource(Source):
         # och i OBS utan att ACC körs — precis samma skäl som mocken finns för alls.
         ref_th = _clamp01(_seg_at(THROTTLE, now - 0.35))
         ref_br = _clamp01(_seg_at(BRAKE, now - 0.35))
+        # ALLA tre referenskällorna, av samma skäl som spökspåret ovan: reglaget
+        # "Delta source" ska gå att prova i panelens preview och i OBS utan att ACC
+        # kör. Faserna och deltana skiljer sig lite mellan källorna så att man ser
+        # ATT valet gör något — annars ser tre likadana kurvor ut som en bugg.
+        refs = {
+            "last": _ref_entry(now, 0.55, delta + 0.18, 138322, "lap"),
+            "best": _ref_entry(now, 0.35, delta, 138120, "lap"),
+            "motec": _ref_entry(now, 0.20, delta - 0.22, 136250, "motec"),
+        }
         return Frame(connected=False, throttle=throttle, brake=brake, clutch=clutch, abs=abs_, tc=tc,
                      gear=gear, speedKph=80+throttle*180, rpm=int(3000+throttle*4500), steer=0.35*math.sin(now*0.6),
                      delta=delta, sessionBestMs=138120, lastLapMs=138322, driverName="John Smith",
                      position=(now % LOOP)/LOOP,
-                     deltaSource="motec", refThrottle=ref_th, refBrake=ref_br)
+                     deltaSource="motec", refThrottle=ref_th, refBrake=ref_br, refs=refs)
+
+
+def _ref_entry(now: float, shift: float, delta: float, total_ms: int, src: str) -> dict:
+    """En post i ramens `refs` (se frame.py) byggd ur mockens egen kurva."""
+    return {"delta": max(-1.5, min(1.5, delta)), "totalMs": total_ms, "src": src,
+            "throttle": _clamp01(_seg_at(THROTTLE, now - shift)),
+            "brake": _clamp01(_seg_at(BRAKE, now - shift))}

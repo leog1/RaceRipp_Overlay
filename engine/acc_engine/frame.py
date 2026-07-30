@@ -1,6 +1,6 @@
 """Telemetriramens schema — en gemensam dict alla overlays läser."""
 from __future__ import annotations
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from typing import Optional
 
 
@@ -35,6 +35,25 @@ class Frame:
     refThrottle: Optional[float] = None
     refBrake: Optional[float] = None
 
+    # ── ALLA referenskällor samtidigt, en per nyckel ────────────────────────────
+    # {"last"|"best"|"motec": {"delta": s|None, "totalMs": int|None,
+    #                          "throttle": 0..1|None, "brake": 0..1|None,
+    #                          "src": "motec"|"lap"|"acc"}}
+    #
+    # Varför alla på en gång i stället för att motorn väljer: VALET hör till
+    # overlayn. Reglaget "Delta source" är per overlay (registry.json), så delta-baren
+    # kan visa session-bästa medan inputs-trace ritar spöket mot förra varvet — och
+    # motorn behöver inte veta något om panelens inställningar. Kostnaden är några
+    # tal per ram.
+    # En källa som inte GÄLLER just nu saknas helt i kartan (ingen fil laddad, inget
+    # varv inspelat, ut-varv, mållinjens spikskydd) — nyckeln finns alltså bara när
+    # det finns något att visa, och en overlay som inte hittar sin källa visar
+    # ingenting, precis som när deltat är null.
+    # `refs` är None när ingen källa alls gäller. Fälten `delta`/`deltaSource`/
+    # `refThrottle`/`refBrake` ovan står kvar oförändrade för bakåtkompatibilitet
+    # (OBS-källor och äldre overlays läser dem).
+    refs: Optional[dict] = None
+
     # ── Broadcasting (andra bilar). Alla None när Broadcasting är av, så inga
     # befintliga overlays påverkas — de läser bara de fält de deklarerat.
     cars: Optional[list] = None      # per bil: {i, spline, pos, laps, loc, kmh, …}
@@ -47,7 +66,16 @@ class Frame:
     broadcastError: Optional[str] = None
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        """Ramen som en dict för json.dumps.
+
+        `dict(vars(self))` och inte `dataclasses.asdict()`: asdict går igenom
+        strukturen REKURSIVT och deep-copierar allt den hittar, alltså hela
+        `cars`-listan (20 dictar) och `entries` vid varje ram, 40 gånger i sekunden.
+        Motorn är en egen process men delar CPU med spelet, så det arbetet syns i
+        FPS. Ramens fält är alla enkla typer eller dictar/listor vi själva just byggt
+        och inte muterar efter det här anropet, så en platt kopia räcker.
+        """
+        return dict(vars(self))
 
 # KONTRAKT för `entries`: den är statisk och skickas bara när den ÄNDRATS, plus var
 # 5:e sekund så en sent ansluten klient (OBS-flik som öppnas mitt i loppet) får den.

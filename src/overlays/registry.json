@@ -12,6 +12,7 @@
       "defaultScale": 1.0,
       "hz": 30,
       "channels": [
+        "refs",
         "delta",
         "sessionBestMs",
         "refTotalMs",
@@ -22,6 +23,18 @@
           "id": "predicted",
           "label": "Predicted-kolumn",
           "default": true
+        },
+        {
+          "id": "delta-source",
+          "type": "enum",
+          "label": "Delta-källa",
+          "default": "best",
+          "values": [
+            { "value": "best", "label": "Sessionens bästa varv" },
+            { "value": "last", "label": "Förra varvet" },
+            { "value": "motec", "label": "MoTeC-referensfil" },
+            { "value": "off", "label": "Av" }
+          ]
         },
         {
           "id": "col-green",
@@ -104,13 +117,26 @@
         "brake",
         "clutch",
         "abs",
-        "tc"
+        "tc",
+        "refs"
       ],
       "options": [
         {
           "id": "clutch",
           "label": "Kopplingsstapel",
           "default": true
+        },
+        {
+          "id": "delta-source",
+          "type": "enum",
+          "label": "Delta-källa",
+          "default": "best",
+          "values": [
+            { "value": "best", "label": "Sessionens bästa varv" },
+            { "value": "last", "label": "Förra varvet" },
+            { "value": "motec", "label": "MoTeC-referensfil" },
+            { "value": "off", "label": "Av" }
+          ]
         },
         {
           "id": "window",
@@ -121,11 +147,6 @@
           "min": 2,
           "max": 10,
           "step": 0.5
-        },
-        {
-          "id": "ghost",
-          "label": "Referensspår (ghost)",
-          "default": true
         },
         {
           "id": "col-green",

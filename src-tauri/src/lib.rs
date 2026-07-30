@@ -429,9 +429,23 @@ fn save_positions(app: &AppHandle, s: &mut Settings) {
     }
 }
 
+// En storleksändring av ett transparent always-on-top-fönster är INTE gratis: WebView2
+// bygger om sin renderyta och DWM måste komponera om ytan över spelet. Panelen stryper
+// därför sina anrop medan man drar (throttleIpc i kontrollpanelen), och här sorteras
+// resten bort — den avslutande, redan gällande storleken skickas alltid en extra gång
+// när reglaget släpps, och tidigare gjorde den ett fullt resize-varv för ingenting.
 fn apply_size(app: &AppHandle, id: &str, scale: f64) {
     if let (Some(def), Some(win)) = (def_of(id), app.get_webview_window(id)) {
-        let _ = win.set_size(tauri::LogicalSize::new(def.base_width * scale, def.base_height * scale));
+        let (w, h) = (def.base_width * scale, def.base_height * scale);
+        if let (Ok(cur), Ok(sf)) = (win.inner_size(), win.scale_factor()) {
+            let l = cur.to_logical::<f64>(sf);
+            // Halv logisk pixel: storleken går genom fysiska pixlar och tillbaka, så
+            // exakt likhet är inte att räkna med.
+            if (l.width - w).abs() < 0.5 && (l.height - h).abs() < 0.5 {
+                return;
+            }
+        }
+        let _ = win.set_size(tauri::LogicalSize::new(w, h));
     }
 }
 

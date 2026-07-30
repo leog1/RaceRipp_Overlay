@@ -186,16 +186,30 @@ const state={target:0,shown:0,bestMs:null,refMs:null,driver:'',
              deltaAt:-Infinity,bestAt:-Infinity,refAt:-Infinity};
 let signAhead=null;                      // latchat tecken (true = snabbare/grönt)
 
+/* Vilken referens deltat räknas mot. Registrets `delta-source` styr den och är det
+   ENDA reglaget som gör det: 'best' (sessionens bästa varv), 'last' (förra varvet),
+   'motec' (den laddade .ld-filen) eller 'off'.
+   Motorn skickar alla källor som gäller i ramens `refs` (se frame.py) och väljer
+   inte åt oss — valet hör till overlayn, så två overlays kan visa olika referens
+   samtidigt. Saknas nyckeln finns ingen sådan referens just nu (ingen fil, inget
+   inspelat varv, ut-varv, mållinjens spikskydd) och då visas platshållaren, precis
+   som när deltat är null. */
+const SRC_DEFAULT='best';
+let src=SRC_DEFAULT;
+
 const bus=new WsBus();
 bus.subscribe(f=>{
   const now=performance.now();
-  if(typeof f.delta==='number'){
+  const e=(src!=='off'&&f.refs&&typeof f.refs==='object')?f.refs[src]:null;
+  if(e&&typeof e.delta==='number'){
     // Första värdet snappas in — annars lerpar vi från 0 och tecknet hinner
     // visas fel i ett par frames innan det landar.
-    if(state.deltaAt===-Infinity){state.shown=f.delta;signAhead=f.delta<0;}
-    state.target=f.delta;state.deltaAt=now;}
+    if(state.deltaAt===-Infinity){state.shown=e.delta;signAhead=e.delta<0;}
+    state.target=e.delta;state.deltaAt=now;}
   if(typeof f.sessionBestMs==='number'){state.bestMs=f.sessionBestMs;state.bestAt=now;}
-  if(typeof f.refTotalMs==='number'){state.refMs=f.refTotalMs;state.refAt=now;}   // referensvarvets totaltid (MoTeC)
+  // Referensvarvets totaltid — grunden för predicted-kolumnen. Kommer ur den VALDA
+  // källan, så "förra varvet" predikterar mot förra varvets tid och inte mot bästa.
+  if(e&&typeof e.totalMs==='number'){state.refMs=e.totalMs;state.refAt=now;}
   if(f.driverName && f.driverName!==state.driver){state.driver=f.driverName;el.driver.textContent=f.driverName;}
 });
 
@@ -262,6 +276,16 @@ wireShell(({scale,opacity})=>{
   if(typeof opacity==='number') document.documentElement.style.setProperty('--ui-opacity',String(opacity));
 },(opt,val)=>{
   if(opt==='predicted') el.cellPred.style.display = val ? '' : 'none';
+  if(opt==='delta-source'){
+    const next=(typeof val==='string'&&val)?val:SRC_DEFAULT;
+    if(next!==src){
+      src=next;
+      /* Släpp latchen. Utan detta hölls FÖRRA källans delta i HOLD_MS efter bytet,
+         alltså en siffra som redan bytt betydelse — och med 'off' hade overlayn
+         stått kvar med ett värde i 0,7 s efter att man stängt av den. */
+      state.deltaAt=-Infinity; state.refAt=-Infinity; signAhead=null;
+    }
+  }
 });
 
 // Rita FÖRST, visa sedan. fontsReady väntar in Montserrat men aldrig i evighet —

@@ -110,6 +110,7 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           python tests/acc_source.py
           python tests/delta_source.py
+          python tests/lap_recorder.py
           python tests/broadcast_protocol.py
           python tests/engine_smoke.py
 

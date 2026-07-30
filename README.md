@@ -39,21 +39,28 @@ src-tauri/              ← Rust-skalet (fönster, kommandon, sidecar, updater)
 ## Köra i utveckling
 Kräver Rust, Node/pnpm, MSVC C++ build tools, WebView2, Python 3.11+.
 
-**1) Motorn** (egen terminal — i dev startas den inte automatiskt):
+**1) Engångsuppsättning** (i `engine/`):
 ```
-cd engine
 pip install -r requirements.txt
-pip install git+https://github.com/gotzl/ldparser   # för MoTeC-delta
-python -m acc_engine --root ../src
+# hämta ldparser.py från https://github.com/gotzl/ldparser till engine/  (för MoTeC-delta)
+python build_sidecar.py     # krävs även för dev, se nedan
 ```
-Utan ACC igång sänder motorn **mock-data** (så allt rör sig). Startar du ACC växlar
-den automatiskt till riktig telemetri.
+`ldparser` är **en enda fil**, inget pip-paket: `pip install git+…` mot det repot kan
+inte fungera (det har varken `setup.py` eller `pyproject.toml`) och misslyckas tyst i
+CI. Hämta råfilen till `engine/` — den är gitignorerad (GPL-3.0).
 
 **2) Appen**:
 ```
 pnpm install
 pnpm tauri dev
 ```
+`pnpm tauri dev` **startar motorn automatiskt** som sidecar. Kör den därför inte
+manuellt samtidigt — båda vill binda port 8777, och den som förlorar avslutar med ett
+meddelande i loggen. Behöver du motorn ensam (OBS, felsökning) körs den med
+`python -m acc_engine --root ../src` från `engine/`.
+
+Utan ACC igång sänder motorn **mock-data** (så allt rör sig). Startar du ACC växlar
+den automatiskt till riktig telemetri.
 Kontrollpanelen öppnas; overlays läggs ut enligt registret. **Ctrl+Alt+Space**
 växlar race ⇄ edit — i edit-läge drar du varje overlay på plats (sparas när panelen
 stängs). Opacitet/skala styrs per overlay i panelen.
@@ -62,6 +69,21 @@ stängs). Opacitet/skala styrs per overlay i panelen.
 Motorns HTTP-server serverar overlays direkt. Lägg en **Browser Source** mot t.ex.
 `http://127.0.0.1:8078/overlays/inputs-trace/index.html` (bredd/höjd enligt overlayn).
 Samma WS-data driver både appen och OBS.
+
+## Delta-källa
+Varje overlay som kan visa ett delta har **ett** reglage för det, `Delta-källa`, med
+fyra värden: **sessionens bästa varv**, **förra varvet**, **MoTeC-referensfil** och
+**av**. Ingenting annat styr deltat.
+
+Motorn spelar in varven själv, så "förra varvet" och "sessionens bästa" är fullvärdiga
+referenser med både delta OCH pedalkurva — inputs-trace ritar alltså spökspår även utan
+en MoTeC-fil. Ett varv blir INTE en referens om depån berörts under det (ut- eller
+in-varv), om inspelningen inte täcker nästan hela banan eller om varvtiden är orimlig:
+en dålig referens ser lika trovärdig ut som en bra.
+
+Motorn skickar alla källor som gäller i samma ram och väljer inte åt overlayn, så två
+overlays kan visa olika referens samtidigt. Har den valda källan inget att ge just nu
+(ingen fil laddad, inget varv inspelat än, ut-varv) visas platshållaren.
 
 ## MoTeC-referens (delta)
 Klicka **Ladda MoTeC .ld** i panelen. Motorn läser sido-`.ldx` för varvmarkörer och
@@ -77,10 +99,9 @@ cd engine && python build_sidecar.py     # PyInstaller → src-tauri/binaries/ac
 pnpm tauri build                          # installer i src-tauri/target/release/bundle/
 ```
 `externalBin` ligger kvar i `src-tauri/tauri.conf.json`, så sidecarn måste vara byggd
-minst en gång även för `pnpm tauri dev` — och dev **startar den automatiskt**. Kör
-därför inte motorn manuellt samtidigt; båda vill binda port 8777 och den som förlorar
-avslutar med ett meddelande i loggen. Bygg om sidecarn efter varje ändring i `engine/`,
-annars kör du gammal motorkod.
+minst en gång även för `pnpm tauri dev`. **Bygg om den efter varje ändring i `engine/`**,
+annars kör du gammal motorkod. Tester: `pnpm test` (overlays) + `python tests/<namn>.py`
+från repo-roten — se `tests/README.md`.
 
 ## Auto-update via GitHub
 1. Publikt repo. Byt `OWNER/REPO` i `src-tauri/tauri.conf.json` → `plugins.updater.endpoints`.

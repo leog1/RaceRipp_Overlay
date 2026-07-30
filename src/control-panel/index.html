@@ -71,36 +71,38 @@ body{font-family:var(--ui-font);color:var(--ink);
    matchar bara DIREKTA klick på .titlebar (§8.4i), så varje barn i raden är annars
    en död yta. */
 .titlebar .tb-logo{display:flex;align-items:center;padding:0 4px 0 16px;pointer-events:none;}
-/* Ordbilden är ritad 459×55 med en ljus kontur runt varje bokstav. Under ~16 px
-   (0,29× av originalet) hamnar konturen under en pixel och bokstävernas inre hål
-   sluts — det är golvet, satt av ritningen och inte av den här raden. 15 px ligger
-   precis över det golvet och ger en mindre, mer tillbakadragen ordbild i titelraden. */
-.titlebar .tb-logo img{height:15px;width:auto;display:block;}
+/* Ordbilden är ritad 459×55 med en ljus kontur runt varje bokstav. Konturen är det
+   som sätter golvet: blir bokstaven låg nog hamnar konturen under en pixel och de
+   inre hålen sluts. 14 px är valt för proportionen mot statustexten intill (10 px)
+   och ligger nära det golvet — gå inte lägre utan att rendera och titta på hålen i
+   a och e först. Den ursprungliga mätningen gjordes vid 16/18/20/22/24 px. */
+.titlebar .tb-logo img{height:14px;width:auto;display:block;}
 .titlebar .tb-drag{flex:1 1 auto;align-self:stretch;}
-/* Motor-/Broadcastingstatus, i titelraden sedan 0.4.6. Nu som BRICKOR med egen yta
-   och kant i stället för lös prick + text. Skälet är att de två raderna annars
-   flöt i samma optiska rum som ordbilden och fönsterknapparna, och en titelrad där
-   allt ligger löst intill vartannat läses som en verktygsrad någon glömt att
-   gruppera. En brickas kontur säger "det här är ett värde, inte en knapp".
-   Färgen sitter i YTAN och inte bara i pricken: en 6 px punkt är för lite yta för
-   att bära ett tillstånd man ska kunna se i ögonvrån medan man gör något annat.
+/* Motor-/Broadcastingstatus, i titelraden sedan 0.4.6. PRICK + TEXT, ingen yta och
+   ingen kant. Brickan hade båda och tanken var att gruppera de två statusarna mot
+   ordbilden och fönsterknapparna — men en 36 px titelrad har inte plats för en
+   tredje ram: ytan gav två pillerformer som läste som knappar man kan trycka på,
+   och när ytan togs bort satt konturen kvar och ritade en tom ram runt ingenting.
+   Prick + text bär tillståndet ensamt; det är den lugnaste formen som finns och
+   den enda som inte konkurrerar med ordbilden om uppmärksamheten.
+   Lägg alltså inte tillbaka background/border här — vill statusen skiljas från
+   ordbilden räcker avståndet (margin) och att pricken bär färgen.
 
-   OFFLINE ÄR MEDVETET NEUTRALT och inte en röd bricka — röd yta i titelraden vid
-   varje kallstart läser som ett fel, och att motorn inte hunnit upp än är inget
-   fel. Pricken är röd (--red är en SIGNALfärg, §4); ytan förblir lugn.
+   OFFLINE ÄR MEDVETET NEUTRALT i texten — att motorn inte hunnit upp vid en
+   kallstart är inget fel, så texten förblir --dim. Pricken är röd (--red är en
+   SIGNALfärg, §4).
    `display:flex` slår ut webbläsarens `[hidden]{display:none}` (samma fälla som
    §8.4f), därför en egen dold-regel nedan.
-   flex:0 0 auto: utan den är brickorna krympbara (flex-shrink är 1 som standard)
-   och `white-space:nowrap` gör att texten då spiller ut ur sin ruta i stället för
-   att .tb-drag ger med sig. Bredden här är ett designbeslut, inte en restpost —
+   flex:0 0 auto: utan den är statusen krympbar (flex-shrink är 1 som standard)
+   och `white-space:nowrap` gör att texten då spiller ut i stället för att
+   .tb-drag ger med sig. Bredden här är ett designbeslut, inte en restpost —
    samma resonemang som min-width:0 på .rail (§8.4h). */
 .tb-status{flex:0 0 auto;display:flex;align-items:center;gap:6px;
-  margin:0 4px;padding:4px 10px;border-radius:999px;
-  background:rgba(255,255,255,0.035);border:1px solid var(--ui-hair);
+  margin:0 6px;padding:0;
   font-size:var(--ui-fs-xs);font-weight:600;letter-spacing:.3px;color:var(--dim);
   -webkit-user-select:none;user-select:none;white-space:nowrap;line-height:1;
-  transition:background-color .2s ease,border-color .2s ease,color .2s ease;}
-.tb-status:last-of-type{margin-right:8px;}
+  transition:color .2s ease;}
+.tb-status:last-of-type{margin-right:12px;}
 .tb-status[hidden]{display:none;}
 .tb-status .dot{width:6px;height:6px;border-radius:50%;flex:0 0 auto;background:var(--faint);
   transition:background-color .2s ease;}
@@ -943,9 +945,20 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
                   <label class="sw" id="aotSwitch"><input type="checkbox" checked><span class="track"></span><span class="knob"></span></label></div>
               </div>
 
-              <!-- Kan vara tom (overlayn har inga färg-/enum-/talalternativ) —
-                   döljs som EN enhet (rubrik + rader) av renderOptions(), inte
-                   bara #cardTweaks för sig, annars blir rubriken kvar ensam. -->
+              <!-- Tal- och valalternativ (int/float/enum) står FÖR SIG och inte
+                   bland färgerna. Ett reglage som byter DATA — delta-källa,
+                   tidsfönster — hör inte under rubriken "Utseende", och när det låg
+                   där drunknade det dessutom i en lista på tolv färgrader.
+                   Sorteringen går fortfarande på `type` i registret, alltså känner
+                   panelen ingen overlay vid namn. -->
+              <div id="behaviorSection">
+                <div class="subhead"><span class="bar"></span><span>Data</span></div>
+                <div id="cardBehavior"></div>
+              </div>
+
+              <!-- Kan vara tom (overlayn har inga färgalternativ) — döljs som EN
+                   enhet (rubrik + rader) av renderOptions(), inte bara #cardTweaks
+                   för sig, annars blir rubriken kvar ensam. -->
               <div id="tweaksSection">
                 <div class="subhead"><span class="bar"></span><span>Utseende</span></div>
                 <div id="cardTweaks"></div>
@@ -1420,28 +1433,72 @@ function toPreview(msg){
   catch {}
 }
 
-/* Alternativen sorteras i tre kategorier: skala/opacitet ligger fast i första
-   kortet, bool-alternativen hamnar bland av/på-reglagen och ALLT annat (färger,
-   enum-val, talreglage) i utseendekortet. Sorteringen går på `type` i registret —
-   inte på overlay-id — så en ny overlay hamnar rätt utan att panelen ändras. */
+/* ── Strypning av IPC medan man DRAR ett reglage ──────────────────────────────
+   Ett `input`-event kommer för varje pixel man drar: upp till 60 i sekunden. Varje
+   sådant anrop gick hela vägen — IPC till Rust, en fullständig omskrivning av
+   settings.json och, för skalan, en STORLEKSÄNDRING av overlay-fönstret. Det sista
+   är det dyra: varje ändring tvingar WebView2 att bygga om sin renderyta och DWM
+   att komponera om ett transparent always-on-top-fönster som ligger ovanpå spelet.
+   En sådan storm medan ACC kör i bakgrunden är den mest sannolika förklaringen till
+   det bestående FPS-tappet som rapporterades efter att man justerat ett reglage och
+   tabbat tillbaka in i spelet — spelets presentationsväg (flip/MPO) byts då mot
+   komposition och kommer inte tillbaka förrän swapchainen byggs om, dvs. vid ny
+   session eller omstart.
+
+   Utseendet i panelen och i previewn uppdateras fortfarande vid VARJE input — det är
+   bara vägen till Rust som stryps. Första anropet går igenom direkt så det känns
+   omedelbart; sedan max ett per THROTTLE_MS, och det SISTA värdet skickas alltid
+   (annars hade fönstret kunnat fastna i ett mellanläge). flush() finns för `change`,
+   som är musknappen släppt. */
+const THROTTLE_MS = 120;
+function throttleIpc(fn, ms = THROTTLE_MS){
+  let last = 0, timer = 0, pending = null;
+  const run = () => {
+    timer = 0; last = performance.now();
+    const args = pending; pending = null;
+    if (args) fn(...args);
+  };
+  const call = (...args) => {
+    pending = args;
+    if (timer) return;                              // redan schemalagt: värdet räcker
+    const wait = ms - (performance.now() - last);
+    if (wait <= 0) run(); else timer = setTimeout(run, wait);
+  };
+  call.flush = () => { if (timer){ clearTimeout(timer); run(); } };
+  return call;
+}
+
+/* Alternativen sorteras i fyra sektioner: skala/opacitet ligger fast först,
+   bool-alternativen bland av/på-reglagen, tal och val (int/float/enum) under "Data"
+   och färgerna under "Utseende". Sorteringen går på `type` i registret — inte på
+   overlay-id — så en ny overlay hamnar rätt utan att panelen ändras. */
 function renderOptions(o){
-  const toggles = $('cardToggles'), tweaks = $('cardTweaks'), aot = $('rowAot');
-  for (const el of [...toggles.querySelectorAll('.row.gen'), ...tweaks.querySelectorAll('.row.gen')])
+  const toggles = $('cardToggles'), tweaks = $('cardTweaks'), behavior = $('cardBehavior');
+  const aot = $('rowAot');
+  for (const el of [...toggles.querySelectorAll('.row.gen'), ...tweaks.querySelectorAll('.row.gen'),
+                    ...behavior.querySelectorAll('.row.gen')])
     el.remove();
   const defs = o.option_defs || [];
-  let nTweaks = 0;
+  let nTweaks = 0, nBehavior = 0;
 
   for (const d of defs){
     const val = (o.options && d.id in o.options) ? o.options[d.id] : d.default;
     const row = document.createElement('div');
 
-    const send = async (v) => {
+    /* Bara vägen till Rust stryps (se throttleIpc): panelen och previewn uppdateras
+       vid varje input, men färg- och talreglagen skickar inte 60 IPC-anrop och 60
+       skrivningar av settings.json i sekunden medan man drar. En egen throttle per
+       RAD, så två reglage som dras efter varandra inte konkurrerar om samma fönster. */
+    const persist = throttleIpc(async (v) => {
+      try { await invoke('set_option', { id: o.id, option: d.id, value: v }); }
+      catch(err){ toast('Kunde inte spara alternativ: ' + errMsg(err), true); }
+    });
+    const send = (v) => {
       const cur = ov(o.id); if (cur){ cur.options = cur.options || {}; cur.options[d.id] = v; }
       markActivePreset();
       toPreview({ kind: 'option', id: o.id, option: d.id, value: v });   // syns direkt
       refitSoon();                                    // dimensionerna kan ha ändrats
-      try { await invoke('set_option', { id: o.id, option: d.id, value: v }); }
-      catch(err){ toast('Kunde inte spara alternativ: ' + errMsg(err), true); }
+      persist(v);
     };
 
     if (d.type === 'int' || d.type === 'float'){
@@ -1462,6 +1519,7 @@ function renderOptions(o){
         show(v);
         send(v);
       });
+      inp.addEventListener('change', () => persist.flush());   // musknappen släppt
 
     } else if (d.type === 'enum'){
       row.className = 'row';
@@ -1507,6 +1565,7 @@ function renderOptions(o){
         if (document.activeElement !== hexIn) hexIn.value = canon();
       };
       inp.addEventListener('input', emit);
+      inp.addEventListener('change', () => persist.flush());
 
       // Alfa-reglaget ligger i ett slot som finns även när färgen saknar alfa, så att
       // färgrutan hamnar i samma kolumn på ALLA färgrader.
@@ -1523,6 +1582,7 @@ function renderOptions(o){
           out.textContent = Math.round(alpha*100) + '%';
           emit();
         });
+        al.addEventListener('change', () => persist.flush());
         slot.appendChild(al); slot.appendChild(out);
         alphaIn = al; alphaOut = out;
       }
@@ -1556,7 +1616,7 @@ function renderOptions(o){
       });
       // Halvskriven kod ska inte bli kvar i rutan. Vid blur (och Enter) återgår
       // fältet till det värde som faktiskt gäller.
-      const settle = () => { hexIn.classList.remove('bad'); hexIn.value = canon(); };
+      const settle = () => { hexIn.classList.remove('bad'); hexIn.value = canon(); persist.flush(); };
       hexIn.addEventListener('blur', settle);
       hexIn.addEventListener('keydown', e => { if (e.key === 'Enter'){ settle(); hexIn.blur(); } });
 
@@ -1581,11 +1641,13 @@ function renderOptions(o){
     // att röra "Alltid överst", som är statisk och har sina lyssnare kopplade en gång.
     row.classList.add('gen');
     if (!d.type || d.type === 'bool') toggles.insertBefore(row, aot);
-    else { tweaks.appendChild(row); nTweaks++; }
+    else if (d.type === 'color'){ tweaks.appendChild(row); nTweaks++; }
+    else { behavior.appendChild(row); nBehavior++; }
   }
   // Döljs som HELA sektionen (rubrik + rader) — #cardTweaks ensamt hade lämnat
   // "Utseende"-rubriken kvar ovanför ingenting.
   $('tweaksSection').style.display = nTweaks ? '' : 'none';
+  $('behaviorSection').style.display = nBehavior ? '' : 'none';
 }
 
 /* ── live-preview (overlayn laddas app-relativt, samma bundle) ── */
@@ -1698,18 +1760,28 @@ $('btnReset').addEventListener('click', async () => {
 });
 
 /* ── skala / opacitet / alltid överst ── */
-$('scale').addEventListener('input', async () => {
+$('scale').addEventListener('input', () => {
   const v = parseFloat($('scale').value); $('scaleVal').textContent = v.toFixed(2) + '×';
   const o = ov(selectedId); if (o) o.scale = v;   // previewn visar naturlig storlek
   markActivePreset();                            // presetmarkoren slocknar nar man ror nagot
+  sendScale(v);
+});
+// change = musknappen släppt. Skicka slutvärdet utan att vänta in throttle-fönstret,
+// så fönstret aldrig står kvar i ett mellanläge om man drar snabbt och släpper.
+$('scale').addEventListener('change', () => sendScale.flush());
+const sendScale = throttleIpc(async (v) => {
   try { await invoke('set_scale', { id: selectedId, scale: v }); }
   catch(e){ toast('set_scale: ' + errMsg(e), true); }
 });
-$('opacity').addEventListener('input', async () => {
+$('opacity').addEventListener('input', () => {
   const v = parseFloat($('opacity').value); $('opacityVal').textContent = Math.round(v * 100) + '%';
   const o = ov(selectedId); if (o) o.opacity = v;
   markActivePreset();
   toPreview({ kind: 'config', id: selectedId, opacity: v });   // syns direkt i previewn
+  sendOpacity(v);
+});
+$('opacity').addEventListener('change', () => sendOpacity.flush());
+const sendOpacity = throttleIpc(async (v) => {
   try { await invoke('set_opacity', { id: selectedId, opacity: v }); }
   catch(e){ toast('set_opacity: ' + errMsg(e), true); }
 });
@@ -1771,8 +1843,13 @@ $('checkUpd').addEventListener('click', async () => {
 });
 
 /* ── motorstatus via WS ── */
-(function statusLoop(){
-  let ws;
+/* Returnerar start/stop: socketen stängs när panelen inte syns. Den tar emot motorns
+   40 ramar i sekunden bara för att skriva två textrader som ändras någon gång per
+   minut, och den fortsatte göra det medan man kör och panelen låg bakom spelet.
+   Statusen kan per definition inte läsas då, så arbetet är rent slöseri på CPU som
+   spelet behöver. */
+const statusSocket = (function statusLoop(){
+  let ws = null, retry = 0, wanted = true;
   const set = (cls, txt) => {
     // Tillståndet sitter på BRICKAN (ytan + kanten + texten färgas), inte på
     // pricken — se .tb-status i CSS:en.
@@ -1807,8 +1884,9 @@ $('checkUpd').addEventListener('click', async () => {
   }
 
   function connect(){
+    if (!wanted) return;
     set('off', 'Motor offline');
-    try { ws = new WebSocket('ws://127.0.0.1:8777'); } catch { return setTimeout(connect, 1500); }
+    try { ws = new WebSocket('ws://127.0.0.1:8777'); } catch { return void (retry = setTimeout(connect, 1500)); }
     /* Statusraden behöver inte 40 Hz. Den visar en prick och två textrader som
        ändras någon gång per minut, men parsade tidigare VARJE ram — 40 JSON.parse
        per sekund av en 32-fälts ram, i en egen WebView-renderare som dessutom
@@ -1825,17 +1903,41 @@ $('checkUpd').addEventListener('click', async () => {
         setBroadcast(f.broadcast, f.broadcastError);
       } catch {}
     };
-    ws.onclose = () => { set('off', 'Motor offline'); setBroadcast(null); setTimeout(connect, 1500); };
+    ws.onclose = () => {
+      set('off', 'Motor offline'); setBroadcast(null);
+      // Ingen återanslutning när vi själva stängde — annars kommer socketen tillbaka
+      // 1,5 s efter att panelen tappat fokus, och pausen blev meningslös.
+      if (wanted) retry = setTimeout(connect, 1500);
+    };
     ws.onerror = () => { try { ws.close(); } catch {} };
   }
   connect();
+  return {
+    start(){ if (wanted) return; wanted = true; connect(); },
+    stop(){
+      wanted = false;
+      clearTimeout(retry); retry = 0;
+      try { if (ws) ws.close(); } catch {}
+      ws = null;
+    },
+  };
 })();
 
 /* ── pausa förhandsvisningen när panelen inte syns ── */
 /* Previewn kör en FJÄRDE renderloop: en riktig overlay i en iframe, 30 ggr/s.
    Den fortsatte köra medan du kör och panelen ligger bakom spelet — alltså exakt
-   när CPU:n behövs till annat. display:none gör iframens dokument orenderat, och
-   då kör webbläsaren inte dess rAF alls.
+   när CPU:n behövs till annat.
+
+   PAUS RÄCKER INTE. `display:none` gör dokumentet orenderat och då kör webbläsaren
+   inte dess rAF — men overlayn i iframen har en EGEN WebSocket till motorn, och den
+   lever vidare: 40 ramar per sekund som avkodas, JSON-parsas och skickas ut till
+   prenumeranterna, plus samplen som inputs-trace lägger på i sin historik. Alltså
+   exakt den "previewn visar live-data medan jag kör" som rapporterades.
+   Därför NAVIGERAS iframen bort (about:blank) i stället: det river dokumentet, och
+   med dokumentet försvinner socketen, loopen och observern. Den laddas om när
+   panelen får fokus igen — en iframe-laddning är billig och sker bara när någon
+   faktiskt tittar på rutan.
+   Panelens EGEN statussocket stängs av samma skäl (statusSocket ovan).
    Ingen synlig skillnad: panelen är per definition inte synlig i det läget. */
 (function pausePreviewWhenHidden(){
   const pv = $('pv');
@@ -1844,8 +1946,19 @@ $('checkUpd').addEventListener('click', async () => {
     if (v === paused) return;
     paused = v;
     pv.style.display = v ? 'none' : '';
-    // Storleken räknas om av ResizeObserver inne i overlayn när den syns igen.
-    if (!v && selectedId) { const o = ov(selectedId); if (o) setPreview(o); }
+    if (v){
+      // dataset.src nollas också, annars tror setPreview att rätt sida redan är
+      // laddad och sätter aldrig src tillbaka.
+      pv.src = 'about:blank'; pv.dataset.src = '';
+      if (pvObs){ pvObs.disconnect(); pvObs = null; }
+      statusSocket.stop();
+    } else {
+      // Utanför selectedId-grenen: statusraden hör till fönstret och inte till en
+      // vald overlay, och hade annars aldrig kommit tillbaka innan man valt en.
+      statusSocket.start();
+      // Storleken räknas om av ResizeObserver inne i overlayn när den syns igen.
+      if (selectedId){ const o = ov(selectedId); if (o) setPreview(o); }
+    }
   };
   addEventListener('blur',  () => setPaused(true));
   addEventListener('focus', () => setPaused(false));

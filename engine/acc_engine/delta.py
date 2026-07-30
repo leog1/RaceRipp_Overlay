@@ -176,23 +176,33 @@ class Reference:
 
     def delta(self, norm_pos: float, cur_lap_ms: Optional[int]) -> Optional[float]:
         """delta = din_varvtid − t_ref(position). Negativ = snabbare."""
-        if not self.loaded or cur_lap_ms is None:
+        if not self.loaded:
             return None
-        tref = self.t_at(norm_pos)
-        if tref is None:
-            return None
-        d = cur_lap_ms / 1000.0 - tref
-        # Vid mållinjen kan position (wrappar till 0) och varvtid (nollställs strax
-        # efter) vara ur synk EN frame → falsk spik. Den spiken har alltid magnitud
-        # ≈ HELA varvtiden (mätt: 0,99 × varvet), så tröskeln ligger proportionellt
-        # mot varvlängden och skalar därmed av sig själv mellan Spa (~2:16) och
-        # Nordschleife (~8 min).
-        # 0,8 och inte 0,5: på långa banor är en äkta delta på tiotals sekunder både
-        # möjlig och intressant (t.ex. 24h Nordschleife) och ska visas, inte kastas.
-        # Med 0,5 avvisades allt över 68 s på Spa fastän det var giltig data.
-        if self.lap_ms and abs(d) > 0.8 * (self.lap_ms / 1000.0):
-            return None
-        return d
+        return lap_delta(self._pos, self._t, self.lap_ms, norm_pos, cur_lap_ms)
+
+
+def lap_delta(pos, t, lap_ms, norm_pos: float, cur_lap_ms: Optional[int]) -> Optional[float]:
+    """delta mot en varvkurva (position → tid). Negativ = snabbare.
+
+    Ligger som modulfunktion och inte som metod eftersom BÅDA referenssorterna
+    använder den: MoTeC-filen (Reference) och motorns egna inspelningar av förra och
+    bästa varvet (laps.LapCurve). Spikskyddet nedan är den sortens regel som blir fel
+    i den andra kopian, så det finns bara en.
+    """
+    if cur_lap_ms is None or pos is None or t is None or len(pos) < 2:
+        return None
+    d = cur_lap_ms / 1000.0 - float(np.interp(norm_pos % 1.0, pos, t))
+    # Vid mållinjen kan position (wrappar till 0) och varvtid (nollställs strax
+    # efter) vara ur synk EN frame → falsk spik. Den spiken har alltid magnitud
+    # ≈ HELA varvtiden (mätt: 0,99 × varvet), så tröskeln ligger proportionellt
+    # mot varvlängden och skalar därmed av sig själv mellan Spa (~2:16) och
+    # Nordschleife (~8 min).
+    # 0,8 och inte 0,5: på långa banor är en äkta delta på tiotals sekunder både
+    # möjlig och intressant (t.ex. 24h Nordschleife) och ska visas, inte kastas.
+    # Med 0,5 avvisades allt över 68 s på Spa fastän det var giltig data.
+    if lap_ms and abs(d) > 0.8 * (lap_ms / 1000.0):
+        return None
+    return d
 
 
 def _norm_track(s: str) -> str:

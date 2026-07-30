@@ -111,6 +111,14 @@ const GHOST_ALPHA = 0.38;
 /* Samma latch-princip som HOLD_MS i delta-baren (§8.5): motorn skickar null enstaka
    ramar vid mållinjen, och utan hållning fick spökspåret hål som syns som blink. */
 const REF_HOLD_MS = 700;
+/* Vilken referens spökspåret ritas mot. Registrets `delta-source` styr den och är
+   det ENDA reglaget som gör det — samma val, samma namn och samma fyra värden i
+   varje overlay som kan visa ett delta. 'off' släcker spöket helt.
+   Motorn skickar alla källor som gäller i ramens `refs` (se frame.py); overlayn
+   VÄLJER bara. Saknas den valda nyckeln finns ingen sådan referens just nu (ingen
+   fil laddad, inget varv inspelat, ut-varv, mållinjens spikskydd) och då ska inget
+   spöke ritas — precis som när deltat är null. */
+const SRC_DEFAULT = 'best';
 
 /* Ramen kan sakna fält (delvis ram, ovänligt data) — utan detta blir disp NaN och
    NaN är klistrigt: stapeln fastnar på scaleY(NaN) och etiketten visar "NaN". */
@@ -127,7 +135,7 @@ class InputsTrace{
     this.marks={ throttle:root.querySelector('#m-throttle'), brake:root.querySelector('#m-brake') };
     this.samples=[]; this.latest={throttle:0,brake:0,clutch:0,abs:false,tc:false,rThrottle:null,rBrake:null};
     this.disp={throttle:0,brake:0,clutch:0};
-    this.ghost=true; this._ref=null;
+    this.src=SRC_DEFAULT; this._ref=null;
     this.setWindow(4.5);
     this.col=this._readColors(); this._resize();
     new ResizeObserver(()=>this._resize()).observe(this.graph);
@@ -151,6 +159,19 @@ class InputsTrace{
     this.ctx.setTransform(dpr,0,0,dpr,0,0);
     this.traceW=Math.max(2,Math.round(this.ch*0.018));
     this.plotTop=Math.round(this.ch*0.06);this.plotBot=this.ch-Math.round(this.traceW/2);}
+  /* Vald källa ur ramens `refs`. Kartan innehåller BARA källor som gäller just nu,
+     så en saknad nyckel betyder "ingen sådan referens" och inte "fel". */
+  setSource(v){
+    const next=(typeof v==='string'&&v)?v:SRC_DEFAULT;
+    if(next===this.src)return;
+    this.src=next;
+    /* Nolla spöket i historiken. Utan det låg den GAMLA källans kurva kvar i de
+       sampel som redan fanns och skrollade ut under flera sekunder, alltså ett
+       spökspår som till hälften kom från förra varvet och till hälften från filen. */
+    for(const s of this.samples){s.rThrottle=null;s.rBrake=null;}
+    this._ref=null;
+    this._markBars();
+  }
   _onFrame(f){
     const now=Clock.now();
     /* Referensvarvets pedaler sparas i SAMMA sampel som dina egna. Motorn skickar
@@ -159,8 +180,9 @@ class InputsTrace{
        POSITION. Overlayn behöver alltså ingen egen positionsbokföring.
        Latch enligt §8.5: motorn skickar null enstaka ramar (mållinjens spikskydd),
        och utan hållning hade spökspåret fått hål som syns som blink i en linje. */
-    const rt=typeof f.refThrottle==='number'?num01(f.refThrottle):null;
-    const rb=typeof f.refBrake==='number'?num01(f.refBrake):null;
+    const e=(this.src!=='off'&&f.refs&&typeof f.refs==='object')?f.refs[this.src]:null;
+    const rt=(e&&typeof e.throttle==='number')?num01(e.throttle):null;
+    const rb=(e&&typeof e.brake==='number')?num01(e.brake):null;
     if(rt!==null||rb!==null){ this._ref={t:now,throttle:rt,brake:rb}; }
     const held=(this._ref&&(now-this._ref.t)<REF_HOLD_MS)?this._ref:null;
     const s={t:now,throttle:num01(f.throttle),brake:num01(f.brake),
@@ -175,7 +197,7 @@ class InputsTrace{
      det inför inget nytt färgspråk, så "grönt = gas" håller. ABS/TC färgar med flit
      bara ditt eget spår; referensens vore bara brus. */
   _drawGhost(now,key,color,pxPerMs){
-    if(!this.ghost)return;
+    if(this.src==='off')return;
     const s=this.samples,n=s.length; if(n<2)return; const ctx=this.ctx;
     const X=smp=>Math.round(this.cw-(now-smp.t)*pxPerMs);
     ctx.save();
@@ -233,7 +255,7 @@ class InputsTrace{
   _markBars(){
     for(const [key,refKey] of [['throttle','rThrottle'],['brake','rBrake']]){
       const mark=this.marks[key]; if(!mark)continue;
-      const v=this.ghost?this.latest[refKey]:null;
+      const v=(this.src==='off')?null:this.latest[refKey];
       const show=(typeof v==='number');
       if(show!==mark._shown){mark._shown=show;mark.style.display=show?'':'none';}
       if(!show)continue;
@@ -252,7 +274,7 @@ wireShell(({scale,opacity})=>{
 },(opt,val)=>{
   if(opt==='clutch'){ const c=document.getElementById('col-clutch'); if(c) c.style.display = val ? '' : 'none'; }
   if(opt==='window') trace.setWindow(val);
-  if(opt==='ghost') trace.ghost = !!val;
+  if(opt==='delta-source') trace.setSource(val);
   /* Canvas-färgerna läses EN gång vid start och cachas (de används 30 ggr/s).
      Ändras en färg måste cachen fyllas på — annars ritar traces vidare i den gamla
      färgen medan resten av panelen redan bytt. bus.js har satt CSS-variabeln innan

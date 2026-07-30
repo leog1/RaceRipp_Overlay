@@ -221,6 +221,85 @@ check("efter unload kommer deltat från ACC igen",
       f.deltaSource == "acc" and f.refTotalMs is None,
       f"källa={f.deltaSource} refTotalMs={f.refTotalMs}")
 
+# ── 9c. refs-kartan: ALLA källor som gäller, samtidigt ────────────────────
+# Motorn väljer inte längre åt overlayn — reglaget "Delta source" gör det, och då
+# måste ramen innehålla varje källa som gäller. En källa som INTE gäller ska saknas
+# helt: en overlay som får en nyckel litar på den.
+class FakeCurve:
+    """Ett inspelat varv, utan att behöva mata in ett helt varv (det gör
+    tests/lap_recorder.py). Samma tre metoder som __main__ använder per ram."""
+    def __init__(self, lap_ms, value, throttle=0.75, brake=0.10):
+        self.lap_ms = lap_ms
+        self._value, self._th, self._br = value, throttle, brake
+
+    def delta(self, pos, cur_lap_ms):
+        return self._value
+
+    def total_ms(self):
+        return self.lap_ms
+
+    def channels_at(self, pos):
+        return {"throttle": self._th, "brake": self._br}
+
+
+class FakeLaps:
+    def __init__(self, last=None, best=None):
+        self.last, self.best = last, best
+
+
+_ref_notice.clear()
+f = acc_frame()
+apply_reference(f, FakeRef(venue="Spa"),
+                FakeLaps(last=FakeCurve(140000, 1.5), best=FakeCurve(138120, -0.5)))
+check("alla tre källorna ligger i refs", sorted(f.refs or {}) == ["best", "last", "motec"],
+      f"refs={sorted(f.refs or {})}")
+check("varje källa bär sitt eget delta",
+      abs(f.refs["last"]["delta"] - 1.5) < 1e-9 and abs(f.refs["best"]["delta"] + 0.5) < 1e-9
+      and abs(f.refs["motec"]["delta"] + 0.42) < 1e-9, f.refs)
+check("varvtiden följer med per källa",
+      f.refs["last"]["totalMs"] == 140000 and f.refs["best"]["totalMs"] == 138120
+      and f.refs["motec"]["totalMs"] == 136250, f.refs)
+check("inspelade varv bär spökkanaler",
+      f.refs["best"]["throttle"] == 0.75 and f.refs["best"]["brake"] == 0.10, f.refs["best"])
+
+# Utan egen inspelning ska "best" ändå finnas — ACC:s eget mått mot session-bästa är
+# samma jämförelse och finns direkt. Men utan kurva, alltså utan spökspår.
+_ref_notice.clear()
+f = acc_frame()
+apply_reference(f, Reference(), FakeLaps())
+check("utan inspelat varv faller best tillbaka på ACC:s eget delta",
+      f.refs and f.refs["best"]["src"] == "acc" and abs(f.refs["best"]["delta"] + 0.25) < 1e-9,
+      f.refs)
+check("och den fallbacken har inga spökkanaler",
+      f.refs["best"]["throttle"] is None and f.refs["best"]["brake"] is None, f.refs["best"])
+check("last finns inte när inget varv är inspelat", "last" not in (f.refs or {}), f.refs)
+
+# Ut-varv: de egna inspelningarna är inte jämförbara (man startade inte på mållinjen).
+# ACC:s eget mått får stå kvar — ACC svarar för sin egen giltighet.
+_ref_notice.clear()
+f = acc_frame(outLap=True)
+apply_reference(f, FakeRef(venue="Spa"),
+                FakeLaps(last=FakeCurve(140000, 1.5), best=FakeCurve(138120, -0.5)))
+check("på ut-varv finns varken last eller motec i refs",
+      "last" not in (f.refs or {}) and "motec" not in (f.refs or {}), f.refs)
+check("men ACC:s eget mått finns kvar som best",
+      f.refs and f.refs["best"]["src"] == "acc", f.refs)
+
+# Ingen källa alls → refs är None, inte en tom dict. En overlay ska inte behöva skilja
+# på "tom" och "saknas".
+_ref_notice.clear()
+f = acc_frame(delta=None)
+apply_reference(f, Reference(), FakeLaps())
+check("utan någon källa är refs None", f.refs is None, f"refs={f.refs}")
+
+# Spikskyddet gäller per källa: ger kurvan inget delta ska den saknas i kartan, så att
+# varken siffra eller spökspår visas för just den källan.
+_ref_notice.clear()
+f = acc_frame()
+apply_reference(f, Reference(), FakeLaps(best=FakeCurve(138120, None)))
+check("en källa utan giltigt delta finns inte i refs",
+      f.refs and f.refs["best"]["src"] == "acc", f.refs)
+
 # ── 10. Banmatchningen mot en RIKTIG .ld ──────────────────────────────────
 real = Reference()
 ld = Path(r"C:\Users\leo\Downloads\2.16.265_Spa_296_MoTeC-1"

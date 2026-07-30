@@ -145,7 +145,12 @@
      vägen, och skåran syntes bara som ännu ett svart på svart.
      Nu: previewn ligger under app-bg, kortet ETT STEG ÖVER. Samma lilla luminanssteg
      som förut, men åt rätt håll, och riktningarna berättar vad sakerna är. */
-  --ui-card:    #101312;                 /* kortyta: ett steg över app-bg         */
+  /* #0e100f och inte #101312: steget över app-bg (#0b0d0c) ska vara det MINSTA som
+     fortfarande läses som "ovanpå". Det förra värdet låg 3 luminanssteg över och
+     kortet lyfte då synligt ur panelen över hela högerkolumnens höjd — riktningen
+     var rätt men styrkan för stor. Gå inte lägre än app-bg: då byter kortet håll
+     och hamnar i previewens djup, vilket är precis felet resonemanget ovan löste. */
+  --ui-card:    #0e100f;                 /* kortyta: ett steg över app-bg         */
   /* Förhandsvisningens inre yta: ett steg UNDER app-bg. Rutan stod tidigare på
      --plot (#141613), vilket är LJUSARE än panelen — den läste alltså som en skiva
      ovanpå och behövde en slagskugga för att se ut att höra hemma någonstans.
