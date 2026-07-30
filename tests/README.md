@@ -12,6 +12,7 @@ node tests/overlay-loop.mjs           # renderloopens takt under jitter
 node tests/overlay-gate.mjs           # synk-grinden: blinkar overlayn?
 node tests/overlay-options.mjs        # typade alternativ, före första paint
 node tests/overlay-preview.mjs        # previewn får aldrig fönstrets skala
+node tests/panel-layout.mjs           # layout-flikens geometri (kräver Chrome)
 python tests/acc_source.py            # "ingen ny data" != frånkopplad, ut-varv
 python tests/delta_source.py          # vilken referens deltat kommer från
 python tests/lap_recorder.py          # motorns egna varvinspelningar (förra/bästa)
@@ -19,7 +20,13 @@ python tests/engine_smoke.py          # motorn: ramschema, takt, portkonflikt
 python tests/motec_reference.py       # MoTeC-delta mot en riktig .ld
 python tests/broadcast_protocol.py    # Broadcasting-UDP mot en falsk ACC-server
 ```
-`pnpm test` kör de sex overlay-testerna. Python-testerna körs **från repo-roten**.
+`pnpm test` kör de sju Node-testerna. Python-testerna körs **från repo-roten**.
+
+`panel-layout.mjs` är det enda testet med ett yttre beroende: det startar **Chrome**
+headless och driver panelen över CDP. Hittas ingen Chrome FALLER testet med en
+sökvägslista i felet — det hoppar aldrig tyst över sig själv (§9). Egen sökväg:
+`CHROME=<...\chrome.exe> node tests/panel-layout.mjs`. GitHubs `windows-latest` har
+Chrome förinstallerad, så det går igenom i CI som det är.
 
 ## Harnessen (`tests/lib/overlay-harness.mjs`)
 Plockar ut overlayns modulskript ur HTML:en, byter importerna mot stubbar, fejkar DOM:en
@@ -194,6 +201,29 @@ Viktigast här är spikskyddet (§8.8): mållinje-artefakten (position wrappar i
 varvtiden nollställs) ska avvisas medan äkta stora deltan ska visas. Tröskeln är
 proportionell mot varvlängden, så testet kontrollerar båda banlängderna — Spa och ett
 skalat Nordschleife-varv.
+
+## panel-layout.mjs
+Layout-flikens **geometri**, mätt i en riktig webbläsare: skärmvyns proportioner, att
+varje box ligger och mäter som overlayns riktiga fönster gör, att snappningen väljer
+NÄRMASTE kandidat (inte första träffen — annars går en bred overlay aldrig att
+centrera), att inställningsgrupperna är hopfällda tills man öppnar dem, att skärmvyn och
+stacken linjerar utan vågrät skroll, och att lägg till / ta bort går genom `set_enabled`
+(medlemskap i en layout ÄR påslagen, CLAUDE.md §2).
+
+Harnessen duger inte här: det som kan gå sönder finns bara i layouten, alltså i
+`getBoundingClientRect`. Panelen körs därför i headless Chrome mot en Tauri-stubb och
+drivs över CDP — `--dump-dom` räcker inte när mätningen måste klicka och vänta in
+layouten mellan stegen.
+
+Två saker som gjorde testet trubbigt innan de rättades, och som är lätta att återinföra:
+- **Räkna aldrig med panelens egen `stageK`.** En kontroll som hämtar omräkningsfaktorn
+  ur koden den granskar stämmer alltid mot sig själv: `stageK = 0.4` passerade. Förväntad
+  storlek räknas nu fram ur BEHÅLLAREN.
+- **Fixturen måste ha olika värden per overlay.** Två overlays med samma mått, skala och
+  position hade gjort varje placeringsfel osynligt (samma fälla som den slappa
+  `getComputedStyle`-stubben ovan).
+
+Kräver Chrome. Se listan högst upp för hur den pekas ut.
 
 ## Att lägga till en overlay-test
 ```js

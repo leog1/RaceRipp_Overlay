@@ -138,6 +138,24 @@ fn clamp_opt(v: Option<f64>, lo: f64, hi: f64) -> Option<f64> {
 // Skillnaden är att en preset får vara PARTIELL — den behöver inte nämna varje
 // option, och de den inte nämner ska lämnas som de är i stället för att fyllas med
 // registrets standardvärde (vilket sanitize_options gör).
+// Ett helt overlay-läge (live eller ur en layout). Skalan klampades tidigare bara
+// när den kom från en preset, alltså inte alls för ett handredigerat eller åldrat
+// värde i settings.json — och ett fönster byggt på `base_width * 99` är inte något
+// användaren kan klicka sig ur.
+// Positionen klampas mot ett grovt skärmintervall snarare än mot den faktiska
+// skärmen: monitoruppsättningen kan skilja sig från den som sparade filen, och att
+// dra in en overlay från en frånkopplad andraskärm är panelens jobb (skärmvyn), inte
+// inläsningens. Gränsen finns bara för att stoppa orimliga tal.
+const POS_LIMIT: i32 = 32_000;
+
+fn sanitize_state(d: &OverlayDef, st: &mut OverlayState) {
+    st.scale = if st.scale.is_finite() { st.scale.clamp(SCALE_MIN, SCALE_MAX) } else { d.default_scale };
+    st.opacity = if st.opacity.is_finite() { st.opacity.clamp(OPACITY_MIN, OPACITY_MAX) } else { 1.0 };
+    st.x = st.x.clamp(-POS_LIMIT, POS_LIMIT);
+    st.y = st.y.clamp(-POS_LIMIT, POS_LIMIT);
+    sanitize_options(d, &mut st.options);
+}
+
 fn sanitize_preset(d: &OverlayDef, p: &mut Preset) {
     p.scale = clamp_opt(p.scale, SCALE_MIN, SCALE_MAX);
     p.opacity = clamp_opt(p.opacity, OPACITY_MIN, OPACITY_MAX);
@@ -148,6 +166,33 @@ fn sanitize_preset(d: &OverlayDef, p: &mut Preset) {
         }
     }
 }
+
+// ── Layouter ────────────────────────────────────────────────────────────────
+// En layout är en namngiven ögonblicksbild av HELA overlay-uppsättningen: vilka
+// som är på, var de sitter, hur stora de är och hur de ser ut. En preset är
+// utseendet på EN overlay; en layout är arbetsläget för skärmen.
+//
+// Bara overlays som INGÅR ligger i kartan — medlemskap är alltså detsamma som
+// "påslagen", och panelens "lägg till / ta bort ur layouten" är samma väg som
+// av/på-knappen i Overlays-fliken. Två sätt att slå på samma overlay hade
+// oundvikligen glidit isär.
+//
+// EXAKT EN layout kan vara aktiv (`active_layout`). Den aktiva är LIVE-BUNDEN:
+// `sync_active_layout` kopierar in det gällande läget vid varje sparning, så
+// allt man ändrar — i skärmvyn, i Overlays-fliken, genom att dra en overlay i
+// edit-läge — hamnar i den utan ett spara-steg. Det är därför det inte finns två
+// sanningar: `settings.overlays` ÄR läget, layouten är en spegel av det.
+#[derive(Deserialize, Serialize, Clone)]
+struct Layout {
+    id: String,
+    name: String,
+    #[serde(default)]
+    overlays: HashMap<String, OverlayState>,
+}
+
+// Samma skäl som MAX_USER_PRESETS: taket finns för att en fastnad panel-loop inte
+// ska kunna blåsa upp settings.json, inte för att någon skulle skapa 60 för hand.
+const MAX_LAYOUTS: usize = 40;
 
 #[derive(Deserialize)]
 struct Registry {
@@ -325,6 +370,16 @@ struct Settings {
     // 0.3.0:s typbyte på ett BEFINTLIGT fält, som gjorde hela filen oläsbar.
     #[serde(default)]
     presets: HashMap<String, Vec<Preset>>,
+    // Layouter, i den ordning användaren skapat dem — den enda ordning man själv
+    // kan förutsäga. Samma nedgraderingsväg som `presets`: serde ignorerar okända
+    // fält, så en äldre build läser filen utan att kvävas och tappar bara
+    // layouterna tyst (§8.3b).
+    #[serde(default)]
+    layouts: Vec<Layout>,
+    // Id på den aktiva layouten, tom sträng = ingen. Ett id och inte ett index:
+    // ett index pekar på fel layout så fort en tidigare tas bort.
+    #[serde(default)]
+    active_layout: String,
     reference_ld: String,
     // global: visa overlays först när motorn är synkad mot ACC (connected==true)
     #[serde(default)]
@@ -396,7 +451,7 @@ fn load_settings(app: &AppHandle) -> Settings {
             };
             for d in registry() {
                 let st = s.overlays.entry(d.id.clone()).or_insert_with(|| default_state_for(d));
-                sanitize_options(d, &mut st.options);
+                sanitize_state(d, st);
                 // Samma skäl som för options: en handredigerad eller åldrad preset
                 // (en option som tagits bort ur registret, ett tal utanför reglagets
                 // intervall) ska rättas HÄR och inte nå en overlay.
@@ -410,12 +465,74 @@ fn load_settings(app: &AppHandle) -> Settings {
             // Presets för overlays som inte längre finns i registret städas bort —
             // annars ligger de kvar för alltid och växer med varje borttagen modul.
             s.presets.retain(|k, _| def_of(k).is_some());
+            sanitize_layouts(&mut s);
             s
         }
         Err(_) => default_settings(),
     }
 }
-fn save_settings(app: &AppHandle, s: &Settings) {
+
+// Samma behandling som för presets: en layout kan vara handredigerad, komma från en
+// nyare version eller nämna en overlay som tagits bort ur registret. Rättas HÄR, en
+// gång, i stället för att slå igenom som ett fönster med orimlig storlek.
+fn sanitize_layouts(s: &mut Settings) {
+    s.layouts.truncate(MAX_LAYOUTS);
+    let mut seen: Vec<String> = Vec::new();
+    s.layouts.retain(|l| {
+        let ok = !l.id.is_empty() && !seen.contains(&l.id);
+        if ok {
+            seen.push(l.id.clone());
+        }
+        ok
+    });
+    for l in s.layouts.iter_mut() {
+        l.name = l.name.trim().chars().take(32).collect();
+        if l.name.is_empty() {
+            l.name = "Layout".into();
+        }
+        l.overlays.retain(|k, _| def_of(k).is_some());
+        for (id, st) in l.overlays.iter_mut() {
+            if let Some(d) = def_of(id) {
+                sanitize_state(d, st);
+            }
+            // Medlemskap ÄR "påslagen". Ett false här hade gett en layout som
+            // innehåller en overlay den samtidigt släcker.
+            st.enabled = true;
+        }
+    }
+    // En aktiv layout som inte finns är samma sak som ingen aktiv: annars hade
+    // sync_active_layout skrivit ut i tomma intet vid varje sparning.
+    if !s.layouts.iter().any(|l| l.id == s.active_layout) {
+        s.active_layout = String::new();
+    }
+}
+
+// Speglar det GÄLLANDE läget in i den aktiva layouten. Körs från save_settings, alltså
+// vid varje ändring som sparas — det är det som gör den aktiva layouten live-bunden
+// utan ett spara-steg, och det som gör att det bara finns EN sanning: layouten är en
+// kopia av `overlays`, aldrig en konkurrerande uppsättning värden.
+//
+// Bara påslagna overlays följer med (medlemskap = påslagen). En avslagen overlay
+// behåller sitt läge i `overlays` och kommer tillbaka som den var om man lägger in
+// den i layouten igen.
+fn sync_active_layout(s: &mut Settings) {
+    if s.active_layout.is_empty() {
+        return;
+    }
+    let snapshot: HashMap<String, OverlayState> = s
+        .overlays
+        .iter()
+        .filter(|(id, st)| st.enabled && def_of(id).is_some())
+        .map(|(id, st)| (id.clone(), st.clone()))
+        .collect();
+    let want = s.active_layout.clone();
+    if let Some(l) = s.layouts.iter_mut().find(|l| l.id == want) {
+        l.overlays = snapshot;
+    }
+}
+
+fn save_settings(app: &AppHandle, s: &mut Settings) {
+    sync_active_layout(s);
     if let Ok(txt) = serde_json::to_string_pretty(s) {
         let _ = std::fs::write(settings_path(app), txt);
     }
@@ -493,7 +610,7 @@ fn persist_positions(app: &AppHandle) {
     if let Some(state) = app.try_state::<Mutex<Settings>>() {
         if let Ok(mut s) = state.lock() {
             save_positions(app, &mut s);
-            save_settings(app, &s);
+            save_settings(app, &mut s);
         }
     }
 }
@@ -585,6 +702,11 @@ struct OverlayInfo {
     url: String,
     base_width: f64,
     base_height: f64,
+    // Positionen i LOGISKA pixlar — samma enhet som set_position tar (§8.2).
+    // Layout-flikens skärmvy ritar overlays ur den här och skickar tillbaka nya
+    // värden när man drar; utan den hade panelen inte vetat var något ligger.
+    x: i32,
+    y: i32,
     enabled: bool,
     scale: f64,
     opacity: f64,
@@ -609,6 +731,8 @@ fn get_overlays(state: State<Mutex<Settings>>) -> Vec<OverlayInfo> {
                 url: d.url.clone(),
                 base_width: d.base_width,
                 base_height: d.base_height,
+                x: st.x,
+                y: st.y,
                 enabled: st.enabled,
                 scale: st.scale,
                 opacity: st.opacity,
@@ -672,7 +796,7 @@ fn set_enabled(app: AppHandle, state: State<Mutex<Settings>>, id: String, enable
     {
         let mut s = state.lock().unwrap();
         if let Some(st) = s.overlays.get_mut(&id) { st.enabled = enabled; }
-        save_settings(&app, &s);
+        save_settings(&app, &mut s);
     }
     // Skicka FÖRE show/hide: bus.js ska ha släppt sitt anspråk på fönstret innan
     // skalet rör det, annars kan grinden hinna dölja det vi just visat.
@@ -698,7 +822,7 @@ fn set_scale(app: AppHandle, state: State<Mutex<Settings>>, id: String, scale: f
         prev = s.overlays.get(&id).map(|st| st.scale).unwrap_or(scale);
         if let Some(st) = s.overlays.get_mut(&id) { st.scale = scale; }
         opacity = s.overlays.get(&id).map(|s| s.opacity).unwrap_or(1.0);
-        save_settings(&app, &s);
+        save_settings(&app, &mut s);
     }
     // Fönsterstorlek och CSS-skala ändras i två steg; gör det större steget först
     // så innehållet aldrig klipps av ett för litet fönster däremellan.
@@ -719,7 +843,7 @@ fn set_opacity(app: AppHandle, state: State<Mutex<Settings>>, id: String, opacit
         let mut s = state.lock().unwrap();
         if let Some(st) = s.overlays.get_mut(&id) { st.opacity = opacity; }
         scale = s.overlays.get(&id).map(|s| s.scale).unwrap_or(1.0);
-        save_settings(&app, &s);
+        save_settings(&app, &mut s);
     }
     let _ = app.emit("config", ConfigPayload { id: id.clone(), scale, opacity });
 }
@@ -730,7 +854,7 @@ fn set_always_on_top(app: AppHandle, state: State<Mutex<Settings>>, id: String, 
     {
         let mut s = state.lock().unwrap();
         if let Some(st) = s.overlays.get_mut(&id) { st.always_on_top = value; }
-        save_settings(&app, &s);
+        save_settings(&app, &mut s);
     }
     if let Some(win) = app.get_webview_window(&id) { let _ = win.set_always_on_top(value); }
 }
@@ -752,7 +876,7 @@ fn set_option(
     {
         let mut s = state.lock().unwrap();
         if let Some(st) = s.overlays.get_mut(&id) { st.options.insert(option.clone(), value.clone()); }
-        save_settings(&app, &s);
+        save_settings(&app, &mut s);
     }
     let _ = app.emit("option", OptionPayload { id: id.clone(), option, value });
 }
@@ -767,7 +891,7 @@ fn reset_overlay(app: AppHandle, state: State<Mutex<Settings>>, id: String) {
             let enabled = cur.enabled;
             *cur = OverlayState { enabled, ..default_state_for(def) };
         }
-        save_settings(&app, &s);
+        save_settings(&app, &mut s);
         let st = s.overlays.get(&id).cloned().unwrap_or_else(|| default_state_for(def));
         (st.scale, st.opacity, st.options.clone())
     };
@@ -780,6 +904,292 @@ fn reset_overlay(app: AppHandle, state: State<Mutex<Settings>>, id: String) {
     for (opt, val) in options {
         let _ = app.emit("option", OptionPayload { id: id.clone(), option: opt, value: val });
     }
+}
+
+// Flytta en overlay från panelen (layout-flikens skärmvy). Samma väg som när man
+// drar fönstret i edit-läge, bara med panelen som avsändare — därför LOGISKA pixlar
+// hela vägen (§8.2), och därför sparas värdet även när fönstret inte finns
+// (avstängd overlay): create_overlay läser st.x/st.y när den tänds igen.
+//
+// Att flytta ett transparent always-on-top-fönster kostar samma DWM-arbete som att
+// ändra dess storlek, så panelen stryper anropen medan man drar (§8.5e). Här sorteras
+// resten bort: en position som redan gäller görs inte om.
+#[tauri::command]
+fn set_position(app: AppHandle, state: State<Mutex<Settings>>, id: String, x: i32, y: i32) {
+    if def_of(&id).is_none() {
+        return;
+    }
+    let (x, y) = (x.clamp(-POS_LIMIT, POS_LIMIT), y.clamp(-POS_LIMIT, POS_LIMIT));
+    {
+        let mut s = state.lock().unwrap();
+        match s.overlays.get_mut(&id) {
+            Some(st) if st.x == x && st.y == y => return,
+            Some(st) => {
+                st.x = x;
+                st.y = y;
+            }
+            None => return,
+        }
+        save_settings(&app, &mut s);
+    }
+    if let Some(win) = app.get_webview_window(&id) {
+        let _ = win.set_position(tauri::LogicalPosition::new(x as f64, y as f64));
+    }
+}
+
+#[derive(Serialize)]
+struct ScreenInfo {
+    width: f64,
+    height: f64,
+}
+
+// Skärmvyn måste ha samma proportioner som skärmen overlays faktiskt hamnar på,
+// annars ljuger den om var något ligger. LOGISKA pixlar av samma skäl som
+// size_control_window (§8.2b): overlay-positioner är logiska, `Monitor::size()` är
+// fysiska. Faller frågan (ingen skärm att fråga) får panelen 0 och ritar sitt
+// fallback-format i stället för att räkna på ett nolltal.
+#[tauri::command]
+fn get_screen(app: AppHandle) -> ScreenInfo {
+    let size = app
+        .get_webview_window("control")
+        .and_then(|w| w.current_monitor().ok().flatten())
+        .map(|m| m.size().to_logical::<f64>(m.scale_factor()));
+    match size {
+        Some(s) if s.width >= 1.0 && s.height >= 1.0 => ScreenInfo { width: s.width, height: s.height },
+        _ => ScreenInfo { width: 0.0, height: 0.0 },
+    }
+}
+
+// ── Layouter ────────────────────────────────────────────────────────────────
+#[derive(Serialize)]
+struct LayoutSlotInfo {
+    id: String,
+    title: String,
+    x: i32,
+    y: i32,
+    // Färdigräknad fönsterstorlek (base × skala) så panelen slipper slå upp defen
+    // för varje slot i varje miniatyr.
+    w: f64,
+    h: f64,
+}
+
+#[derive(Serialize)]
+struct LayoutInfo {
+    id: String,
+    name: String,
+    active: bool,
+    slots: Vec<LayoutSlotInfo>,
+}
+
+fn layout_info(l: &Layout, active: &str) -> LayoutInfo {
+    // Registrets ordning och inte kartans: en HashMap itereras i godtycklig ordning,
+    // och en miniatyr där overlays byter ritordning mellan två anrop ser trasig ut.
+    let slots = registry()
+        .iter()
+        .filter_map(|d| {
+            let st = l.overlays.get(&d.id)?;
+            Some(LayoutSlotInfo {
+                id: d.id.clone(),
+                title: d.title.clone(),
+                x: st.x,
+                y: st.y,
+                w: d.base_width * st.scale,
+                h: d.base_height * st.scale,
+            })
+        })
+        .collect();
+    LayoutInfo { id: l.id.clone(), name: l.name.clone(), active: l.id == active, slots }
+}
+
+#[tauri::command]
+fn list_layouts(state: State<Mutex<Settings>>) -> Vec<LayoutInfo> {
+    let mut s = state.lock().unwrap();
+    // Spegla först: den aktiva layoutens miniatyr ska visa läget som det ÄR just nu,
+    // inte som det var när något sist sparades.
+    sync_active_layout(&mut s);
+    let active = s.active_layout.clone();
+    s.layouts.iter().map(|l| layout_info(l, &active)).collect()
+}
+
+fn unique_layout_id(s: &Settings, name: &str) -> String {
+    let base = slug(name);
+    let mut id = base.clone();
+    let mut n = 2;
+    while s.layouts.iter().any(|l| l.id == id) {
+        id = format!("{base}-{n}");
+        n += 1;
+    }
+    id
+}
+
+// Skapar en layout ur DET GÄLLANDE läget. Alternativet — en tom layout — hade tvingat
+// fram ett läge där skärmvyn är tom och man inte ser vad man håller på med förrän man
+// lagt tillbaka overlays en och en. Vill man tomt tar man bort dem, vilket är ett
+// klick per overlay och syns direkt.
+#[tauri::command]
+fn create_layout(app: AppHandle, state: State<Mutex<Settings>>, name: String) -> Result<String, String> {
+    let label: String = name.trim().chars().take(32).collect();
+    if label.is_empty() {
+        return Err("Ge layouten ett namn.".into());
+    }
+    let mut s = state.lock().unwrap();
+    if s.layouts.len() >= MAX_LAYOUTS {
+        return Err(format!("Max {MAX_LAYOUTS} layouter."));
+    }
+    // Spegla ut i den gamla aktiva innan bytet, annars tappas allt som ändrats sedan
+    // förra sparningen när den nya tar över som aktiv.
+    sync_active_layout(&mut s);
+    let id = unique_layout_id(&s, &label);
+    let overlays = s
+        .overlays
+        .iter()
+        .filter(|(oid, st)| st.enabled && def_of(oid).is_some())
+        .map(|(oid, st)| (oid.clone(), st.clone()))
+        .collect();
+    s.layouts.push(Layout { id: id.clone(), name: label, overlays });
+    s.active_layout = id.clone();
+    save_settings(&app, &mut s);
+    Ok(id)
+}
+
+#[tauri::command]
+fn rename_layout(app: AppHandle, state: State<Mutex<Settings>>, id: String, name: String) -> Result<(), String> {
+    let label: String = name.trim().chars().take(32).collect();
+    if label.is_empty() {
+        return Err("Ge layouten ett namn.".into());
+    }
+    let mut s = state.lock().unwrap();
+    let l = s.layouts.iter_mut().find(|l| l.id == id).ok_or("okänd layout")?;
+    l.name = label;
+    save_settings(&app, &mut s);
+    Ok(())
+}
+
+// Kopian blir INTE aktiv. Man duplicerar för att prova något utan att röra originalet,
+// och att kastas över i kopian hade betytt att nästa ändring landade i fel layout.
+#[tauri::command]
+fn duplicate_layout(app: AppHandle, state: State<Mutex<Settings>>, id: String) -> Result<String, String> {
+    let mut s = state.lock().unwrap();
+    if s.layouts.len() >= MAX_LAYOUTS {
+        return Err(format!("Max {MAX_LAYOUTS} layouter."));
+    }
+    sync_active_layout(&mut s);
+    let src = s.layouts.iter().find(|l| l.id == id).cloned().ok_or("okänd layout")?;
+    let name: String = format!("{} (kopia)", src.name).chars().take(32).collect();
+    let new_id = unique_layout_id(&s, &name);
+    s.layouts.push(Layout { id: new_id.clone(), name, overlays: src.overlays });
+    save_settings(&app, &mut s);
+    Ok(new_id)
+}
+
+// Att ta bort den AKTIVA layouten släcker inga overlays: läget ligger i
+// `settings.overlays` och står kvar precis som det är. Man tappar namnet och vägen
+// tillbaka till det, inte skärmen man just satt och tittade på.
+#[tauri::command]
+fn delete_layout(app: AppHandle, state: State<Mutex<Settings>>, id: String) -> Result<(), String> {
+    let mut s = state.lock().unwrap();
+    let before = s.layouts.len();
+    s.layouts.retain(|l| l.id != id);
+    if s.layouts.len() == before {
+        return Err("okänd layout".into());
+    }
+    if s.active_layout == id {
+        s.active_layout = String::new();
+    }
+    save_settings(&app, &mut s);
+    Ok(())
+}
+
+// Aktiverar en layout (tom sträng = ingen aktiv) och SKRIVER UT den: varje overlay som
+// ingår får sitt läge tillbaka, varje overlay som inte ingår stängs av.
+//
+// Vägen är medvetet densamma som apply_preset/reset_overlay tar, med ett tillägg:
+// positionen. Missar man storleken ritas overlayn i ny skala i ett fönster med gammal
+// (§8.3), och missar man positionen står den kvar där förra layouten lade den —
+// vilket är precis det man bytte layout för att slippa.
+#[tauri::command]
+fn activate_layout(app: AppHandle, state: State<Mutex<Settings>>, id: String) -> Result<(), String> {
+    // Fönsterarbetet görs UTANFÖR låset: create_overlay och show/hide går via
+    // fönstertråden, och att hålla Mutex<Settings> under tiden låser panelens övriga
+    // anrop i onödan.
+    let plan: Vec<(&'static OverlayDef, OverlayState)>;
+    let gate;
+    {
+        let mut s = state.lock().unwrap();
+        // Spegla den gamla aktiva innan vi skriver över det gällande läget — annars
+        // förlorar man allt som ändrats sedan förra sparningen i den man lämnar.
+        sync_active_layout(&mut s);
+        if id.is_empty() {
+            s.active_layout = String::new();
+            save_settings(&app, &mut s);
+            return Ok(());
+        }
+        let l = s.layouts.iter().find(|l| l.id == id).cloned().ok_or("okänd layout")?;
+        for d in registry() {
+            match l.overlays.get(&d.id) {
+                Some(want) => {
+                    let mut st = want.clone();
+                    st.enabled = true;
+                    sanitize_state(d, &mut st);
+                    s.overlays.insert(d.id.clone(), st);
+                }
+                // Bara av/på ändras för den som inte ingår: dess läge ska finnas kvar
+                // om man lägger tillbaka den senare.
+                None => {
+                    if let Some(st) = s.overlays.get_mut(&d.id) {
+                        st.enabled = false;
+                    }
+                }
+            }
+        }
+        s.active_layout = id.clone();
+        save_settings(&app, &mut s);
+        gate = s.hide_until_connected;
+        plan = registry()
+            .iter()
+            .map(|d| {
+                let st = s.overlays.get(&d.id).cloned().unwrap_or_else(|| default_state_for(d));
+                (d, st)
+            })
+            .collect();
+    }
+
+    for (def, st) in plan {
+        // Eventet FÖRE show/hide, av samma skäl som i set_enabled: bus.js måste ha
+        // släppt sitt anspråk på fönstret innan skalet rör det (§8.5c).
+        let _ = app.emit("enabled", EnabledPayload { id: def.id.clone(), enabled: st.enabled });
+        match app.get_webview_window(&def.id) {
+            Some(win) => {
+                if st.enabled {
+                    let _ = win.set_size(tauri::LogicalSize::new(
+                        def.base_width * st.scale,
+                        def.base_height * st.scale,
+                    ));
+                    let _ = win.set_position(tauri::LogicalPosition::new(st.x as f64, st.y as f64));
+                    let _ = win.set_always_on_top(st.always_on_top);
+                    let _ = win.show();
+                } else {
+                    let _ = win.hide();
+                }
+            }
+            None if st.enabled => {
+                if let Err(e) = create_overlay(&app, def, &st, gate) {
+                    eprintln!("[shell] kunde ej skapa overlay {}: {e}", def.id);
+                }
+            }
+            None => {}
+        }
+        if st.enabled {
+            let _ = app.emit(
+                "config",
+                ConfigPayload { id: def.id.clone(), scale: st.scale, opacity: st.opacity },
+            );
+            for (option, value) in st.options {
+                let _ = app.emit("option", OptionPayload { id: def.id.clone(), option, value });
+            }
+        }
+    }
+    Ok(())
 }
 
 // ── Presets ─────────────────────────────────────────────────────────────────
@@ -852,7 +1262,7 @@ fn apply_preset(
             changed.insert(k, v);
         }
         let (scale, opacity) = (st.scale, st.opacity);
-        save_settings(&app, &s);
+        save_settings(&app, &mut s);
         (scale, opacity, changed)
     };
     if let Some(win) = app.get_webview_window(&id) {
@@ -936,7 +1346,7 @@ fn save_preset(
         Some(i) => list[i] = p,
         None => list.push(p),
     }
-    save_settings(&app, &s);
+    save_settings(&app, &mut s);
     Ok(pid)
 }
 
@@ -957,7 +1367,7 @@ fn delete_preset(
     if list.len() == before {
         return Err("Bara egna presets går att ta bort.".into());
     }
-    save_settings(&app, &s);
+    save_settings(&app, &mut s);
     Ok(())
 }
 
@@ -1052,7 +1462,7 @@ fn set_hotkey(app: AppHandle, state: State<Mutex<Settings>>, value: String) -> R
     {
         let mut s = state.lock().unwrap();
         s.hotkey = text.clone();
-        save_settings(&app, &s);
+        save_settings(&app, &mut s);
     }
     Ok(text)
 }
@@ -1063,7 +1473,7 @@ fn set_reference(app: AppHandle, state: State<Mutex<Settings>>, path: String) {
     {
         let mut s = state.lock().unwrap();
         s.reference_ld = path.clone();
-        save_settings(&app, &s);
+        save_settings(&app, &mut s);
     }
     if let Ok(dir) = app.path().app_config_dir() {
         let _ = std::fs::create_dir_all(&dir);
@@ -1283,7 +1693,7 @@ fn get_globals(state: State<Mutex<Settings>>) -> GlobalsPayload {
 fn set_preview_background(app: AppHandle, state: State<Mutex<Settings>>, id: String) {
     let mut s = state.lock().unwrap();
     s.preview_background = id;
-    save_settings(&app, &s);
+    save_settings(&app, &mut s);
 }
 
 // Visa overlays först när motorn är ansluten till ACC. Skickas till alla fönster;
@@ -1293,7 +1703,7 @@ fn set_hide_until_connected(app: AppHandle, state: State<Mutex<Settings>>, value
     {
         let mut s = state.lock().unwrap();
         s.hide_until_connected = value;
-        save_settings(&app, &s);
+        save_settings(&app, &mut s);
     }
     // reference_ld är tom här med flit: eventet gäller grinden. bus.js läser bara
     // hide_until_connected, och panelen hämtar sökvägen med get_globals.
@@ -1333,7 +1743,15 @@ pub fn run() {
             set_opacity,
             set_always_on_top,
             set_option,
+            set_position,
             reset_overlay,
+            get_screen,
+            list_layouts,
+            create_layout,
+            rename_layout,
+            duplicate_layout,
+            delete_layout,
+            activate_layout,
             list_presets,
             apply_preset,
             save_preset,
@@ -1352,7 +1770,10 @@ pub fn run() {
         .setup(move |app| {
             let handle = app.handle().clone();
             let before = std::fs::read_to_string(settings_path(&handle)).unwrap_or_default();
-            let settings = load_settings(&handle);
+            let mut settings = load_settings(&handle);
+            // Spegla FÖRE jämförelsen nedan: save_settings gör det ändå, och utan det
+            // här räknas "rättades något?" på en text som inte är den som skrivs.
+            sync_active_layout(&mut settings);
             // Skriv tillbaka om inläsningen rättade något (klampat tal, fel typ, en
             // option som tagits bort ur registret). Utan detta blir overlayn rätt men
             // filen ligger kvar med skräpet, så panelen och disken säger olika saker
@@ -1360,7 +1781,7 @@ pub fn run() {
             if let Ok(after) = serde_json::to_string_pretty(&settings) {
                 if before.trim() != after.trim() && !before.is_empty() {
                     println!("[shell] settings.json innehöll värden som rättades — sparar den städade versionen.");
-                    save_settings(&handle, &settings);
+                    save_settings(&handle, &mut settings);
                 }
             }
 
@@ -1424,7 +1845,7 @@ pub fn run() {
                     if let Some(state) = app.try_state::<Mutex<Settings>>() {
                         let mut s = state.lock().unwrap();
                         save_positions(&app, &mut s);
-                        save_settings(&app, &s);
+                        save_settings(&app, &mut s);
                     }
                     stop_engine();
                     app.exit(0);
@@ -1911,6 +2332,103 @@ mod tests {
         assert_eq!(slug("!!!"), "preset");        // inget kvar → fallback
         assert_eq!(slug(""), "preset");
         assert!(slug(&"a".repeat(80)).chars().count() <= 40);
+    }
+
+    // ── Layouter ────────────────────────────────────────────────────────────
+    // Ett riktigt overlay-id ur registret: layoutkoden filtrerar på def_of, så en
+    // påhittad sträng hade tystat bort sig själv och gjort testerna gröna på
+    // ingenting.
+    fn nagot_id() -> String {
+        registry()[0].id.clone()
+    }
+
+    fn stat(x: i32, enabled: bool) -> OverlayState {
+        OverlayState { enabled, x, y: 0, scale: 1.0, opacity: 1.0, always_on_top: true,
+                       options: HashMap::new() }
+    }
+
+    fn med_layout(active: &str) -> Settings {
+        let mut s = Settings::default();
+        s.layouts.push(Layout { id: "a".into(), name: "A".into(), overlays: HashMap::new() });
+        s.layouts.push(Layout { id: "b".into(), name: "B".into(), overlays: HashMap::new() });
+        s.active_layout = active.into();
+        s
+    }
+
+    // Den aktiva layouten är LIVE-BUNDEN: läget speglas in vid varje sparning, och
+    // bara PÅSLAGNA overlays ingår (medlemskap = påslagen). Speglade den även
+    // avslagna hade "ta bort ur layouten" inte gjort något alls.
+    #[test]
+    fn synk_speglar_bara_paslagna_till_den_aktiva() {
+        let id = nagot_id();
+        let mut s = med_layout("a");
+        s.overlays.insert(id.clone(), stat(120, true));
+        s.overlays.insert("finns-inte-i-registret".into(), stat(7, true));
+        sync_active_layout(&mut s);
+
+        let a = s.layouts.iter().find(|l| l.id == "a").unwrap();
+        assert_eq!(a.overlays.len(), 1, "bara den registrerade overlayn: {:?}", a.overlays.keys());
+        assert_eq!(a.overlays[&id].x, 120);
+        assert!(s.layouts.iter().find(|l| l.id == "b").unwrap().overlays.is_empty(),
+                "en INAKTIV layout får aldrig skrivas över");
+
+        // Slås overlayn av försvinner den ur layouten vid nästa spegling — det är
+        // exakt vad "ta bort ur layouten" är.
+        s.overlays.get_mut(&id).unwrap().enabled = false;
+        sync_active_layout(&mut s);
+        assert!(s.layouts[0].overlays.is_empty());
+    }
+
+    // Utan aktiv layout ska ingenting röras. En spegling som skrev till "första
+    // layouten" när fältet var tomt hade tyst skrivit över en layout man inte valt.
+    #[test]
+    fn synk_utan_aktiv_layout_rör_ingenting() {
+        let id = nagot_id();
+        let mut s = med_layout("");
+        s.overlays.insert(id, stat(120, true));
+        sync_active_layout(&mut s);
+        assert!(s.layouts.iter().all(|l| l.overlays.is_empty()));
+    }
+
+    // Samma skydd som §8.3b ger options och presets. Två fall som är lätta att missa:
+    // ett `active_layout` som pekar på en borttagen layout (då hade speglingen skrivit
+    // ut i tomma intet vid varje sparning) och en medlem med enabled:false (en layout
+    // som innehåller en overlay den samtidigt släcker).
+    #[test]
+    fn layouter_stadas_vid_inlasning() {
+        let id = nagot_id();
+        let mut s = Settings::default();
+        let mut ov = HashMap::new();
+        ov.insert(id.clone(), OverlayState { scale: 99.0, opacity: -5.0, ..stat(9_000_000, false) });
+        ov.insert("borttagen-overlay".into(), stat(0, true));
+        s.layouts.push(Layout { id: "a".into(), name: "   ".into(), overlays: ov });
+        s.layouts.push(Layout { id: "a".into(), name: "dubblett".into(), overlays: HashMap::new() });
+        s.active_layout = "finns-inte".into();
+        sanitize_layouts(&mut s);
+
+        assert_eq!(s.layouts.len(), 1, "samma id två gånger ska inte överleva");
+        let l = &s.layouts[0];
+        assert_eq!(l.name, "Layout", "tomt namn ska få en fallback");
+        assert!(!l.overlays.contains_key("borttagen-overlay"));
+        let st = &l.overlays[&id];
+        assert!(st.enabled, "medlemskap ÄR påslagen");
+        assert_eq!(st.scale, SCALE_MAX);
+        assert_eq!(st.opacity, OPACITY_MIN);
+        assert_eq!(st.x, POS_LIMIT);
+        assert!(s.active_layout.is_empty(), "en aktiv layout som inte finns = ingen aktiv");
+    }
+
+    // Två layouter med samma namn får olika id — annars pekar `active_layout` på
+    // båda och `delete_layout` tar bort fel.
+    #[test]
+    fn layout_id_ar_unika() {
+        let mut s = Settings::default();
+        for _ in 0..3 {
+            let id = unique_layout_id(&s, "Natt");
+            s.layouts.push(Layout { id, name: "Natt".into(), overlays: HashMap::new() });
+        }
+        let ids: Vec<&str> = s.layouts.iter().map(|l| l.id.as_str()).collect();
+        assert_eq!(ids, vec!["natt", "natt-2", "natt-3"]);
     }
 
     // Base64 är handskriven (§ i lib.rs) — den ska ge exakt samma sträng som en

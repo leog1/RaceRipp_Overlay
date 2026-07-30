@@ -1,6 +1,6 @@
 [package]
 name = "acc-overlay"
-version = "0.5.1"
+version = "0.5.2"
 description = "ACC Overlay Pack"
 edition = "2021"
 

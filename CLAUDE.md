@@ -15,7 +15,7 @@
 > X" i §7).
 ## 1. Vad projektet är
 Modulärt overlay-paket för **Assetto Corsa Competizione (ACC)**.
-Version 0.5.1.
+Version 0.5.2.
 - **Funktionellt** som **Race Element**: lätt, rensat, praktiskt, ingen FPS-förlust.
 - **Visuellt** som **RaceLab**: mörkt, polerat, animerat, premium.
 - Kvalitetsribban är hög och användaren är detaljpetig ner till pixelnivå.
@@ -87,6 +87,28 @@ Fyra saker som är avsiktliga och lätta att råka bryta:
   klistras in). Registret har tre TOMMA platshållare per overlay. Panelen visar dem
   streckade och oklickbara — att i stället dölja dem hade gjort att platserna såg ut att
   inte finnas förrän de fylldes, och då vet man inte att de går att fylla.
+**`layouts` i settings.json är nästa nivå ovanför presetsen.** En preset är utseendet
+på EN overlay; en **layout** är hela skärmen: vilka overlays som är på, var de sitter,
+hur stora de är och hur de ser ut. Tre regler som hänger ihop och som var för sig är
+lätta att bryta:
+- **Medlemskap ÄR påslagen.** "Lägg till i layouten" och "ta bort" är `set_enabled` —
+  samma väg som ögonknappen i Overlays-fliken. Två sätt att slå på samma overlay hade
+  oundvikligen glidit isär. Följden: en layout kan aldrig innehålla en overlay den
+  samtidigt släcker, och `sanitize_layouts` rättar ett `enabled:false` som ändå dyker upp.
+- **Exakt EN layout är aktiv, och den är LIVE-BUNDEN.** `save_settings` kör
+  `sync_active_layout`, som speglar det gällande läget in i den aktiva layouten vid varje
+  sparning. Det finns alltså inget spara-steg, och — viktigare — ingen andra sanning:
+  `settings.overlays` ÄR läget, layouten är en kopia av det. Lägg inte till en väg som
+  skriver till en layout direkt.
+- **Att välja en layout är att aktivera den.** Panelens skärmvy visar alltid det gällande
+  läget, alltså de riktiga fönstren. Att kunna redigera en INAKTIV layout hade krävt en
+  andra redigeringsväg som inte syns någonstans medan man använder den.
+`activate_layout` skriver ut layouten: storlek, POSITION, always-on-top, av/på och
+samtliga `config`/`option`-event. Position är det tillägg mot `apply_preset` som är lätt
+att glömma — utan den står overlayn kvar där förra layouten lade den, vilket är precis
+det man bytte layout för att slippa. Att ta bort en layout släcker ingenting: läget bor
+i `overlays` och står kvar.
+
   Faktisk processkedja i drift (mätt) — se §8.1, den är inte självklar:
 ```
 acc-overlay.exe → acc-engine.exe (PyInstaller-bootloader) → acc-engine.exe (motorn, äger portarna)
@@ -331,7 +353,8 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
   på ett pillerformat spår är varje webbformulärs reglage, en stående rektangel i ett
   rakt spår är en potentiometer. Skala inte greppet vid hover (det gjorde den runda) —
   en fader som växer ser ut att glida ur sitt spår; den ljusnar i stället.
-- **EN meny i hela panelen (`.pop` + `.popitem`).** Både bakgrundsväljaren och varje
+- **EN meny i hela panelen (`.pop` + `.popitem`).** Ankaret får vara antingen knappen
+  själv eller en behållare runt den — `popTrigger()` letar på båda hållen (§8.4l). Både bakgrundsväljaren och varje
   enum-alternativ bygger sin lista med `popMenu()`. Panelen hade tidigare två sorters
   "välj ett värde": den egenritade menyn och `<select class="osel">`, vars lista ritas av
   WINDOWS — annan typografi, annan radhöjd, annan markeringsfärg, plus en vit ruta i
@@ -347,6 +370,28 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
 - Panelen sätter `font-family:inherit` på `button,input,select,textarea` en gång
   globalt: formulärkontroller ärver inte typsnitt, så varje ny kontroll som glömmer sin
   egen `font:inherit` hade ritats i Segoe UI mitt bland Montserrat.
+- **Layout-flikens skärmvy är samma material som förhandsvisningen** — en yta ett steg
+  UNDER panelen (`--ui-stage`) med hårfin ljus kant, samma marginal, samma verktygsblock
+  i hörnet (`.sbtn`). Skillnaden är höjden: 46 % i stället för previewns 38,2 %, för här
+  BEDÖMER man inte, man arbetar. Fyra regler till:
+  - **Boxarna är proportionella rutor, inte riktiga overlays.** En riktig overlay är ett
+    eget dokument med egen renderloop och egen WebSocket, och fem sådana i panelen hade
+    varit fem loopar som tickar medan man kör — previewn fick rivas ur av exakt det
+    skälet (§8.5f), och den är EN. Boxarna är i gengäld exakta: `base × skala` mot
+    skärmens logiska storlek, alltså samma tal som fönstret får.
+  - **Rutnätets linjer är nästan osynliga; PUNKTERNA i korsningarna bär informationen.**
+    Det är punkterna man snappar mot, och ett fullt synligt rutnät tävlar med det man
+    flyttar. Tätheten anges i KOLUMNER och raderna räknas ut så att cellerna blir
+    kvadratiska — ett fast radantal ger ett rutnät som betyder olika saker på 16:9 och
+    21:9.
+  - **Hjälplinjen vid snappning är amber**, samma signalfärg som fokusringen och den
+    aktiva presetens markör. Grönt hade betytt "på", och en snappning är inget tillstånd.
+  - **Kanten på skärmen är en `outline`, inte en `border`.** Se §8.4l — det är geometri,
+    inte kosmetik.
+  Inställningsraderna under vyn är samma `.grp`-mekanik som Overlays-flikens stack, men
+  **stängda som standard**: fliken handlar om var något ligger, och fem öppna
+  inställningslistor hade begravt skärmvyn. Därför `st[grp.id] === true` och inte
+  `!== false` när läget läses ur localStorage.
 ## 5. Overlay-katalog & status
 | # | Overlay | Status | Not |
 |---|---------|--------|-----|
@@ -369,7 +414,8 @@ src/shared/preview-backgrounds/  inbyggda bakgrunder till panelens preview (§8.
                            användarens egna ligger i app-config-mappen
 src/overlays/registry.json KATALOG över overlays (kärnan läser denna)
 src/overlays/<id>/index.html  overlay-moduler
-src/control-panel/index.html  kontrollpanelen (inkl. live-preview i iframe)
+src/control-panel/index.html  kontrollpanelen (live-preview i iframe + layout-flikens
+                           skärmvy; layouterna bor i settings.json, se §2)
 engine/acc_engine/         motorn: __main__, bus, http_static, frame, delta, laps,
                            sources/{mock,acc,acc_broadcast}
 engine/acc_engine/laps.py  spelar in varv ur ramarna → förra/bästa varvet som
@@ -381,6 +427,7 @@ engine/verify_sidecar.py kontrollerar att den byggda sidecarn innehåller allt (
 engine/ldparser.py         GPL, gitignorerad, hämtas lokalt
 src-tauri/src/lib.rs       fönstermanager, kommandon, sidecar+Job Object, hotkey, settings
 src-tauri/tauri.conf.json  control-fönster, updater, externalBin, bundle.resources
+tests/panel-layout.mjs     layout-flikens geometri, mätt i headless Chrome över CDP
 tests/                     regressionstester — läs tests/README.md FÖRST, den
                            förklarar vad varje test bevakar och hur man visar att
                            ett test biter
@@ -424,7 +471,40 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   skroll. Att panelen inte kastar något fel under uppstart ingår i mätningen — den låg
   tidigare tyst nog att ett kastat undantag i titelraden inte syntes.
 
+- **Layout-flikens geometri mätt i Chrome** (`tests/panel-layout.mjs`, 1440×900 mot en
+  Tauri-stubb): skärmvyn har skärmens proportioner och fyller rutan, varje box ligger och
+  mäter exakt som overlayns riktiga fönster (olika mått, skala och position per overlay i
+  fixturen), snappningen väljer NÄRMASTE kandidat och skickar det snappade värdet vidare
+  som `set_position`, med snappningen av ligger boxen kvar där pekaren släppte,
+  inställningsgrupperna är hopfällda med rätt `aria-expanded` och radantal, skärmvyn och
+  stacken ligger på samma x och bredd utan vågrät skroll, lägg till/ta bort går genom
+  `set_enabled`, och layoutlistan markerar den aktiva. Panelen kastade inget fel.
+  Fem medvetet trasiga varianter är körda och samtliga föll (se filens huvud).
+- **Layoutkommandonas kärnlogik** (fyra Rust-tester): speglingen tar bara PÅSLAGNA
+  overlays och rör aldrig en inaktiv layout, en tom `active_layout` skriver ingenstans,
+  inläsningen städar dubbletter/tomma namn/borttagna overlays/orimliga tal och nollställer
+  en `active_layout` som inte finns, och id:n blir unika. Två trasiga varianter körda,
+  båda föll.
+
 ### Kvar att verifiera — läs detta först om du tar över
+- **HELA layout-fliken i den riktiga appen.** Ingenting av den är sett utanför Chrome.
+  Fyra saker stubben per definition inte kan bevisa, och alla fyra är av den sorten som
+  bara syns i drift:
+  - **Att dra en box FLYTTAR det riktiga fönstret.** Panelen skickar `set_position`
+    strypt (120 ms) medan man drar; att fönstret följer med mjukt och hamnar rätt är
+    otestat. Testa med ACC igång i bakgrunden och håll ögonen på FPS — en position är
+    lika dyr för DWM som en storleksändring (§8.5e), och dragningen skickar fler anrop
+    än ett reglage gör.
+  - **Att `activate_layout` verkligen skriver ut layouten**: fönster som flyttar sig,
+    ändrar storlek, tänds och släcks i ett svep. Prova särskilt en layout som INTE
+    innehåller en overlay som är på just nu — den ska släckas, inte ligga kvar.
+  - **Att skärmvyn stämmer med skärmen.** `get_screen` ger den skärm kontrollpanelen
+    ligger på; har man overlays på en ANDRA skärm ligger de utanför vyn (negativa
+    koordinater eller bortom bredden) och går inte att dra tillbaka. Det är en medveten
+    begränsning i v1, men den är inte sedd med två skärmar inkopplade.
+  - **Att den aktiva layouten följer med utan spara-steg.** Dra en overlay i edit-läge
+    över spelet, gå tillbaka till panelen, byt till en annan layout och tillbaka — den
+    dragna positionen ska vara kvar.
 - **Att ACC känns igen som förgrundsprocess** (§8.5c). Detektionen fungerar åt båda
   hållen mot andra program och mot vårt eget fönster, men är **aldrig körd mot ACC** —
   spelet har inte funnits på maskinen. Slår igenkänningen fel göms overlays under HELA
@@ -882,6 +962,24 @@ som "menyerna går inte att öppna".
 Och: **första framet har `dt ≈ 0`.** En "flyttade den sig?"-kontroll utan måttet med sig
 dödade därför loopen direkt vid start — mätbart bara genom att driva loopen för hand
 (§9).
+
+### 8.4l En koordinatyta får inte ha en `border`
+Layout-flikens skärmvy är en KOORDINATYTA: boxarna positioneras med `left:x*k` mot
+elementets INNERkant, och `k` räknas ut mot skärmens fulla bredd. En `border:1px` gör då
+innermåttet 2 px mindre än det man satte (panelen kör `box-sizing:border-box`), så varje
+overlay hamnar en bråkdel fel — växande mot höger och nedåt, osynligt för ögat och fullt
+mätbart. Kanten är därför en **`outline`**, som inte ligger i layouten alls. Då är
+`clientWidth` exakt den skärmbredd vi räknade fram och `clientLeft` är 0.
+
+Regeln generellt: **ritar du i ett eget koordinatsystem ska ytan inte ha kant, padding
+eller `box-sizing`-beroende mått.** Behöver den se ut att ha en kant: `outline` eller
+`box-shadow`, aldrig `border`.
+
+Samma mätning avslöjade en andra sak värd att spara: `popMenu()` letade sin
+`aria-haspopup`-knapp med `anchor.querySelector(...)`, alltså bara BLAND ankarets barn.
+Bakgrundsväljaren och enum-raderna skickar en behållare, men skärmvyns verktygsknappar är
+sina egna ankare — de fick därför aldrig `aria-expanded` satt och fokus kom inte tillbaka
+när menyn stängdes. `popTrigger()` kollar nu ankaret självt först.
 
 ### 8.5 Flicker-mönster att aldrig upprepa
 Alla dessa fanns i delta-baren och gav synligt flimmer:
@@ -1448,8 +1546,10 @@ Handlern tar **ett** argument (`ws`), inte `(ws, path)`.
 
 ## 9. Så verifierar du utan att gissa
 Testerna ligger i `tests/` — **`tests/README.md` är sanningskällan** för vad varje test
-bevakar och hur man visar att det biter. `pnpm test` kör de sex
-overlay-testerna (Node); de sex Python-testerna körs var för sig från repo-roten.
+bevakar och hur man visar att det biter. `pnpm test` kör de sju
+Node-testerna; de sex Python-testerna körs var för sig från repo-roten.
+`tests/panel-layout.mjs` är det enda med ett yttre beroende (Chrome) — det FALLER med en
+sökvägslista om Chrome saknas i stället för att hoppa över sig själv.
 **CI kör alla utom `motec_reference.py`**, som kräver en `.ld` och därför alltid
 hoppar över sig själv. Två regler som gäller allt testarbete här:
 - **Ett test som inte kan falla bevisar ingenting.** Kör varje nytt test mot revisionen
@@ -1496,6 +1596,17 @@ hoppar över sig själv. Två regler som gäller allt testarbete här:
     inga frames). En rAF-driven animation går alltså inte att mäta genom att vänta; byt
     ut `requestAnimationFrame` mot en kö och driv den med en egen klocka, precis som
     `tests/lib/overlay-harness.mjs` gör.
+  En fjärde sak, från layout-flikens mätning: **en kontroll får aldrig hämta sin
+  omräkningsfaktor ur koden den granskar.** Testet läste panelens egen `stageK` och
+  jämförde boxarnas pixlar mot den — då stämmer allt mot sig självt, och en medvetet
+  trasig variant med `stageK = 0.4` passerade. Förväntad geometri räknas nu fram ur
+  BEHÅLLAREN, alltså ur samma indata som koden borde ha använt. Samma familj som den
+  slappa stubben ovan: felet är inte i det som mäts, det är i måttstocken.
+  Två småsaker som annars kostar tid: `/json/list` listar även bakgrundssidor och
+  tjänstearbetare — filtrera på `type === 'page'`, annars ansluter man till en tom
+  kontext som ser ut som en panel som aldrig laddade. Och headless-Chrome stryper timers
+  i fönster den anser ligga i bakgrunden, vilket gör en uppstart bakom en timer flakig;
+  `--disable-background-timer-throttling` (plus de två syskonflaggorna) tar bort det.
 - **Appen:** skärmdump med `System.Drawing.Graphics.CopyFromScreen`, och stäng
   panelen med `WM_CLOSE` till rätt hwnd (appens `MainWindow` kan vara ett
   overlay-fönster, så enumerera fönster och matcha på titeln "Control").

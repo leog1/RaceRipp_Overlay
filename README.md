@@ -67,6 +67,24 @@ stängs). Kombinationen kan bytas under **Inställningar** (den registreras glob
 Windows och kan alltså vara upptagen av ett annat program). Opacitet/skala styrs per
 overlay i panelen.
 
+## Layouter
+Fliken **Layout** visar hela skärmen som en yta med dina overlays som proportionella
+rutor. Dra dem på plats — de snappar mot ett rutnät (täthet 8/12/16/24 kolumner, går att
+stänga av), mot skärmens kanter och mitt, och mot varandras kanter och mitt. Piltangenter
+finjusterar 1 px, Shift+piltangent 10 px. Vill man ha exakta tal finns X/Y-fält i varje
+overlays rad. Skala, opacitet och overlayns egna alternativ sitter i samma rad, hopfälld
+tills man öppnar den.
+
+En **layout** är hela skärmen sparad under ett namn: vilka overlays som är på, var de
+sitter, hur stora de är och hur de ser ut. Exakt en är aktiv i taget, och den aktiva
+följer med automatiskt — allt du ändrar hamnar i den utan ett spara-steg, oavsett om du
+ändrar det här, i Overlays-fliken eller genom att dra en overlay i edit-läge. Byt layout
+så flyttar, storleksändrar, tänder och släcker appen fönstren i ett svep. Att ta bort en
+layout släcker inga overlays; du tappar bara vägen tillbaka till det utseendet.
+
+Lägg till eller ta bort en overlay ur layouten med **+** i skärmvyn respektive **×** på
+raden — det är samma av/på som ögonknappen i Overlays-fliken.
+
 ## OBS
 Motorns HTTP-server serverar overlays direkt. Lägg en **Browser Source** mot t.ex.
 `http://127.0.0.1:8078/overlays/inputs-trace/index.html` (bredd/höjd enligt overlayn).
@@ -102,8 +120,9 @@ pnpm tauri build                          # installer i src-tauri/target/release
 ```
 `externalBin` ligger kvar i `src-tauri/tauri.conf.json`, så sidecarn måste vara byggd
 minst en gång även för `pnpm tauri dev`. **Bygg om den efter varje ändring i `engine/`**,
-annars kör du gammal motorkod. Tester: `pnpm test` (overlays) + `python tests/<namn>.py`
-från repo-roten — se `tests/README.md`.
+annars kör du gammal motorkod. Tester: `pnpm test` (overlays + panelens layout-flik,
+den sista kräver Chrome) + `python tests/<namn>.py` från repo-roten — se
+`tests/README.md`.
 
 ## Auto-update via GitHub
 1. Publikt repo. Byt `OWNER/REPO` i `src-tauri/tauri.conf.json` → `plugins.updater.endpoints`.

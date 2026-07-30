@@ -30,6 +30,11 @@ jobs:
       # trasig utgava (0.2.4, se CLAUDE.md 8.6c), och da var verify_sidecar det enda
       # som tittade pa vad som faktiskt hamnade i binaren. Overlay-testerna ar rena
       # Node-skript utan beroenden och tar sekunder.
+      #
+      # ETT undantag: tests/panel-layout.mjs startar Chrome headless och mater
+      # layout-flikens geometri. windows-latest har Chrome forinstallerad. Faller
+      # steget med "Hittar ingen Chrome" ar det runner-avbilden som andrats — satt
+      # CHROME till ratt sokvag har, ta inte bort testet.
       - name: Kor overlay-tester
         shell: pwsh
         run: |

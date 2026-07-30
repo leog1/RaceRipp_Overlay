@@ -252,7 +252,7 @@ body.maximized .tb-btn .ico-max{display:none;}
    de slogs aldrig ihop till flersektionskort, så samma amberrubrik som förut. */
 .card > h3{font-size:var(--ui-fs-sm);font-weight:700;letter-spacing:2px;
   text-transform:uppercase;color:var(--amber);padding:16px 0 8px;}
-#list{flex:1 1 auto;overflow-y:auto;padding:0 8px 12px;}
+#list,#layList{flex:1 1 auto;overflow-y:auto;padding:0 8px 12px;}
 .list-foot{flex:0 0 auto;display:flex;align-items:center;gap:12px;
   padding:12px 16px;border-top:1px solid var(--ui-edge-dk);
   box-shadow:inset 0 1px 0 rgba(255,255,255,0.028);background:rgba(0,0,0,0.28);}
@@ -294,9 +294,15 @@ body.maximized .tb-btn .ico-max{display:none;}
 .app[data-section="overlays"] #pane-overlays{display:flex;flex-direction:column;overflow:hidden;}
 .app[data-section="referens"] #pane-referens{display:flex;flex-direction:column;overflow-y:auto;}
 .app[data-section="om"] #pane-om{display:flex;flex-direction:column;overflow-y:auto;}
-.app[data-section="layout"] #pane-layout{display:flex;flex-direction:column;overflow-y:auto;}
+/* Layout-fliken har samma uppdelning som Overlays: skärmvyn står still och
+   inställningarna under den skrollar (se #pane-layout .controls). */
+.app[data-section="layout"] #pane-layout{display:flex;flex-direction:column;overflow:hidden;}
 .app[data-section="installningar"] #pane-installningar{display:flex;flex-direction:column;overflow-y:auto;}
-.app:not([data-section="overlays"]) .list{display:none;}
+/* Mittkolumnen finns i två varianter — overlay-listan och layoutlistan — och de
+   syns i var sin flik. Referens/Om/Inställningar har ingen lista alls. */
+.list{display:none;}
+.app[data-section="overlays"] #listOverlays{display:flex;}
+.app[data-section="layout"] #listLayouts{display:flex;}
 
 /* preview */
 /* overflow ligger på .pv-clip och INTE här: info-rutan hänger utanför rutans nedre
@@ -608,6 +614,190 @@ body.maximized .tb-btn .ico-max{display:none;}
 .pv-tools .sbtn:hover{background:var(--ctrl-hi);}
 .pv-tools .sbtn.active{background:linear-gradient(180deg,rgba(251,191,36,0.22),rgba(251,191,36,0.10));
   border-color:rgba(251,191,36,0.40);}
+
+/* ── layout-flikens skärmvy ──────────────────────────────────────────────────
+   Samma material som förhandsvisningen — en yta ETT STEG UNDER panelen med en
+   hårfin ljus kant (§4b: en yta man tittar IN i, inte rör vid). Skillnaden är
+   höjden: här är rutan inte något man bedömer utan något man ARBETAR i, så den
+   får 46 % i stället för previewns 38,2 %. Inställningarna under den är dessutom
+   hopfällda som standard, alltså finns höjden att ta.
+
+   Höjden är 52 % och inte previewns 38,2 %, och skälet är geometriskt: rutan är
+   ~3:1 medan skärmen är 16:9, så det är HÖJDEN som begränsar hur stor skärmen kan
+   ritas. Vid 38,2 % blev skärmen 526 px bred i en 1040 px bred ruta — en tredjedel
+   av bredden stod tom på var sida och boxarna blev för små att sikta med. Gå inte
+   under det här värdet utan att titta på vad skärmen faktiskt blir; inställningarna
+   under har råd, de är hopfällda som standard.
+
+   RUTAN RITAR INTE OVERLAYS PÅ RIKTIGT. Varje overlay här är en proportionell
+   box med sitt namn i, och det är ett medvetet val och inte en förenkling: en
+   riktig overlay är ett eget dokument med en egen renderloop och en egen
+   WebSocket, och fem av dem i panelen hade varit fem loopar som tickar medan man
+   kör (§8.5b/§8.5f — previewn fick rivas ur just av det skälet, och den är EN).
+   Boxarna är dessutom exakta: `base × skala` mot skärmens logiska storlek, samma
+   tal som fönstret får. Det är precis vad man behöver för att placera något. */
+#stageBox{position:relative;z-index:2;flex:0 0 52%;min-height:240px;max-height:660px;
+  margin:16px 20px 0;border-radius:var(--ui-r-lg);
+  background:radial-gradient(120% 130% at 50% -20%, rgba(255,255,255,0.030), transparent 62%),
+             var(--ui-stage);
+  border:1px solid var(--ui-hair);}
+.st-clip{position:absolute;inset:0;overflow:hidden;border-radius:var(--ui-r-lg);
+  display:flex;align-items:center;justify-content:center;padding:22px;}
+/* Skärmen. Mörkare än rutan omkring: den ÄR skärmen, och kanten är det enda som
+   säger var den slutar — därför ljus kant och nedsänkt skugga, ingen fyllnadsfärg
+   som konkurrerar med boxarna. */
+/* Kanten är en OUTLINE och inte en border, och det är inte kosmetik: en border
+   ligger i layouten, så elementets innermått blir 2 px mindre än det man satte —
+   och boxarna inuti positioneras mot INNERkanten. Med border hade varje overlay
+   legat några tiondels procent fel, växande mot höger/nedåt, och felet hade varit
+   omöjligt att se men fullt mätbart. En outline tar ingen plats alls, så
+   `clientWidth` är exakt den skärmbredd vi räknade fram. */
+.st-screen{position:relative;flex:0 0 auto;background:#040505;box-sizing:content-box;
+  outline:1px solid var(--ui-edge);box-shadow:var(--ui-recess);}
+
+/* Rutnätet. Linjerna är nästan osynliga och PUNKTERNA i korsningarna bär
+   informationen: det är punkterna man snappar mot, och ett fullt synligt rutnät
+   hade tävlat med boxarna man flyttar. --gx/--gy sätts av JS ur celltätheten. */
+.st-grid{position:absolute;inset:0;pointer-events:none;
+  background-image:
+    radial-gradient(circle at 0 0, rgba(255,255,255,0.22) 1.1px, transparent 1.4px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.045) 0 1px, transparent 1px var(--gx)),
+    repeating-linear-gradient(180deg, rgba(255,255,255,0.045) 0 1px, transparent 1px var(--gy));
+  background-size:var(--gx) var(--gy), auto, auto;
+  opacity:0;transition:opacity .16s ease;}
+.st-grid.on{opacity:1;}
+/* Skärmens mittlinjer. Egen regel och inte en cell i rutnätet: mitten finns
+   oavsett täthet, och den är den punkt man oftast siktar mot. */
+.st-mid{position:absolute;inset:0;pointer-events:none;}
+.st-mid i{position:absolute;background:rgba(255,255,255,0.11);}
+.st-mid i:nth-child(1){left:50%;top:0;bottom:0;width:1px;}
+.st-mid i:nth-child(2){top:50%;left:0;right:0;height:1px;}
+/* Hjälplinje som visas MEDAN något snappar. Amber är panelens signalfärg för
+   "detta gäller nu" (samma som fokusringen) — grönt hade betytt "på". */
+.st-guide{position:absolute;background:var(--amber);opacity:0;pointer-events:none;z-index:3;}
+.st-guide.on{opacity:.85;}
+.st-guide.v{top:0;bottom:0;width:1px;}
+.st-guide.h{left:0;right:0;height:1px;}
+
+/* En overlay i skärmvyn. Ytan är ogenomskinlig nog att läsas mot en mörk skärm men
+   inte så ljus att fem av dem ser ut som ett rutmönster. Ingen glow och ingen yttre
+   skugga: boxen ligger i sitt plan, den svävar inte (§4b). */
+.st-ov{position:absolute;display:flex;align-items:center;justify-content:center;
+  padding:0 6px;overflow:hidden;text-align:center;cursor:grab;
+  border:1px solid var(--ui-edge-hi);border-radius:var(--ui-r-xs);
+  background:linear-gradient(180deg, rgba(22,26,24,0.94), rgba(11,13,12,0.94));
+  box-shadow:var(--ui-sheen);color:var(--dim);
+  font-size:var(--ui-fs-xs);font-weight:700;letter-spacing:.9px;text-transform:uppercase;
+  -webkit-user-select:none;user-select:none;touch-action:none;
+  transition:color .14s ease,border-color .14s ease;}
+.st-ov:hover{color:var(--ink);border-color:var(--ui-edge-hi);}
+.st-ov:focus-visible{outline:2px solid var(--ui-focus);outline-offset:1px;}
+/* Vald box: amber kant och amber text. Samma markör som "aktiv preset" — det är
+   inget TILLSTÅND (då hade det varit grönt), det är var pekaren står. */
+.st-ov.sel{border-color:rgba(251,191,36,0.65);color:var(--amber);}
+.st-ov.drag{cursor:grabbing;border-color:var(--amber);color:var(--amber);}
+.st-ov .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;}
+/* Under en viss storlek får namnet inte plats och blir en grå gröt. Då ritas boxen
+   tom — formen och läget är ändå det den finns för att visa. */
+.st-ov.tiny .nm{display:none;}
+
+/* Verktygen ligger i rutans hörn, precis som previewns. Samma klasser (.sbtn,
+   .pv-tools) så de två flikarna inte får var sin knappsort. */
+.st-tools{position:absolute;right:12px;bottom:12px;z-index:4;display:flex;align-items:center;gap:2px;
+  padding:2px;border-radius:var(--ui-r-md);background:rgba(7,9,8,0.90);
+  border:1px solid var(--ui-edge-dk);box-shadow:0 1px 2px rgba(0,0,0,0.28),var(--ui-lip);}
+.st-tools .sbtn{width:28px;height:28px;background:none;border-color:transparent;box-shadow:none;
+  border-radius:var(--ui-r-sm);}
+.st-tools .sbtn:hover{background:var(--ctrl-hi);}
+.st-tools .sbtn.active{background:linear-gradient(180deg,rgba(251,191,36,0.22),rgba(251,191,36,0.10));
+  border-color:rgba(251,191,36,0.40);}
+.st-tools .sep{width:1px;align-self:stretch;margin:4px 2px;background:var(--ui-hair);}
+/* Skärmens mått uppe till vänster. Det är den enda platsen som säger vilken skärm
+   koordinaterna gäller — utan den är "x 460" ett tal utan enhet. */
+.st-cap{position:absolute;left:12px;top:12px;z-index:4;display:flex;align-items:center;gap:8px;
+  font-size:var(--ui-fs-xs);font-weight:700;letter-spacing:1px;color:var(--faint);
+  font-variant-numeric:tabular-nums;pointer-events:none;}
+.st-cap b{color:var(--dim);font-weight:700;}
+/* Tom skärmvy: layouten innehåller ingen overlay.
+   `[hidden]`-regeln står här av ett konkret skäl (§8.4f): en display-deklaration
+   slår ut webbläsarens inbyggda `[hidden]{display:none}`, och `el.hidden = true`
+   i JS gör då ingenting alls. Samma fel har nu slagit till fyra gånger i den här
+   panelen — skriv regeln i SAMMA andetag som `display`, varje gång. */
+.st-empty{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:center;
+  padding:24px;text-align:center;font-size:var(--ui-fs-md);color:var(--faint);line-height:1.6;}
+.st-empty[hidden]{display:none;}
+.st-ov[hidden],.st-tools[hidden],.st-cap[hidden],.lrowwrap[hidden],.laybar[hidden],
+.lmenu[hidden],.gremove[hidden],.posf[hidden]{display:none;}
+
+/* ── layoutlistan (vänsterkolumnen i layout-fliken) ────────────────────────── */
+/* Raden är en knapp, men den behöver också en meny. En knapp i en knapp är ogiltig
+   HTML, så menyknappen är ett SYSKON i en position:relative-behållare och raden får
+   högerpadding så titeln aldrig hamnar under den. */
+.lrowwrap{position:relative;}
+.lrowwrap + .lrowwrap{margin-top:4px;}
+.lrowwrap .lrow{padding-right:44px;}
+.lrowwrap .lrow + .lrow{margin-top:0;}
+.lmenu{position:absolute;right:8px;top:50%;transform:translateY(-50%);
+  width:26px;height:26px;display:flex;align-items:center;justify-content:center;
+  appearance:none;background:none;border:1px solid transparent;border-radius:var(--ui-r-sm);
+  color:var(--faint);cursor:pointer;transition:color .14s ease,background .14s ease;}
+.lmenu:hover{color:var(--ink);background:var(--ctrl-hi);}
+.lmenu:focus-visible{outline:2px solid var(--ui-focus);outline-offset:1px;}
+.lmenu svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;}
+/* Miniatyren ritas ur layoutens egna slots — ren SVG, ingen bildfil och ingen
+   skärmdump. Poängen är att skilja tre layouter åt i listan innan man klickat:
+   namn räcker inte när de heter "Race", "Race 2" och "Race natt", men FORMEN på
+   skärmen känner man igen direkt. */
+.lthumb{flex:0 0 auto;width:52px;height:30px;border-radius:var(--ui-r-xs);
+  border:1px solid var(--ui-edge-dk);background:#050606;}
+.lthumb rect{fill:rgba(251,191,36,0.30);stroke:rgba(251,191,36,0.55);stroke-width:1;
+  vector-effect:non-scaling-stroke;}
+.lrow.on .lstate{color:var(--amber);border-color:rgba(251,191,36,0.35);
+  background:rgba(251,191,36,0.10);}
+/* Fotens knapp i layoutlistan: hela bredden, samma höjd som växlaren i overlay-
+   listans fot, så de två listorna slutar på samma linje. */
+.list-foot .pb-btn{width:100%;justify-content:center;height:32px;}
+
+/* ── layoutens overlay-rader ──────────────────────────────────────────────────
+   Samma `.grp`-mekanik som inställningsstacken (hopfällning, räknare, chevron), med
+   en borttagningsknapp som syskon till rubriken av samma skäl som .lmenu ovan.
+   Grupperna är STÄNGDA som standard här: layout-fliken handlar om var något ligger,
+   och fem öppna inställningslistor hade begravt skärmvyn. */
+.lgrp{position:relative;}
+.lgrp .ghead{padding-right:48px;}
+.gremove{position:absolute;right:14px;top:6px;width:28px;height:28px;
+  display:flex;align-items:center;justify-content:center;
+  appearance:none;background:none;border:1px solid transparent;border-radius:var(--ui-r-sm);
+  color:var(--faint);cursor:pointer;transition:color .14s ease,background .14s ease,border-color .14s ease;}
+.gremove:hover{color:var(--red);border-color:rgba(255,59,59,0.45);background:var(--ctrl-hi);}
+.gremove:focus-visible{outline:2px solid var(--ui-focus);outline-offset:1px;}
+.gremove svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;}
+/* Positionsraden: två talfält som tillsammans mäter exakt 376 px (180 + 16 + 180),
+   alltså samma kontrollkolumn som reglage, väljare och färgrader (§4b). */
+.posf{flex:0 0 376px;width:376px;display:flex;align-items:center;gap:16px;}
+.posf label{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:8px;
+  font-size:var(--ui-fs-sm);font-weight:700;letter-spacing:.8px;color:var(--faint);}
+.posf input{flex:1 1 0;min-width:0;width:100%;height:28px;padding:0 10px;appearance:none;
+  background:var(--ui-inset);border:1px solid var(--ui-edge);border-radius:var(--ui-r-sm);
+  color:var(--ink);font:inherit;font-size:var(--ui-fs-md);font-weight:600;
+  font-variant-numeric:tabular-nums;}
+.posf input:focus{outline:2px solid var(--ui-focus);outline-offset:1px;border-color:var(--ui-edge-hi);}
+/* Talfältens egna upp/ner-pilar tar 16 px av ett 180 px fält och ritas av
+   webbläsaren i sin egen stil. Piltangenterna gör samma sak och finns kvar. */
+.posf input::-webkit-outer-spin-button,.posf input::-webkit-inner-spin-button{
+  -webkit-appearance:none;margin:0;}
+
+/* Banderollen ovanför inställningarna: vilken layout man redigerar. Samma plats och
+   samma höjd som presetraden i Overlays-fliken, så de två flikarna har samma rytm. */
+.laybar{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:16px 20px 0;min-width:0;}
+.laybar .pb-label{flex:0 0 auto;}
+.laybar .lb-name{flex:1 1 auto;min-width:0;font-size:var(--ui-fs-lg);font-weight:600;
+  color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.laybar .lb-name.none{color:var(--faint);font-weight:500;}
+#pane-layout .controls{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;margin-top:16px;padding-top:0;
+  padding-right:calc(20px - var(--ui-scrollbar));}
 
 /* Korten tar HELA bredden under förhandsvisningen. De satt tidigare i en centrerad
    spalt med tak (820 px), vilket höll etikett och reglage nära varandra men gjorde
@@ -1004,7 +1194,7 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
     </nav>
 
     <!-- ── mittkolumn: overlay-lista ── -->
-    <section class="list">
+    <section class="list" id="listOverlays">
       <div class="list-head">Overlays</div>
       <div id="list"><div class="empty">Laddar …</div></div>
       <div class="list-foot">
@@ -1013,6 +1203,22 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
           <span class="lf-sub">Dölj tills bilen rullar, och när du tabbar ut</span>
         </div>
         <label class="sw" id="gateSwitch"><input type="checkbox"><span class="track"></span><span class="knob"></span></label>
+      </div>
+    </section>
+
+    <!-- ── mittkolumn: layoutlista ──
+         Samma kolumn och samma radform som overlay-listan, för det är samma sorts
+         val: vilket objekt arbetar jag med. Att klicka en rad AKTIVERAR layouten —
+         den aktiva är live-bunden mot de riktiga fönstren, så "välj" och "slå på"
+         är samma handling här. Inaktivera görs ur radens meny. -->
+    <section class="list" id="listLayouts">
+      <div class="list-head">Layouter</div>
+      <div id="layList"><div class="empty">Laddar …</div></div>
+      <div class="list-foot">
+        <button class="pb-btn" id="btnLayNew" title="Skapa en layout ur skärmens nuvarande läge">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Ny layout</span>
+        </button>
       </div>
     </section>
 
@@ -1206,17 +1412,49 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
         </div>
       </div>
 
-      <!-- LAYOUT — skal än så länge, ska utvecklas till en egen flik med innehåll. -->
+      <!-- ── LAYOUT ──
+           Skärmvyn står still högst upp (samma uppdelning som Overlays-fliken,
+           §8.4f) och inställningarna under den skrollar. Boxarna i vyn är
+           proportionella och INTE riktiga overlays — se .st-ov i CSS:en för varför
+           det inte är en förenkling utan ett krav. -->
       <div class="pane" id="pane-layout">
-        <div class="titleband">
-          <h2>Layout</h2>
-          <p>Verktyg för att ordna och gruppera overlays på skärmen kommer hit.</p>
+        <div id="stageBox">
+          <div class="st-clip" id="stClip">
+            <div class="st-screen" id="stScreen">
+              <div class="st-grid" id="stGrid"></div>
+              <div class="st-mid"><i></i><i></i></div>
+              <div class="st-guide v" id="stGuideV"></div>
+              <div class="st-guide h" id="stGuideH"></div>
+            </div>
+            <div class="st-empty" id="stEmpty" hidden>Layouten är tom.<br>Lägg till en overlay med <b>+</b> nere till höger.</div>
+          </div>
+          <div class="st-cap"><b id="stRes">—</b><span id="stGridCap"></span></div>
+          <div class="st-tools">
+            <button class="sbtn" id="btnSnap" title="Snappa mot rutnätet" aria-pressed="true">
+              <svg viewBox="0 0 24 24"><path d="M7 3v8a5 5 0 0 0 10 0V3"/><path d="M4 3h6M14 3h6M4 21h16"/></svg>
+            </button>
+            <button class="sbtn" id="btnGrid" title="Rutnätets täthet" aria-haspopup="true" aria-expanded="false">
+              <svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="1"/><path d="M9.5 3.5v17M15 3.5v17M3.5 9.5h17M3.5 15h17"/></svg>
+            </button>
+            <span class="sep"></span>
+            <button class="sbtn" id="btnLayAdd" title="Lägg till en overlay i layouten" aria-haspopup="true" aria-expanded="false">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+          </div>
+        </div>
+        <!-- Vilken layout skriver mina ändringar? Raden ligger på exakt samma plats
+             och höjd som presetraden i Overlays-fliken. -->
+        <div class="laybar">
+          <span class="pb-label">Layout</span>
+          <span class="lb-name none" id="layName">Ingen layout aktiv</span>
+          <button class="pb-btn" id="btnLaySave" title="Spara skärmens nuvarande läge som en ny layout">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            <span>Spara som layout</span>
+          </button>
         </div>
         <div class="controls">
-          <div class="cards single">
-            <div class="card"><h3>Kommer snart</h3>
-              <p class="hint">Den här fliken är under utveckling.</p>
-            </div>
+          <div class="cards">
+            <div class="stack" id="layStack"></div>
           </div>
         </div>
       </div>
@@ -1337,12 +1575,21 @@ function toast(msg, isErr){
    Öppnas uppåt när det inte finns plats nedåt. Utan det hamnar sista radens meny
    utanför fönstret, och det är just de sista raderna (färgerna) som har flest. */
 let openPop = null;
+/* Ankaret är ibland knappen SJÄLV (skärmvyns verktyg) och ibland en behållare runt
+   den (bakgrundsväljaren, enum-raderna, där ytan som ska markeras är större än
+   knappen). Utan den här kollen fick en knapp som var sitt eget ankare aldrig
+   aria-expanded satt — menyn var alltså osynlig för en skärmläsare, och fokus kom
+   inte tillbaka när den stängdes. */
+function popTrigger(anchor){
+  if (!anchor) return null;
+  return anchor.matches('[aria-haspopup]') ? anchor : anchor.querySelector('[aria-haspopup]');
+}
 function closePop(){
   const p = openPop; if (!p) return;
   openPop = null;
   p.el.remove();
   p.anchor.classList.remove('open');
-  const trigger = p.anchor.querySelector('[aria-haspopup]');
+  const trigger = popTrigger(p.anchor);
   if (trigger) trigger.setAttribute('aria-expanded', 'false');
   if (p.onClose) p.onClose();
   if (p.focusBack && trigger) { try { trigger.focus(); } catch {} }
@@ -1395,7 +1642,7 @@ function popMenu(anchor, spec){
   el.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
   el.style.visibility = '';
   anchor.classList.add('open');
-  const trigger = anchor.querySelector('[aria-haspopup]');
+  const trigger = popTrigger(anchor);
   if (trigger) trigger.setAttribute('aria-expanded', 'true');
   openPop = { el, anchor, onClose: spec.onClose, focusBack: true };
 
@@ -1499,11 +1746,27 @@ async function loadBackgrounds(){
 }
 
 /* ── sektionsflikar ── */
+/* Overlays- och Layout-fliken skriver till SAMMA värden (skala, opacitet,
+   alternativ, av/på), bara genom olika kontroller. Den flik man lämnar kan alltså
+   ha satt något den man går till fortfarande visar det gamla värdet för. Båda
+   byggs därför om vid varje byte i stället för att någon av dem lyssnar på den
+   andra — en synk mellan två vyer är en tredje sanning att hålla i fas.
+   Ombyggnaden kostar ingenting: det är DOM för en vy man just öppnat, och
+   previewns iframe laddas inte om (setPreview jämför src). */
 document.querySelectorAll('.nav').forEach(btn => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
     document.querySelectorAll('.nav').forEach(b => b.setAttribute('aria-selected', String(b === btn)));
-    $('app').dataset.section = btn.dataset.sec;
-    if (btn.dataset.sec === 'overlays') requestAnimationFrame(fitPreview);
+    const sec = btn.dataset.sec;
+    $('app').dataset.section = sec;
+    if (sec === 'overlays'){
+      await loadOverlays();
+      requestAnimationFrame(fitPreview);
+    } else if (sec === 'layout'){
+      await loadOverlays();
+      renderLayoutTab();
+      stageSoon();
+      loadLayouts();
+    }
   });
 });
 
@@ -2025,14 +2288,19 @@ function colorCluster(st, o){
    bool-alternativen bland av/på-reglagen, tal och val (int/float/enum) under "Data"
    och färgerna under "Utseende". Sorteringen går på `type` i registret — inte på
    overlay-id — så en ny overlay hamnar rätt utan att panelen ändras. */
-function renderOptions(o){
-  const toggles = $('cardToggles'), tweaks = $('cardTweaks'), behavior = $('cardBehavior');
-  const aot = $('rowAot');
-  for (const el of [...toggles.querySelectorAll('.row.gen'), ...tweaks.querySelectorAll('.row.gen'),
-                    ...behavior.querySelectorAll('.row.gen')])
-    el.remove();
+/* Radbyggaren är skild från Overlays-flikens uppställning eftersom layout-fliken
+   bygger SAMMA rader i en annan behållare — en per overlay i layouten, alla i en
+   och samma stack. En andra kopia av den här loopen hade glidit isär vid första
+   nya optionstypen, och då hade de två flikarna haft olika kontroller för samma
+   inställning.
+   `t` säger vart raderna ska: `toggles`/`behavior`/`tweaks` får vara samma element
+   (layout-fliken skickar en behållare tre gånger), `before` är ankaret bool-rader
+   sätts in före (Overlays-flikens "Alltid överst"; null = lägg sist), och
+   `onChange` är det flikspecifika efterarbetet. Returnerar antalet rader per grupp
+   så anroparen kan dölja en tom grupp. */
+function renderOptionRows(o, t){
   const defs = o.option_defs || [];
-  let nTweaks = 0, nBehavior = 0;
+  const n = { toggles: 0, behavior: 0, tweaks: 0 };
 
   for (const d of defs){
     const val = (o.options && d.id in o.options) ? o.options[d.id] : d.default;
@@ -2048,9 +2316,7 @@ function renderOptions(o){
     });
     const send = (v) => {
       const cur = ov(o.id); if (cur){ cur.options = cur.options || {}; cur.options[d.id] = v; }
-      markActivePreset();
-      toPreview({ kind: 'option', id: o.id, option: d.id, value: v });   // syns direkt
-      refitSoon();                                    // dimensionerna kan ha ändrats
+      if (t.onChange) t.onChange(d.id, v);
       persist(v);
     };
 
@@ -2198,16 +2464,35 @@ function renderOptions(o){
     // att röra "Alltid överst", som är statisk och har sina lyssnare kopplade en gång.
     // Gradientens undergrupper får samma klass och städas alltså med samma svep.
     row.classList.add('gen');
-    if (!d.type || d.type === 'bool') toggles.insertBefore(row, aot);
-    else if (d.type === 'color'){ tweaks.appendChild(row); nTweaks++; }
-    else { behavior.appendChild(row); nBehavior++; }
+    if (!d.type || d.type === 'bool'){
+      if (t.before) t.toggles.insertBefore(row, t.before); else t.toggles.appendChild(row);
+      n.toggles++;
+    }
+    else if (d.type === 'color'){ t.tweaks.appendChild(row); n.tweaks++; }
+    else { t.behavior.appendChild(row); n.behavior++; }
     // Först nu har raden en förälder att sätta undergrupperna i.
     if (row._buildSubs){ row._buildSubs(); row._buildSubs = null; }
   }
+  return n;
+}
+
+function renderOptions(o){
+  const toggles = $('cardToggles'), tweaks = $('cardTweaks'), behavior = $('cardBehavior');
+  for (const el of [...toggles.querySelectorAll('.row.gen'), ...tweaks.querySelectorAll('.row.gen'),
+                    ...behavior.querySelectorAll('.row.gen')])
+    el.remove();
+  const n = renderOptionRows(o, {
+    toggles, behavior, tweaks, before: $('rowAot'),
+    onChange: (option, value) => {
+      markActivePreset();
+      toPreview({ kind: 'option', id: o.id, option, value });   // syns direkt
+      refitSoon();                                    // dimensionerna kan ha ändrats
+    },
+  });
   // Döljs som HELA gruppen (rubrik + rader) — bara raderna hade lämnat rubriken
   // kvar ovanför ingenting, och en tom hopfällbar grupp är värre än ingen grupp.
-  $('grp-look').hidden = !nTweaks;
-  $('grp-data').hidden = !nBehavior;
+  $('grp-look').hidden = !n.tweaks;
+  $('grp-data').hidden = !n.behavior;
   for (const id of ['grp-size', 'grp-toggles', 'grp-data', 'grp-look']) countGroup(id);
 }
 
@@ -2613,8 +2898,18 @@ const statusSocket = (function statusLoop(){
   document.addEventListener('visibilitychange', () => setPaused(document.hidden));
 })();
 
-/* ── sync edit-läge från hotkey ── */
-if (T && T.event) T.event.listen('edit-mode', e => { editMode = !!e.payload; $('btnMove').classList.toggle('active', editMode); });
+/* ── sync edit-läge från hotkey ──
+   Positioner som dragits i edit-läge över spelet ligger bara i fönstren tills läget
+   lämnas — då sparar Rust dem (set_edit_mode → persist_positions). Läs om vyn i
+   samma sekund, annars visar layout-flikens skärmvy var overlays låg INNAN man drog
+   dem, vilket ser ut som att dragningen inte sparades. */
+if (T && T.event) T.event.listen('edit-mode', async e => {
+  editMode = !!e.payload;
+  $('btnMove').classList.toggle('active', editMode);
+  if (editMode) return;
+  await loadOverlays();
+  if ($('app').dataset.section === 'layout'){ renderLayoutTab(); loadLayouts(); }
+});
 
 /* ── version ── */
 try { T?.app?.getVersion?.().then(v => { if (v) $('omVer').textContent = 'v' + v; }).catch(() => {}); } catch {}
@@ -2639,10 +2934,618 @@ async function loadGlobals(){
   else if (bgCurrent) showBg(bgCurrent);
 }
 
+/* ════════════════════════════════════════════════════════════════════════════
+   LAYOUT-FLIKEN
+   ════════════════════════════════════════════════════════════════════════════
+   En layout är en namngiven ögonblicksbild av HELA overlay-uppsättningen: vilka
+   som är på, var de sitter, hur stora de är och hur de ser ut. En preset är
+   utseendet på EN overlay — en layout är arbetsläget för skärmen.
+
+   TRE REGLER SOM HÄNGER IHOP, och som är lätta att bryta var för sig:
+
+   1. MEDLEMSKAP ÄR DETSAMMA SOM PÅSLAGEN. "Lägg till i layouten" och "ta bort"
+      är `set_enabled` — samma väg som ögonknappen i Overlays-fliken. Två sätt att
+      slå på samma overlay hade oundvikligen glidit isär.
+
+   2. DEN AKTIVA LAYOUTEN ÄR LIVE-BUNDEN. Rust speglar det gällande läget in i den
+      vid varje sparning (sync_active_layout), så det finns inget spara-steg och
+      ingen andra sanning. Följden här: panelen behöver aldrig skriva till en
+      layout, bara till overlays — layouten följer med av sig själv.
+
+   3. ATT VÄLJA EN LAYOUT ÄR ATT AKTIVERA DEN. Skärmvyn visar alltid det GÄLLANDE
+      läget, alltså de riktiga fönstren. Att kunna redigera en INAKTIV layout hade
+      krävt en andra redigeringsväg som inte syns någonstans medan man använder
+      den, och en skärmvy som visar något annat än skärmen är värdelös.
+
+   Skärmvyn ritar proportionella boxar och inte riktiga overlays — se .st-ov i
+   CSS:en för varför det är ett krav och inte en förenkling. */
+let layouts = [];
+let screenSize = { width: 0, height: 0 };
+let stagePicked = null;                    // id på den box man senast rörde
+
+/* Rutnätets täthet anges i KOLUMNER, inte som "12×8": raderna räknas ut så att
+   cellerna blir kvadratiska på skärmens proportioner. Ett fast radantal hade gett
+   celler på 160×135 px på 16:9 och 160×101 på 21:9, alltså ett rutnät som betyder
+   olika saker på olika skärmar.
+   Tätheten och snap-läget bor i localStorage och inte i settings.json: det är
+   panelens vy-state, det hör inte till en overlay och ska inte kunna göra
+   settings.json ogiltig (samma regel som de hopfällbara gruppernas läge). */
+const LAY_KEY = 'simmatrix.layout';
+const GRID_COLS = [8, 12, 16, 24];
+let snapOn = true, gridCols = 12;
+(function readLayoutPrefs(){
+  try {
+    const v = JSON.parse(localStorage.getItem(LAY_KEY)) || {};
+    if (typeof v.snap === 'boolean') snapOn = v.snap;
+    if (GRID_COLS.includes(v.cols)) gridCols = v.cols;
+  } catch {}
+})();
+function writeLayoutPrefs(){
+  try { localStorage.setItem(LAY_KEY, JSON.stringify({ snap: snapOn, cols: gridCols })); } catch {}
+}
+
+/* Skärmens LOGISKA storlek. Overlay-positioner är logiska pixlar (§8.2), så vyn
+   måste räkna i samma enhet — annars ligger boxarna fel på varje skärm som inte
+   kör 100 % skalning. Svarar Rust 0 (ingen skärm att fråga) faller vi tillbaka på
+   1920×1080: en vy med rätt proportioner och fel absolutmått är fortfarande
+   användbar, en vy som dividerar med noll är det inte. */
+async function loadScreen(){
+  try { screenSize = await invoke('get_screen'); } catch { screenSize = { width: 0, height: 0 }; }
+  if (!(screenSize.width > 0 && screenSize.height > 0)) screenSize = { width: 1920, height: 1080 };
+  $('stRes').textContent = Math.round(screenSize.width) + '×' + Math.round(screenSize.height);
+}
+
+const layMembers = () => overlays.filter(o => o.enabled);
+const ovW = o => o.base_width * o.scale;
+const ovH = o => o.base_height * o.scale;
+
+/* ── skärmvyn ──────────────────────────────────────────────────────────────── */
+let stageK = 1;                            // skärmpixlar → vypixlar
+
+function gridRows(){
+  return Math.max(2, Math.round(gridCols * screenSize.height / screenSize.width));
+}
+
+function fitStage(){
+  const clip = $('stClip'), sc = $('stScreen');
+  if (!clip || !sc) return;
+  const pad = 22 * 2;
+  const availW = clip.clientWidth - pad, availH = clip.clientHeight - pad;
+  if (availW <= 0 || availH <= 0) return;
+  stageK = Math.min(availW / screenSize.width, availH / screenSize.height);
+  sc.style.width  = Math.round(screenSize.width  * stageK) + 'px';
+  sc.style.height = Math.round(screenSize.height * stageK) + 'px';
+  const g = $('stGrid');
+  g.style.setProperty('--gx', (screenSize.width  * stageK / gridCols)  + 'px');
+  g.style.setProperty('--gy', (screenSize.height * stageK / gridRows()) + 'px');
+  g.classList.toggle('on', snapOn);
+  $('stGridCap').textContent = snapOn ? `· ${gridCols}×${gridRows()}` : '· fritt';
+  for (const el of sc.querySelectorAll('.st-ov')) placeBox(el);
+}
+
+// Boxens plats räknas alltid ur overlayns EGNA värden, aldrig ur elementets
+// nuvarande stil: efter ett drag, en skaländring eller ett fönsterbyte är stilen
+// gammal, och en vy som räknar vidare på sig själv driver.
+function placeBox(el){
+  const o = ov(el.dataset.id); if (!o) return;
+  const w = ovW(o) * stageK, h = ovH(o) * stageK;
+  el.style.left = (o.x * stageK) + 'px';
+  el.style.top  = (o.y * stageK) + 'px';
+  el.style.width = w + 'px';
+  el.style.height = h + 'px';
+  el.classList.toggle('tiny', w < 74 || h < 18);
+}
+
+function renderStage(){
+  const sc = $('stScreen');
+  if (!sc) return;
+  for (const el of sc.querySelectorAll('.st-ov')) el.remove();
+  const members = layMembers();
+  $('stEmpty').hidden = members.length > 0;
+  for (const o of members){
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'st-ov' + (o.id === stagePicked ? ' sel' : '');
+    el.dataset.id = o.id;
+    el.title = o.title + ' — dra för att flytta, piltangenter för att finjustera';
+    el.innerHTML = '<span class="nm"></span>';
+    el.querySelector('.nm').textContent = o.title;
+    wireBoxDrag(el);
+    sc.appendChild(el);
+  }
+  fitStage();
+}
+// Måtten finns först när panen är synlig och layouten räknad; dubbel rAF av samma
+// skäl som previewns refitSoon().
+function stageSoon(){ requestAnimationFrame(() => requestAnimationFrame(fitStage)); }
+
+/* ── snappning ───────────────────────────────────────────────────────────────
+   Kandidaterna är boxens VÄNSTERKANT, MITT och HÖGERKANT — inte bara hörnet. Det
+   är skillnaden mellan ett rutnät man kan lägga saker på och ett rutnät man kan
+   CENTRERA saker mot, och centrering är det man vill ha för en delta-bar överst
+   på skärmen.
+   Måltavlorna är rutnätets linjer, skärmens kanter och mitt, PLUS de andra
+   overlayernas kanter och mitt: att linjera två overlays med varandra är precis
+   lika vanligt som att linjera mot skärmen, och utan det får man göra det på
+   ögonmått i en vy som är nedskalad tio gånger.
+   Tröskeln anges i VYNS pixlar och räknas om till skärmpixlar, så den känns
+   likadan oavsett hur nedskalad vyn är. */
+const SNAP_VIEW_PX = 7;
+
+function snapTargets(axis, selfId){
+  const span = axis === 'x' ? screenSize.width : screenSize.height;
+  const out = [0, span / 2, span];
+  const n = axis === 'x' ? gridCols : gridRows();
+  for (let i = 1; i < n; i++) out.push(span * i / n);
+  for (const o of layMembers()){
+    if (o.id === selfId) continue;
+    const p = axis === 'x' ? o.x : o.y;
+    const s = axis === 'x' ? ovW(o) : ovH(o);
+    out.push(p, p + s / 2, p + s);
+  }
+  return out;
+}
+
+// Returnerar { v, hit } där `hit` är måltavlan som träffades (för hjälplinjen) eller
+// null. Kandidaterna vägs mot varandra så den NÄRMASTE vinner — annars snappar en
+// bred overlay alltid på sin vänsterkant och går aldrig att centrera.
+function snapAxis(pos, size, axis, selfId){
+  if (!snapOn) return { v: pos, hit: null };
+  const thr = SNAP_VIEW_PX / Math.max(stageK, 0.0001);
+  const targets = snapTargets(axis, selfId);
+  let best = null;
+  for (const cand of [{ off: 0 }, { off: size / 2 }, { off: size }]){
+    for (const t of targets){
+      const d = t - (pos + cand.off);
+      if (Math.abs(d) <= thr && (!best || Math.abs(d) < Math.abs(best.d))) best = { d, t };
+    }
+  }
+  return best ? { v: pos + best.d, hit: best.t } : { v: pos, hit: null };
+}
+
+function showGuides(hx, hy){
+  const gv = $('stGuideV'), gh = $('stGuideH');
+  gv.classList.toggle('on', hx != null);
+  gh.classList.toggle('on', hy != null);
+  if (hx != null) gv.style.left = (hx * stageK) + 'px';
+  if (hy != null) gh.style.top  = (hy * stageK) + 'px';
+}
+
+/* Positionen skickas STRYPT medan man drar. Att flytta ett transparent
+   always-on-top-fönster kostar samma DWM-arbete som att ändra dess storlek, och en
+   storm av det medan ACC kör i bakgrunden är precis det som §8.5e handlar om.
+   Vyn och boxen uppdateras vid varje pekarrörelse — det är bara vägen till Rust
+   som stryps, annars känns dragningen trög i stället.
+   En throttle per overlay: två boxar som flyttas efter varandra ska inte konkurrera
+   om samma tidsfönster. */
+const posSenders = new Map();
+function sendPos(id){
+  if (!posSenders.has(id)){
+    posSenders.set(id, throttleIpc(async (x, y) => {
+      try { await invoke('set_position', { id, x, y }); }
+      catch(err){ toast('Kunde inte flytta overlayn: ' + errMsg(err), true); }
+    }));
+  }
+  return posSenders.get(id);
+}
+
+function moveTo(o, x, y, hx, hy){
+  o.x = Math.round(x); o.y = Math.round(y);
+  const el = $('stScreen').querySelector(`.st-ov[data-id="${CSS.escape(o.id)}"]`);
+  if (el) placeBox(el);
+  showGuides(hx, hy);
+  const f = layPos.get(o.id);
+  if (f){ f.x.value = o.x; f.y.value = o.y; }
+  sendPos(o.id)(o.x, o.y);
+}
+
+function pickBox(id){
+  stagePicked = id;
+  for (const el of $('stScreen').querySelectorAll('.st-ov'))
+    el.classList.toggle('sel', el.dataset.id === id);
+}
+
+function wireBoxDrag(el){
+  let from = null;
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    const o = ov(el.dataset.id); if (!o) return;
+    pickBox(o.id);
+    from = { px: e.clientX, py: e.clientY, x: o.x, y: o.y };
+    el.classList.add('drag');
+    // Pekarfångst är en optimering (dragningen följer med utanför boxen), inte ett
+    // krav: en syntetisk PointerEvent har inget id att fånga och kastar.
+    try { el.setPointerCapture(e.pointerId); } catch {}
+    // preventDefault stoppar textmarkering under dragningen — men det stoppar OCKSÅ
+    // fokus, och utan fokus fungerar inte piltangenterna på boxen man just tagit i.
+    e.preventDefault();
+    el.focus();
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!from) return;
+    const o = ov(el.dataset.id); if (!o) return;
+    // Rå position ur pekarens förflyttning, sedan snappning — aldrig tvärtom: att
+    // snappa deltat i stället för resultatet gör att boxen fastnar i sitt eget
+    // startläge så fort det råkar ligga nära en linje.
+    const rawX = from.x + (e.clientX - from.px) / stageK;
+    const rawY = from.y + (e.clientY - from.py) / stageK;
+    const sx = snapAxis(rawX, ovW(o), 'x', o.id);
+    const sy = snapAxis(rawY, ovH(o), 'y', o.id);
+    moveTo(o, sx.v, sy.v, sx.hit, sy.hit);
+  });
+  const end = (e) => {
+    if (!from) return;
+    from = null;
+    el.classList.remove('drag');
+    showGuides(null, null);
+    try { el.releasePointerCapture(e.pointerId); } catch {}
+    const o = ov(el.dataset.id);
+    if (o) sendPos(o.id).flush();
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+  /* Piltangenter: 1 px, eller 10 med Shift. En box på 40×12 vypixlar går inte att
+     träffa på pixeln med musen, och utan tangentbordsvägen är vyn dessutom omöjlig
+     att använda utan pekdon. Snappningen är AVSTÄNGD här med flit — den som
+     finjusterar med piltangenter vill flytta exakt ett steg, inte hoppa tillbaka
+     till närmaste linje. */
+  el.addEventListener('keydown', (e) => {
+    const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (!d) return;
+    const o = ov(el.dataset.id); if (!o) return;
+    e.preventDefault();
+    const step = e.shiftKey ? 10 : 1;
+    pickBox(o.id);
+    moveTo(o, o.x + d[0] * step, o.y + d[1] * step, null, null);
+    sendPos(o.id).flush();
+  });
+  el.addEventListener('focus', () => pickBox(el.dataset.id));
+}
+
+/* ── layoutlistan ──────────────────────────────────────────────────────────── */
+// Miniatyren ritas ur layoutens slots mot skärmens proportioner. Ren SVG: den blir
+// knivskarp i alla storlekar och kostar ingen filhantering (samma resonemang som
+// previewns halftone-raster, §8.5d).
+function layThumb(l){
+  const W = screenSize.width || 1920, H = screenSize.height || 1080;
+  const rects = (l.slots || []).map(s =>
+    `<rect x="${(s.x / W * 100).toFixed(2)}" y="${(s.y / H * 100).toFixed(2)}" ` +
+    `width="${Math.max(1.5, s.w / W * 100).toFixed(2)}" ` +
+    `height="${Math.max(1.5, s.h / H * 100).toFixed(2)}"/>`).join('');
+  return `<svg class="lthumb" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${rects}</svg>`;
+}
+
+function renderLayoutList(){
+  const box = $('layList'); box.innerHTML = '';
+  if (!layouts.length){
+    box.innerHTML = '<div class="empty">Inga layouter än.<br>' +
+      'Ställ in skärmen som du vill ha den och tryck <b>Ny layout</b> — ' +
+      'den fångar allt: vilka overlays som är på, var de ligger, storlek och färger.</div>';
+    return;
+  }
+  for (const l of layouts){
+    const wrap = document.createElement('div');
+    wrap.className = 'lrowwrap';
+    const row = document.createElement('button');
+    row.className = 'lrow' + (l.active ? ' on sel' : '');
+    row.innerHTML = layThumb(l) +
+      '<span class="ltitle"></span>' +
+      `<span class="lstate">${l.active ? 'aktiv' : `${l.slots.length}`}</span>`;
+    row.querySelector('.ltitle').textContent = l.name;
+    row.addEventListener('click', () => { if (!l.active) activateLayout(l.id); });
+    const menu = document.createElement('button');
+    menu.className = 'lmenu';
+    menu.title = 'Fler val'; menu.setAttribute('aria-label', l.name + ' — fler val');
+    menu.setAttribute('aria-haspopup', 'true');
+    menu.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.3"/>' +
+      '<circle cx="12" cy="12" r="1.3"/><circle cx="12" cy="19" r="1.3"/></svg>';
+    menu.addEventListener('click', e => { e.stopPropagation(); openLayoutMenu(menu, l); });
+    wrap.appendChild(row); wrap.appendChild(menu);
+    box.appendChild(wrap);
+  }
+}
+
+function openLayoutMenu(anchor, l){
+  const items = [];
+  items.push(l.active
+    ? { label: 'Inaktivera', onPick: () => activateLayout('') }
+    : { label: 'Aktivera', onPick: () => activateLayout(l.id) });
+  items.push({ label: 'Döp om …', onPick: () => renameLayout(l) });
+  items.push({ label: 'Duplicera', onPick: () => dupLayout(l) });
+  items.push({ sep: true });
+  items.push({ label: 'Ta bort', onPick: () => removeLayout(l) });
+  popMenu(anchor, { minWidth: 180, items });
+}
+
+async function loadLayouts(){
+  try { layouts = await invoke('list_layouts'); }
+  catch { layouts = []; }
+  renderLayoutList();
+  const act = layouts.find(l => l.active);
+  const nm = $('layName');
+  nm.textContent = act ? act.name : 'Ingen layout aktiv';
+  nm.classList.toggle('none', !act);
+  // Knappen byter roll efter läget: utan aktiv layout är den vägen att göra en av
+  // det man ser, med aktiv layout skapar den en NY ur samma läge (alltså en
+  // variant). Att dölja den i det andra fallet hade tagit bort enda vägen att
+  // förgrena en layout.
+  $('btnLaySave').querySelector('span').textContent = act ? 'Ny ur detta läge' : 'Spara som layout';
+}
+
+/* Aktivering skriver ut hela layouten i Rust: fönster flyttas, ändrar storlek,
+   tänds och släcks. Panelen läser därför om ALLT efteråt i stället för att gissa
+   vad som ändrades — en halvuppdaterad vy efter ett layoutbyte är precis den sortens
+   fel som ser ut som att layouten inte fungerade. */
+async function activateLayout(id){
+  try { await invoke('activate_layout', { id }); }
+  catch(err){ toast('Kunde inte byta layout: ' + errMsg(err), true); return; }
+  await loadOverlays();
+  await loadLayouts();
+  renderLayoutTab();
+  if (id) toast('Layout aktiverad.');
+}
+
+async function dupLayout(l){
+  try { await invoke('duplicate_layout', { id: l.id }); await loadLayouts(); }
+  catch(err){ toast('Kunde inte duplicera: ' + errMsg(err), true); }
+}
+
+/* Namnet frågas efter i listfoten och inte i en dialogruta: en modal för ett kort
+   namn stjäl fokus från skärmvyn, som är det man just tittat på och vill döpa
+   efter. Samma grepp som presetradens sparaknapp. */
+let layPrompt = null;
+function askName(title, initial, onOk){
+  const foot = document.querySelector('#listLayouts .list-foot');
+  if (layPrompt) layPrompt.remove();
+  $('btnLayNew').hidden = true;
+  const form = document.createElement('form');
+  form.className = 'pb-form'; form.style.width = '100%';
+  form.innerHTML = '<input type="text" maxlength="32" style="flex:1 1 auto;width:auto;min-width:0">' +
+    '<button type="submit" class="pb-ok" title="Spara"><svg viewBox="0 0 24 24"><path d="m4 12.5 5 5L20 6.5"/></svg></button>' +
+    '<button type="button" class="pb-cancel" title="Avbryt"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
+  const inp = form.querySelector('input');
+  inp.placeholder = title; inp.setAttribute('aria-label', title); inp.value = initial || '';
+  const close = () => { form.remove(); layPrompt = null; $('btnLayNew').hidden = false; };
+  form.querySelector('.pb-cancel').addEventListener('click', close);
+  inp.addEventListener('keydown', e => { if (e.key === 'Escape'){ e.preventDefault(); close(); } });
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const v = inp.value.trim();
+    if (!v){ inp.focus(); return; }
+    close();
+    await onOk(v);
+  });
+  foot.appendChild(form);
+  layPrompt = form;
+  inp.focus(); inp.select();
+}
+
+$('btnLayNew').addEventListener('click', () => newLayout());
+$('btnLaySave').addEventListener('click', () => newLayout());
+
+function newLayout(){
+  askName('Namn på layouten', '', async (name) => {
+    try { await invoke('create_layout', { name }); }
+    catch(err){ toast('Kunde inte skapa layouten: ' + errMsg(err), true); return; }
+    await loadLayouts();
+    toast('Layouten skapad och aktiverad.');
+  });
+}
+
+function renameLayout(l){
+  askName('Nytt namn', l.name, async (name) => {
+    try { await invoke('rename_layout', { id: l.id, name }); await loadLayouts(); }
+    catch(err){ toast('Kunde inte döpa om: ' + errMsg(err), true); }
+  });
+}
+
+/* Bekräftelse i knappen i stället för en dialogruta — samma mönster som
+   presetchipsens ×, och av samma skäl: en modal för ett klick man ändå ångrar
+   direkt är mer i vägen än den skyddar. Att ta bort en layout släcker dessutom
+   inga overlays (läget ligger kvar), så det är inte en destruktiv handling i den
+   meningen. */
+async function removeLayout(l){
+  try { await invoke('delete_layout', { id: l.id }); }
+  catch(err){ toast('Kunde inte ta bort layouten: ' + errMsg(err), true); return; }
+  await loadLayouts();
+  toast('Layouten borttagen. Overlays står kvar som de är.');
+}
+
+/* ── overlays i layouten ─────────────────────────────────────────────────────
+   `layPos` håller positionsfältens input-element per overlay så att ett drag i
+   skärmvyn kan skriva siffrorna utan att bygga om raden. En ombyggnad under
+   dragningen hade tagit fokus från fältet och startat om gruppens hopfällning. */
+const layPos = new Map();
+
+async function layAdd(id){
+  try { await invoke('set_enabled', { id, enabled: true }); }
+  catch(err){ toast('Kunde inte lägga till overlayn: ' + errMsg(err), true); return; }
+  const o = ov(id); if (o) o.enabled = true;
+  renderList(); renderLayoutTab(); loadLayouts();
+}
+async function layRemove(id){
+  try { await invoke('set_enabled', { id, enabled: false }); }
+  catch(err){ toast('Kunde inte ta bort overlayn: ' + errMsg(err), true); return; }
+  const o = ov(id); if (o) o.enabled = false;
+  renderList(); renderLayoutTab(); loadLayouts();
+}
+
+function openAddMenu(anchor){
+  const rest = overlays.filter(o => !o.enabled);
+  popMenu(anchor, {
+    minWidth: 240,
+    items: rest.length
+      ? rest.map(o => ({ label: o.title, onPick: () => layAdd(o.id) }))
+      : [{ label: 'Alla overlays ingår redan', act: true }],
+  });
+}
+$('btnLayAdd').addEventListener('click', e => { e.stopPropagation(); openAddMenu($('btnLayAdd')); });
+
+/* En grupp per overlay i layouten, STÄNGD som standard: fliken handlar om var
+   något ligger, och fem öppna inställningslistor hade begravt skärmvyn. Läget
+   sparas per overlay i samma localStorage-karta som Overlays-flikens grupper. */
+function layGroup(o){
+  const grp = document.createElement('section');
+  grp.className = 'grp lgrp';
+  grp.id = 'lgrp-' + o.id;
+
+  const head = document.createElement('button');
+  head.className = 'ghead';
+  head.setAttribute('aria-expanded', 'false');
+  head.setAttribute('aria-controls', 'lbody-' + o.id);
+  head.innerHTML = '<span class="gbar"></span><span class="gname"></span>' +
+    '<span class="gcount"></span>' +
+    '<svg class="gchev" viewBox="0 0 12 12"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>';
+  head.querySelector('.gname').textContent = o.title;
+
+  const del = document.createElement('button');
+  del.className = 'gremove';
+  del.title = 'Ta bort ur layouten'; del.setAttribute('aria-label', o.title + ' — ta bort ur layouten');
+  del.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  del.addEventListener('click', e => { e.stopPropagation(); layRemove(o.id); });
+
+  const body = document.createElement('div');
+  body.className = 'gbody'; body.id = 'lbody-' + o.id;
+
+  // Position. Talfälten är den exakta vägen; skärmvyn är den snabba. Båda skriver
+  // samma väg (set_position), så de kan aldrig säga olika saker.
+  const pos = document.createElement('div');
+  pos.className = 'row';
+  pos.innerHTML = '<span class="rlabel">Position</span>' +
+    '<span class="posf"><label>X<input type="number" step="1"></label>' +
+    '<label>Y<input type="number" step="1"></label></span>';
+  const [ix, iy] = pos.querySelectorAll('input');
+  ix.value = o.x; iy.value = o.y;
+  layPos.set(o.id, { x: ix, y: iy });
+  const pushPos = () => {
+    const x = Math.round(Number(ix.value)), y = Math.round(Number(iy.value));
+    if (!isFinite(x) || !isFinite(y)) return;
+    o.x = x; o.y = y;
+    const el = $('stScreen').querySelector(`.st-ov[data-id="${CSS.escape(o.id)}"]`);
+    if (el) placeBox(el);
+    const f = sendPos(o.id); f(x, y); f.flush();
+  };
+  ix.addEventListener('change', pushPos);
+  iy.addEventListener('change', pushPos);
+  body.appendChild(pos);
+
+  // Skala och opacitet — samma radform och samma reglage som i Overlays-fliken.
+  const mkSlide = (label, min, max, step, val, fmt, send) => {
+    const row = document.createElement('div');
+    row.className = 'row slide';
+    row.innerHTML = '<label></label><input type="range"><span class="val"></span>';
+    row.querySelector('label').textContent = label;
+    const inp = row.querySelector('input'), out = row.querySelector('.val');
+    inp.min = min; inp.max = max; inp.step = step; inp.value = val;
+    out.textContent = fmt(val);
+    inp.addEventListener('input', () => {
+      const v = Number(inp.value);
+      out.textContent = fmt(v);
+      send(v);
+    });
+    inp.addEventListener('change', () => send.flush && send.flush());
+    body.appendChild(row);
+    return inp;
+  };
+  const sScale = throttleIpc(async (v) => {
+    try { await invoke('set_scale', { id: o.id, scale: v }); }
+    catch(err){ toast('Kunde inte spara skalan: ' + errMsg(err), true); }
+  });
+  const scaleSend = (v) => { o.scale = v; stageSoon(); sScale(v); };
+  scaleSend.flush = () => sScale.flush();
+  const sOpacity = throttleIpc(async (v) => {
+    try { await invoke('set_opacity', { id: o.id, opacity: v }); }
+    catch(err){ toast('Kunde inte spara opaciteten: ' + errMsg(err), true); }
+  });
+  const opacitySend = (v) => { o.opacity = v; sOpacity(v); };
+  opacitySend.flush = () => sOpacity.flush();
+  mkSlide('Skala', 0.6, 1.6, 0.05, o.scale, v => v.toFixed(2) + '×', scaleSend);
+  mkSlide('Opacitet', 0.2, 1, 0.05, o.opacity, v => Math.round(v * 100) + '%', opacitySend);
+
+  // Alternativen — SAMMA radbyggare som Overlays-fliken (renderOptionRows), alla
+  // tre grupperna i samma behållare: här finns ingen plats för fyra underrubriker
+  // per overlay, och ordningen (av/på, data, utseende) bär redan grupperingen.
+  renderOptionRows(o, {
+    toggles: body, behavior: body, tweaks: body, before: null,
+    onChange: (option, value) => {
+      // Är samma overlay vald i Overlays-fliken ska dess kontroller inte ligga
+      // kvar med gamla värden — den fliken byggs om när man går dit (se navigeringen).
+      toPreview({ kind: 'option', id: o.id, option, value });
+    },
+  });
+
+  grp.appendChild(head); grp.appendChild(del); grp.appendChild(body);
+  return grp;
+}
+
+function renderLayoutTab(){
+  const stack = $('layStack');
+  stack.innerHTML = '';
+  layPos.clear();
+  const members = layMembers();
+  if (!members.length){
+    stack.innerHTML = '<div class="empty">Ingen overlay i layouten. Lägg till en med <b>+</b> i skärmvyn.</div>';
+  } else {
+    const st = grpRead();
+    for (const o of members){
+      const grp = layGroup(o);
+      stack.appendChild(grp);
+      countGroup(grp);
+      // Stängd som standard: `!== true` och inte `=== false`, alltså tvärtom mot
+      // Overlays-flikens grupper.
+      const open = st[grp.id] === true;
+      setGroupOpen(grp, open, false);
+      const head = grp.querySelector('.ghead');
+      head.addEventListener('click', () => {
+        const nowOpen = grp.classList.contains('closed');
+        setGroupOpen(grp, nowOpen, true);
+        const s = grpRead(); s[grp.id] = nowOpen; grpWrite(s);
+      });
+    }
+    paintAll();
+  }
+  renderStage();
+}
+
+/* ── skärmvyns verktyg ── */
+function paintSnapBtn(){
+  const b = $('btnSnap');
+  b.classList.toggle('active', snapOn);
+  b.setAttribute('aria-pressed', String(snapOn));
+  b.title = snapOn ? 'Snappning på — dra utan att sikta' : 'Snappning av — fri placering';
+}
+$('btnSnap').addEventListener('click', () => {
+  snapOn = !snapOn; writeLayoutPrefs(); paintSnapBtn(); fitStage();
+});
+$('btnGrid').addEventListener('click', e => {
+  e.stopPropagation();
+  popMenu($('btnGrid'), {
+    minWidth: 180,
+    items: GRID_COLS.map(c => ({
+      label: `${c} × ${Math.max(2, Math.round(c * screenSize.height / screenSize.width))}`,
+      sel: c === gridCols,
+      onPick: () => { gridCols = c; writeLayoutPrefs(); if (!snapOn){ snapOn = true; paintSnapBtn(); } fitStage(); },
+    })),
+  });
+});
+
+{
+  const box = document.querySelector('#pane-layout .controls');
+  if (box) smoothWheel(box);
+}
+addEventListener('resize', () => { if ($('app').dataset.section === 'layout') fitStage(); });
+
+async function initLayoutTab(){
+  await loadScreen();
+  paintSnapBtn();
+  await loadLayouts();
+  renderLayoutTab();
+}
+
 /* Fonten hämtas över nätet — vänta in den, men aldrig i evighet: panelen får inte
    bli tom bara för att riggen är offline. */
 Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 1500))])
-  .then(() => { loadOverlays(); loadGlobals(); });
+  .then(async () => { await loadOverlays(); loadGlobals(); initLayoutTab(); });
 </script>
 </body>
 </html>
