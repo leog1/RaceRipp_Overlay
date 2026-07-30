@@ -41,7 +41,9 @@ body{font-family:var(--ui-font);color:var(--ink);
    kantlös och osynlig tills det finns något att skrolla. */
 ::-webkit-scrollbar{width:var(--ui-scrollbar);height:var(--ui-scrollbar);}
 ::-webkit-scrollbar-track{background:transparent;}
-::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.09);border-radius:99px;
+/* Remsan är rak (--ui-r-xs) och inte pillerformad: en 6 px bred kapsel som glider
+   i ett spår är webbläsarens formspråk, en rak list är verktygets. */
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.09);border-radius:var(--ui-r-xs);
   border:3px solid transparent;background-clip:content-box;}
 ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.19);background-clip:content-box;}
 ::-webkit-scrollbar-corner{background:transparent;}
@@ -78,6 +80,16 @@ body{font-family:var(--ui-font);color:var(--ink);
    a och e först. Den ursprungliga mätningen gjordes vid 16/18/20/22/24 px. */
 .titlebar .tb-logo img{height:14px;width:auto;display:block;}
 .titlebar .tb-drag{flex:1 1 auto;align-self:stretch;}
+/* Statusgruppen ligger MITT i titelraden, och absolut positionerad med flit: satt
+   den i flödet hamnade mitten där ordbildens bredd plus knapparnas bredd råkade
+   lägga den, alltså aldrig i mitten — och den flyttade sig dessutom i sidled när
+   Broadcasting-raden dök upp mitt under körning (samma familj som §8.4h).
+   left:50% + translateX(-50%) mäter mot FÖNSTRET och står därför still oavsett vad
+   som händer på sidorna.
+   Den ligger ovanpå .tb-drag men bär `data-tauri-drag-region="deep"` själv (§8.4i),
+   så raden går fortfarande att dra i på mitten. */
+.tb-center{position:absolute;left:50%;top:0;bottom:0;transform:translateX(-50%);
+  display:flex;align-items:center;gap:16px;pointer-events:auto;}
 /* Motor-/Broadcastingstatus, i titelraden sedan 0.4.6. PRICK + TEXT, ingen yta och
    ingen kant. Brickan hade båda och tanken var att gruppera de två statusarna mot
    ordbilden och fönsterknapparna — men en 36 px titelrad har inte plats för en
@@ -88,32 +100,30 @@ body{font-family:var(--ui-font);color:var(--ink);
    Lägg alltså inte tillbaka background/border här — vill statusen skiljas från
    ordbilden räcker avståndet (margin) och att pricken bär färgen.
 
-   OFFLINE ÄR MEDVETET NEUTRALT i texten — att motorn inte hunnit upp vid en
-   kallstart är inget fel, så texten förblir --dim. Pricken är röd (--red är en
-   SIGNALfärg, §4).
+   TEXTEN ÄR ALLTID NEUTRAL (--dim). Den var tidigare tonad i tillståndets kulör
+   (#9fe3ab live, #e8ce8e mock), vilket lästes som en glöd omkring orden: två
+   färgade fält (prick + text) för EN uppgift, i den enda raden som ska vara helt
+   lugn. Pricken bär tillståndet ensam — den är 6 px och har en svag glow just för
+   att kunna göra det. Färga alltså inte texten igen; behöver tillståndet mer vikt
+   är det pricken som ska växa.
    `display:flex` slår ut webbläsarens `[hidden]{display:none}` (samma fälla som
    §8.4f), därför en egen dold-regel nedan.
    flex:0 0 auto: utan den är statusen krympbar (flex-shrink är 1 som standard)
    och `white-space:nowrap` gör att texten då spiller ut i stället för att
    .tb-drag ger med sig. Bredden här är ett designbeslut, inte en restpost —
    samma resonemang som min-width:0 på .rail (§8.4h). */
-.tb-status{flex:0 0 auto;display:flex;align-items:center;gap:6px;
-  margin:0 6px;padding:0;
+.tb-status{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:0;
   font-size:var(--ui-fs-xs);font-weight:600;letter-spacing:.3px;color:var(--dim);
-  -webkit-user-select:none;user-select:none;white-space:nowrap;line-height:1;
-  transition:color .2s ease;}
-.tb-status:last-of-type{margin-right:12px;}
+  -webkit-user-select:none;user-select:none;white-space:nowrap;line-height:1;}
 .tb-status[hidden]{display:none;}
 .tb-status .dot{width:6px;height:6px;border-radius:50%;flex:0 0 auto;background:var(--faint);
   transition:background-color .2s ease;}
-/* Bara pricken och texten bär färgen, ytan förblir neutral (.tb-status). Tillstånds-
-   klassen sitter på BRICKAN och inte på pricken — `:has()` hade varit kortare men gör
-   utseendet beroende av en väljare som WebView2 fick först i Chromium 105.
+/* Bara PRICKEN bär färgen. Tillståndsklassen sitter ändå på raden och inte på
+   pricken — `:has()` hade varit kortare men gör utseendet beroende av en väljare
+   som WebView2 fick först i Chromium 105.
    Den enda glowen som är kvar i panelen sitter på de här prickarna och på
    växlarknoppen (§4): saker vars enda uppgift är att synas i ögonvrån. Håll den
    svag — 4 px, inte 8. */
-.tb-status.live{color:#9fe3ab;}
-.tb-status.mock{color:#e8ce8e;}
 .tb-status.live .dot{background:var(--green);box-shadow:0 0 4px rgba(13,230,34,0.45);}
 .tb-status.mock .dot{background:var(--amber);box-shadow:0 0 4px rgba(251,191,36,0.40);}
 .tb-status.off  .dot{background:var(--red);}
@@ -263,8 +273,12 @@ body.maximized .tb-btn .ico-max{display:none;}
   box-shadow:var(--ui-sheen),0 1px 0 rgba(255,255,255,0.028);}
 .lrow .ltitle{flex:1 1 auto;min-width:0;font-size:var(--ui-fs-lg);font-weight:600;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* Brickan är RAK (--ui-r-xs) och inte pillerformad. En pillerform på en 10 px
+   versaltext läser som en webbtagg; en rak liten ruta läser som en lysdiodetikett
+   på ett instrument — och det är vad den är. Samma ändring gäller varje bricka i
+   panelen (chips, taggar i menyer). */
 .lrow .lstate{flex:0 0 auto;font-size:var(--ui-fs-xs);font-weight:700;letter-spacing:.9px;text-transform:uppercase;
-  color:var(--faint);line-height:1;padding:4px 8px;border-radius:999px;
+  color:var(--faint);line-height:1;padding:4px 7px;border-radius:var(--ui-r-xs);
   border:1px solid var(--ui-hair);transition:color .14s ease,border-color .14s ease,background .14s ease;}
 .lrow.on .lstate{color:var(--green);border-color:rgba(13,230,34,0.32);background:rgba(13,230,34,0.10);}
 .empty{padding:16px 18px;font-size:12px;color:var(--dim);line-height:1.55;}
@@ -378,25 +392,40 @@ body.maximized .tb-btn .ico-max{display:none;}
   border:1px solid var(--ui-edge-dk);box-shadow:var(--ui-raise),var(--ui-lip);}
 /* Bakgrundsväljaren uppe till VÄNSTER, samma 12 px kantmarginal som de andra. */
 .pv-bgpick{position:absolute;left:12px;top:12px;z-index:4;}
-.pv-bgpick .menu{position:absolute;top:calc(100% + 8px);left:0;min-width:224px;padding:4px;
+
+/* ── EN meny i hela panelen ──────────────────────────────────────────────────
+   Panelen hade två slags "välj ett värde": bakgrundsväljarens egenritade meny
+   (mörk yta, hake, taggar) och `<select class=osel>`, vars lista ritas av
+   WINDOWS — annan typografi, annan radhöjd, annan markeringsfärg, och i WebView2
+   dessutom en vit ruta om man glömmer färga `option`. Två väljare i samma vy som
+   ser ut att komma från olika program.
+   Nu finns EN meny, `.pop`, och båda använder den.
+
+   `position:fixed` och inte absolut inuti sin knapp: enum-väljarna bor i
+   .controls, som SKROLLAR (overflow-y:auto). En absolut meny där hade klippts av
+   behållarens kant så fort raden låg nära nedkanten. Fixed mäter mot fönstret,
+   så JS placerar menyn mot knappens rektangel och stänger den vid skroll —
+   priset för att den alltid syns hel. */
+.pop{position:fixed;z-index:60;min-width:224px;padding:4px;
   border-radius:var(--ui-r-md);background:linear-gradient(180deg,#141817,#0d100f);
   border:1px solid var(--ui-edge-dk);box-shadow:var(--ui-lift),var(--ui-raise);
-  display:none;max-height:min(360px,42vh);overflow-y:auto;}
-.pv-bgpick.open .menu{display:block;}
-.bgitem{width:100%;appearance:none;background:none;border:0;color:var(--ink);font:inherit;
-  font-size:var(--ui-fs-md);font-weight:600;text-align:left;padding:8px 12px;
-  border-radius:var(--ui-r-sm);cursor:pointer;display:flex;align-items:center;gap:8px;
+  max-height:min(360px,52vh);overflow-y:auto;overscroll-behavior:contain;}
+.popitem{width:100%;appearance:none;background:none;border:0;color:var(--ink);font:inherit;
+  font-size:var(--ui-fs-md);font-weight:600;text-align:left;padding:7px 10px;
+  border-radius:var(--ui-r-xs);cursor:pointer;display:flex;align-items:center;gap:8px;
   transition:background .12s ease;}
-.bgitem:hover{background:var(--hover);}
-.bgitem.sel{background:var(--sel);}
-.bgitem:focus-visible{outline:2px solid var(--ui-focus);outline-offset:-2px;}
-.bgitem .tick{flex:0 0 12px;color:var(--green);font-size:11px;}
-.bgitem .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.bgitem .tag{margin-left:auto;flex:0 0 auto;font-size:var(--ui-fs-xs);font-weight:700;letter-spacing:.8px;
-  text-transform:uppercase;color:var(--faint);padding:4px 8px;border-radius:999px;
+.popitem:hover,.popitem.cur{background:var(--hover);}
+.popitem.sel{background:var(--sel);}
+.popitem:focus-visible{outline:2px solid var(--ui-focus);outline-offset:-2px;}
+.popitem .tick{flex:0 0 12px;color:var(--green);font-size:11px;}
+.popitem .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.popitem .tag{margin-left:auto;flex:0 0 auto;font-size:var(--ui-fs-xs);font-weight:700;letter-spacing:.8px;
+  text-transform:uppercase;color:var(--faint);padding:3px 6px;border-radius:var(--ui-r-xs);
   border:1px solid var(--ui-hair);line-height:1;}
-.bgsep{height:1px;background:var(--ui-hair);margin:4px;}
-.bgitem.act{color:var(--dim);font-weight:600;font-size:var(--ui-fs-sm);}
+.popsep{height:1px;background:var(--ui-hair);margin:4px;}
+/* En rad som UTFÖR något ("Öppna mappen …") i stället för att välja ett värde:
+   dämpad och utan hake, så den inte läser som ett alternativ i listan. */
+.popitem.act{color:var(--dim);font-weight:600;font-size:var(--ui-fs-sm);}
 /* Beskrivningen låg tidigare som ett stycke under previewn och tog vertikal plats
    varje sekund man INTE läste den. Nu: en ikon uppe till höger som visar den vid
    hover (och vid tangentbordsfokus — knappen måste gå att nå utan mus). */
@@ -421,7 +450,7 @@ body.maximized .tb-btn .ico-max{display:none;}
 /* Samma röda som brandbaren och ordbilden, och utan glow: strecket är en
    avslutning under en rubrik, inte en varningslampa. */
 .titleband h2::after{content:"";display:block;width:44px;height:2px;background:var(--ui-brand);
-  margin:12px auto 0;border-radius:2px;}
+  margin:12px auto 0;}
 .titleband p{max-width:560px;margin:12px auto 0;font-size:var(--ui-fs-md);font-weight:500;
   line-height:1.6;color:var(--dim);}
 /* Textloggan ersätter rubriken i Om-fliken. Behåller guldstrecket under, men utan
@@ -454,9 +483,14 @@ body.maximized .tb-btn .ico-max{display:none;}
 /* Avdelare mellan INBYGGDA och EGNA. Ett hårstreck och inte en rubrik: skillnaden
    är värd att se men inte värd två ord som äter halva raden. */
 .pb-sep{flex:0 0 1px;align-self:stretch;background:var(--ui-hair);margin:0 4px;}
+/* RAK form (--ui-r-sm), inte piller. Chipsen var det största kvarvarande stället
+   där panelen såg webbig ut: sju rundade kapslar i rad ovanför ett kort med nästan
+   raka hörn. Att chipsen och sparaknappen nu har samma radie är inget problem —
+   skillnaden bärs av innehållet (namn + × kontra ikon + "Spara") och av att
+   knappen står efter en avdelare. */
 .chip{flex:0 0 auto;position:relative;appearance:none;cursor:pointer;
-  display:flex;align-items:center;gap:6px;height:28px;padding:0 12px;
-  border-radius:999px;border:1px solid var(--ui-edge);background:var(--ui-inset);
+  display:flex;align-items:center;gap:6px;height:28px;padding:0 11px;
+  border-radius:var(--ui-r-sm);border:1px solid var(--ui-edge);background:var(--ui-inset);
   color:var(--dim);font:inherit;font-size:var(--ui-fs-md);font-weight:600;
   white-space:nowrap;transition:color .14s ease,border-color .14s ease,background-color .14s ease;}
 .chip:hover{color:var(--ink);border-color:var(--ui-edge-hi);}
@@ -477,8 +511,8 @@ body.maximized .tb-btn .ico-max{display:none;}
    läser den. Två steg — första klicket ber om bekräftelse (§ chipet blir rött och
    byter text), andra tar bort. En preset man tunat i tio minuter ska inte kunna
    försvinna på en felklickad pixel. */
-.chip .x{display:none;margin:0 -6px 0 0;width:16px;height:16px;flex:0 0 auto;
-  align-items:center;justify-content:center;border-radius:50%;color:var(--faint);}
+.chip .x{display:none;margin:0 -5px 0 0;width:16px;height:16px;flex:0 0 auto;
+  align-items:center;justify-content:center;border-radius:var(--ui-r-xs);color:var(--faint);}
 .chip:hover .x,.chip:focus-within .x{display:flex;}
 .chip .x:hover{color:var(--red);background:rgba(255,59,59,0.14);}
 .chip .x svg{width:9px;height:9px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;}
@@ -533,8 +567,20 @@ body.maximized .tb-btn .ico-max{display:none;}
    `scrollbar-gutter:stable` reserverar remsan ÄVEN när den inte behövs, så bredden
    aldrig hoppar, och högerpaddingen dras av lika mycket. Summan är exakt 20 px till
    panens kant i båda lägena — samma som #previewBox:s margin. */
+/* PRESETRADENS AVSTÅND FÅR INTE SKROLLA BORT. Luften mellan presetraden och
+   inställningarna låg tidigare som `padding-top` INNE i skrollrutan, alltså i
+   innehållet: högst upp fanns 16 px, men så fort man skrollade en pixel åkte de
+   med och kortets överkant hamnade kant i kant med raden ovanför. Det var det som
+   såg ut som att presetraden nästan kolliderade med inställningarna.
+   `margin-top` ligger UTANFÖR skrollboxen och står därför still — 16 px till
+   presetraden alltid, exakt samma tal som presetraden har upp till
+   förhandsvisningen. Flytta det inte tillbaka till padding.
+   overscroll-behavior:contain hindrar dessutom att skrollen "läcker" vidare till
+   panen när man når slutet. */
 #pane-overlays .controls{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;
-  scrollbar-gutter:stable;padding-right:calc(20px - var(--ui-scrollbar));}
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;margin-top:16px;padding-top:0;
+  padding-right:calc(20px - var(--ui-scrollbar));}
 /* Knapparna ligger ovanpå previewn, så ytan är ogenomskinlig: en halvtransparent
    knapp över en rörlig overlay går inte att läsa. */
 /* Skuggan här var `--ui-raise, --ui-lip` — en 20 px suddig slagskugga under en
@@ -589,21 +635,62 @@ body.maximized .tb-btn .ico-max{display:none;}
   background:var(--ui-card-wash),var(--ui-card);
   box-shadow:var(--ui-card-in);}
 .card > h3{padding:16px 0 8px;}
-/* Avdelarrubrik INNE i ett kort (Storlek/Av-på/Utseende i samma kort). Skiljer sig
-   från .list-head/.card>h3 på ett avgörande sätt: etiketten är NEUTRALT grå
-   (samma hex som --dim, inte amber), och bara den lilla stapeln bär färg — en
-   signal, inte två som tävlar (det var precis det som gjorde att guldstrecket togs
-   bort ur listrubrikerna). Stapeln är --ui-brand: panelens chrome har bara EN röd. */
-.subhead{display:flex;align-items:center;gap:8px;padding:20px 0 4px;}
-.card > .subhead:first-child{padding-top:16px;}
-/* Stapeln är AMBER och inte --ui-brand sedan 0.4.8. Amber är appens highlightfärg
-   (§4) och bär redan kortrubrikerna; rött är varumärket, och en röd markör vid varje
-   avdelning gjorde att ordbildens färg upprepades tre gånger nere i ett kort där den
-   inte identifierar något. Regeln "bara EN signal bär färgen" gäller fortfarande —
-   etiketten är kvar neutralt grå, det är bara kulören på stapeln som bytts. */
-.subhead .bar{width:2px;height:12px;border-radius:2px;background:var(--amber);flex:0 0 auto;}
-.subhead span:last-child{font-size:var(--ui-fs-sm);font-weight:700;letter-spacing:1.4px;
-  text-transform:uppercase;color:var(--dim);}
+
+/* ── inställningsstacken (overlays-vyn) ─────────────────────────────────────
+   ETT stycke material, INDELAT — inte fyra staplade kort. Här stod tidigare ett
+   enda kort med fyra `.subhead`-rubriker rakt i flödet, och det gick isär på två
+   sätt: rubrikerna var det enda som skilde grupperna åt (så en lång färglista
+   flöt ihop med gruppen ovanför), och det fanns ingen väg att fälla ihop en
+   grupp man inte arbetar i — tolv färgrader tvingade fram skrollning för att nå
+   ett reglage som låg tre rader ovanför.
+
+   Nu: en behållare (`.stack`) med kortets yta, kant och djup, och grupperna som
+   sektioner INNE i den, avdelade av ett enda hårstreck i kanten som ramar in
+   behållaren (`--ui-edge-dk`, alltså samma linje som stackens egen kant — inte en
+   ljusare, som hade läst som en ny liten yta). Ingen egen bakgrund per grupp,
+   inga inre radier, ingen skugga mellan dem: separationen ska gå att SE men inte
+   att räkna, och ytan förblir en.
+   Det är samma resonemang som §4b:s "djup kommer av kant och sheen": vill man
+   avdela något inne i en yta lägger man en linje, inte ett nytt lager.
+
+   Radien följer --ui-r-lg (8 px, halverad i 0.5.1) och `overflow:hidden` gör att
+   gruppens hovryta klipps av behållarens hörn i stället för att sticka ut som en
+   fyrkant i ett runt hörn. */
+.stack{border:1px solid var(--ui-edge-dk);border-radius:var(--ui-r-lg);
+  background:var(--ui-card-wash),var(--ui-card);box-shadow:var(--ui-card-in);
+  overflow:hidden;}
+.grp + .grp{border-top:1px solid var(--ui-edge-dk);}
+.grp[hidden]{display:none;}
+/* Rubrikraden ÄR knappen som fäller ihop gruppen. Hela raden och inte en liten
+   chevron: träffytan ska vara det man tittar på, och 40 px hög rad är den enda
+   affordans som fungerar utan att man letar. */
+.ghead{width:100%;appearance:none;background:none;border:0;cursor:pointer;
+  display:flex;align-items:center;gap:10px;height:40px;padding:0 20px;color:var(--dim);
+  font:inherit;text-align:left;-webkit-user-select:none;user-select:none;
+  transition:background-color .14s ease,color .14s ease;}
+.ghead:hover{background:var(--hover);color:var(--ink);}
+.ghead:focus-visible{outline:2px solid var(--ui-focus);outline-offset:-2px;}
+/* Samma amberstapel som den gamla `.subhead` hade: EN signal bär färgen, etiketten
+   förblir neutralt grå. Byt den inte till --ui-brand — rött är varumärket och
+   upprepas då fyra gånger nere i ett kort där det inte identifierar något. */
+.ghead .gbar{width:2px;height:12px;background:var(--amber);flex:0 0 auto;}
+.ghead .gname{font-size:var(--ui-fs-sm);font-weight:700;letter-spacing:1.4px;
+  text-transform:uppercase;}
+/* Antalet rader i gruppen. Poängen är hopfällt läge: en stängd grupp ska säga hur
+   mycket som ligger under den, annars vet man inte om det är värt att öppna. */
+.ghead .gcount{margin-left:auto;font-size:var(--ui-fs-xs);font-weight:700;
+  color:var(--faint);letter-spacing:.6px;font-variant-numeric:tabular-nums;}
+.ghead .gchev{width:10px;height:10px;flex:0 0 auto;stroke:currentColor;fill:none;
+  stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;
+  transition:transform .18s cubic-bezier(.2,.8,.3,1);}
+.grp.closed .ghead .gchev{transform:rotate(-90deg);}
+/* Botten-luften ligger i ett ::after och INTE som padding-bottom: hopfällningen
+   animerar `height` mot 0, och en padding hade lämnat gruppen 10 px hög i stängt
+   läge (padding räknas inte in i height och klipps inte av overflow). */
+.gbody{padding:0 20px;overflow:hidden;}
+.gbody::after{content:"";display:block;height:10px;}
+.grp.closed .gbody{display:none;}
+.gbody.anim{transition:height .18s cubic-bezier(.2,.8,.3,1);}
 /* Radhöjden är fast (--ui-row-h) och inte padding-driven: en rad med reglage är
    högre än en med bara text, och listan vek sig i taktlöshet när de blandades. */
 .row{display:flex;align-items:center;gap:16px;min-height:var(--ui-row-h);}
@@ -632,46 +719,63 @@ body.maximized .tb-btn .ico-max{display:none;}
    reglage är inget tillstånd. */
 input[type=range]{-webkit-appearance:none;appearance:none;background:none;
   height:20px;cursor:pointer;--p:0%;}
-input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:99px;
+/* Spåret är rakt (--ui-r-xs) och greppet är en FADER — en stående rektangel med
+   nästan raka hörn, inte en cirkel. En vit boll på ett pillerformat spår är samma
+   reglage som varje webbformulär har; ett rakt spår med ett grepp som är högre än
+   det är brett är en potentiometer, alltså formspråket i ett mätverktyg. Måtten
+   (10×18) är valda så greppet täcker spåret med marginal och fortfarande går att
+   träffa med musen.
+   Skala inte greppet vid hover (det gjorde den runda): en fader som växer ser ut
+   att glida ur sitt spår. Den ljusnar i stället. */
+input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:var(--ui-r-xs);
   background:linear-gradient(90deg,
     rgba(244,246,244,0.88) 0 var(--p), rgba(255,255,255,0.10) var(--p) 100%);
   box-shadow:inset 0 0 0 1px rgba(0,0,0,0.55);}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
-  width:14px;height:14px;margin-top:-5px;border-radius:50%;border:0;background:#f7f9f7;
-  box-shadow:0 0 0 1px rgba(0,0,0,0.55),0 2px 6px rgba(0,0,0,0.55);
-  transition:transform .12s ease,box-shadow .12s ease;}
-input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.14);}
-input[type=range]:active::-webkit-slider-thumb{transform:scale(1.02);}
+  width:10px;height:18px;margin-top:-7px;border-radius:var(--ui-r-xs);border:0;background:#dfe4e0;
+  box-shadow:0 0 0 1px rgba(0,0,0,0.65),0 2px 5px rgba(0,0,0,0.5),
+             inset 0 1px 0 rgba(255,255,255,0.55);
+  transition:background-color .12s ease,box-shadow .12s ease;}
+input[type=range]:hover::-webkit-slider-thumb{background:#f7f9f7;}
+input[type=range]:active::-webkit-slider-thumb{background:#ffffff;}
 input[type=range]:focus{outline:none;}
 input[type=range]:focus-visible::-webkit-slider-thumb{
-  box-shadow:0 0 0 2px var(--ui-focus),0 2px 6px rgba(0,0,0,0.55);}
+  box-shadow:0 0 0 2px var(--ui-focus),0 2px 5px rgba(0,0,0,0.5);}
 
 /* typade alternativ (enum/färg) — bool använder .sw, tal använder .row.slide */
 /* Väljaren är exakt 376 px — samma bredd som reglagets och färgradens kluster (se
    .row.slide .val), så etiketten slutar på samma lodräta linje oavsett vilken sorts
    kontroll raden har. En väljare som bara var så bred som sitt längsta alternativ
-   såg ut att ha ramlat in i raden. */
-.osel{flex:0 0 376px;width:376px;appearance:none;-webkit-appearance:none;
-  color:var(--ink);font:inherit;font-size:var(--ui-fs-md);font-weight:600;cursor:pointer;
-  padding:8px 32px 8px 12px;border:1px solid var(--ui-edge);border-radius:var(--ui-r-sm);
-  /* background-size måste anges: en inline-SVG utan width/height har ingen egen
-     storlek och skalas då till hela rutan — pilen blev en stor grå bock. */
-  background-color:var(--ui-inset);background-repeat:no-repeat;
-  background-position:right 11px center;background-size:11px 11px;
-  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%237f867d' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'><path d='M2.75 4.5 6 7.75 9.25 4.5'/></svg>");
-  box-shadow:var(--ui-recess);
-  transition:border-color .15s ease,background-color .15s ease;}
-.osel:hover{border-color:var(--ui-edge-hi);}
-.osel:focus-visible{outline:2px solid var(--ui-focus);outline-offset:1px;}
-/* Listan ritas av systemet — utan detta blir den vit i WebView2. */
-.osel option{background:#0e100f;color:var(--ink);}
+   såg ut att ha ramlat in i raden.
+
+   Här satt ett `<select class="osel">`. Kontrollen SJÄLV gick att forma, men listan
+   ritas av Windows: annan typografi, annan radhöjd, annan markeringsfärg, och en
+   vit ruta i WebView2 om man glömmer färga `option`. Panelen hade alltså två slags
+   "välj ett värde" som inte såg ut att komma från samma program — och den som var
+   fin var bakgrundsväljarens egenritade meny. Nu använder BÅDA `.pop` (se ovan).
+   28 px hög, samma som hexfältet och färgrutan, så alla kontroller i högerkolumnen
+   står på samma linje. */
+.dd{flex:0 0 376px;width:376px;position:relative;}
+.dd-btn{width:100%;height:28px;display:flex;align-items:center;gap:8px;
+  padding:0 9px 0 11px;appearance:none;cursor:pointer;
+  color:var(--ink);font:inherit;font-size:var(--ui-fs-md);font-weight:600;
+  background:var(--ui-inset);border:1px solid var(--ui-edge);border-radius:var(--ui-r-sm);
+  box-shadow:var(--ui-recess);transition:border-color .15s ease;}
+.dd-btn:hover,.dd.open .dd-btn{border-color:var(--ui-edge-hi);}
+.dd-btn:focus-visible{outline:2px solid var(--ui-focus);outline-offset:1px;}
+.dd-btn .ddv{flex:1 1 auto;min-width:0;text-align:left;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.dd-btn svg{width:11px;height:11px;flex:0 0 auto;stroke:var(--dim);fill:none;
+  stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;
+  transition:transform .16s cubic-bezier(.2,.8,.3,1);}
+.dd.open .dd-btn svg{transform:rotate(180deg);}
 /* Färgrutan: nollställd inuti (webkit lägger 2 px padding och en grå kant runt
    provet) så det är FÄRGEN som är knappen, inte en liten fläck i en ram. */
 .ocol{flex:0 0 48px;width:48px;height:28px;padding:0;cursor:pointer;
   background:var(--ui-inset);border:1px solid var(--ui-edge);border-radius:var(--ui-r-sm);
   transition:border-color .15s ease,transform .1s ease;}
 .ocol::-webkit-color-swatch-wrapper{padding:3px;}
-.ocol::-webkit-color-swatch{border:0;border-radius:4px;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.5);}
+.ocol::-webkit-color-swatch{border:0;border-radius:var(--ui-r-xs);box-shadow:inset 0 0 0 1px rgba(0,0,0,0.5);}
 .ocol:hover{border-color:var(--ui-edge-hi);}
 .ocol:active{transform:translateY(1px);}
 .ocol:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
@@ -697,10 +801,57 @@ input[type=range]:focus-visible::-webkit-slider-thumb{
    när färgen saknar alfa. Annars hamnade rutorna i två olika kolumner — de färger
    som har alfa knuffades åt vänster av sitt reglage, och en lista med tio färger
    såg ut som två halvfärdiga listor. */
-.aslot{flex:0 0 200px;display:flex;align-items:center;justify-content:flex-end;gap:12px;}
+/* min-width:0 är INTE dekoration här (§8.4h, tredje gången samma fälla): ett flexbarn
+   har `min-width:auto`, alltså ett golv vid sitt min-content, och `flex:0 0 200px`
+   låser ingenting utan detta. Ett `<input type=range>` har dessutom en INTRINSIC
+   bredd på 129 px i Chromium, så när gradientknappen (24 + 12 px) flyttade in i
+   slotten blev golvet 221 px — slotten växte 21 px på just de rader som har en
+   gradient, etiketten slutade 21 px tidigare och den lodräta linje hela
+   högerkolumnen bygger på (§4b) bröts på tre rader av tolv. Mätt, inte gissat. */
+.aslot{flex:0 0 200px;min-width:0;display:flex;align-items:center;justify-content:flex-end;gap:12px;}
 .oalpha{flex:1 1 auto;min-width:60px;}
 .row .val{flex:0 0 44px;text-align:right;font-size:var(--ui-fs-md);font-weight:600;color:var(--dim);
   font-variant-numeric:tabular-nums;}
+
+/* ── gradient som bakgrund ───────────────────────────────────────────────────
+   Bara på de färgalternativ som faktiskt är en YTA (`"gradient": true` i
+   registry.json). Skälet är hårt tekniskt och inte en smaksak: en gradient är
+   giltig i `background`, men inte i `background-color`, `stroke`, `fill` eller
+   `border-color`. Ett `col-<token>` vars token används som streckfärg (delta-barens
+   `--track` sitter på `stroke`) skulle tyst sluta ritas — inte falla tillbaka på
+   något. Flaggan sätts alltså bara efter att man kontrollerat VAR tokenen används.
+
+   Knappen bor först i `.aslot` och inte i en egen kolumn: en egen kolumn hade
+   krävt att alfa-reglaget krympte på ALLA färgrader (också de utan gradient) för
+   att de 376 px skulle hålla, och då blir kolumnen smalare överallt för en knapp
+   som finns på fyra rader. Nu betalar bara gradientraderna, med reglageplats. */
+.gbtn{flex:0 0 24px;width:24px;height:24px;padding:0;display:flex;align-items:center;
+  justify-content:center;cursor:pointer;color:var(--dim);
+  background:var(--ui-inset);border:1px solid var(--ui-edge);border-radius:var(--ui-r-xs);
+  transition:color .14s ease,border-color .14s ease,background .14s ease;}
+.gbtn:hover{color:var(--ink);border-color:var(--ui-edge-hi);}
+.gbtn:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
+/* Amber = "det här läget är valt" (highlight, §4). Inte grönt: grönt betyder PÅ i
+   panelen, och en gradient är ett utseende, inte ett tillstånd. */
+.gbtn.on{color:var(--amber);border-color:rgba(251,191,36,0.45);
+  background:linear-gradient(180deg,rgba(251,191,36,0.20),rgba(251,191,36,0.08));}
+.gbtn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.4;}
+.gbtn svg path{fill:currentColor;stroke:none;opacity:.55;}
+/* Utan alfa-reglage är knappen ensam i slotten, och `justify-content:flex-end` hade
+   lagt den i högerkanten — alltså i en annan kolumn än på raderna med alfa. */
+.aslot > .gbtn:only-child{margin-right:auto;}
+
+/* Gradientens egna rader ligger UNDER färgraden, indragna och med ett litet
+   grenstreck. Det är avsiktligt inte ett eget kort eller en ruta: de tillhör raden
+   ovanför, och en inramning hade gjort dem till en fjärde sorts yta i kortet.
+   Grenstrecket är samma grepp som en trädvy i en filhanterare eller en
+   parameterlista i ett CAD-program — man ser att raden är underordnad utan en
+   enda etikett som säger det. */
+.row.grad{min-height:40px;}
+.row.grad .rlabel,.row.grad label{padding-left:16px;position:relative;
+  font-size:var(--ui-fs-md);font-weight:600;color:var(--dim);}
+.row.grad .rlabel::before,.row.grad label::before{content:"";position:absolute;
+  left:2px;top:50%;width:8px;height:1px;background:var(--ui-edge);}
 
 /* toggle */
 .sw{position:relative;width:40px;height:24px;flex:0 0 auto;cursor:pointer;}
@@ -740,11 +891,20 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
 .kv + .kv{border-top:1px solid var(--ui-hair);}
 /* Kortkommandot får en tangentbricka: det ÄR något man trycker på, och som löptext
    var det omöjligt att skilja från beskrivningen bredvid. */
-.kv span:first-child{flex:0 0 auto;font-weight:700;font-size:var(--ui-fs-sm);color:var(--ink);
+.kv span:first-child,.keycap{flex:0 0 auto;font-weight:700;font-size:var(--ui-fs-sm);color:var(--ink);
   font-variant-numeric:tabular-nums;letter-spacing:.4px;padding:6px 8px;border-radius:var(--ui-r-sm);
   background:var(--ui-inset);border:1px solid var(--ui-edge);
   box-shadow:inset 0 1px 0 rgba(255,255,255,0.05),0 1px 0 rgba(0,0,0,0.5);}
 .kv span:last-child{color:var(--dim);text-align:right;}
+/* Brickan under inspelning. Amber = "här står markören / vi väntar på dig" (§4);
+   grönt hade läst som att något slagits på. Texten byts av JS, inte av CSS, så
+   bredden hoppar en gång och sedan står den still. */
+.keycap.cap{color:var(--amber);border-color:rgba(251,191,36,0.5);
+  background:rgba(251,191,36,0.10);}
+.keycap.bad{color:var(--red);border-color:rgba(255,59,59,0.5);}
+/* Knappraden i inställningskortet: samma små knappar som presetraden (.pb-btn), så
+   panelen bara har EN knappstorlek utanför previewrutans verktyg. */
+.hkbtns{display:flex;align-items:center;gap:8px;flex:0 0 auto;}
 
 /* toast */
 #toast{position:fixed;right:16px;bottom:16px;max-width:340px;padding:12px 16px;
@@ -762,8 +922,13 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
    reglage 220+16+60, färg 120+16+96+16+48, väljare 296. */
 @media (max-width: 1100px){
   :root{--ui-ctl-w:220px;}
-  .osel{flex:0 0 296px;width:296px;}
+  .dd{flex:0 0 296px;width:296px;}
   .aslot{flex:0 0 120px;}
+  /* På golvet ryms inte 60 px reglage + 44 px siffra + gradientknappens 36 px i en
+     slot på 120. Reglaget och siffran krymper i stället för att spilla ut över
+     hexfältet — 24+12+32+12+36 = 116. */
+  .oalpha{min-width:32px;}
+  .aslot .val{flex:0 0 36px;}
 }
 </style>
 </head>
@@ -779,10 +944,15 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
          Varför inte pointer-events:none som .tb-logo har: #bcRow bär
          Broadcasting-felet i sitt title-attribut, och det är enda stället felet
          syns. Utan pekhändelser ingen tooltip. -->
-    <div class="tb-status off" id="engRow" data-tauri-drag-region="deep"><span class="dot" id="dot"></span><span id="statusText">Motor offline</span></div>
-    <!-- Broadcasting (andra bilars data). Dold tills motorn faktiskt försöker —
-         annars ser den ut som ett fel på riggar som inte har ACC installerat. -->
-    <div class="tb-status off" id="bcRow" data-tauri-drag-region="deep" hidden><span class="dot"></span><span id="bcText"></span></div>
+    <!-- Statusgruppen sitter mitt i raden (absolut positionerad, se .tb-center) och
+         inte till höger om ordbilden: mitten är den enda plats som INTE flyttar sig
+         när Broadcasting-raden dyker upp mitt under körning. -->
+    <div class="tb-center" data-tauri-drag-region="deep">
+      <div class="tb-status off" id="engRow"><span class="dot" id="dot"></span><span id="statusText">Motor offline</span></div>
+      <!-- Broadcasting (andra bilars data). Dold tills motorn faktiskt försöker —
+           annars ser den ut som ett fel på riggar som inte har ACC installerat. -->
+      <div class="tb-status off" id="bcRow" hidden><span class="dot"></span><span id="bcText"></span></div>
+    </div>
     <div class="tb-btns">
       <button class="tb-btn" id="tbMin" title="Minimera" aria-label="Minimera">
         <svg viewBox="0 0 10 10"><path d="M0 5h10"/></svg>
@@ -864,7 +1034,9 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
             <button class="sbtn" id="btnBg" title="Bakgrund" aria-haspopup="true" aria-expanded="false">
               <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 16 5-5 4 4 3-3 6 6"/><circle cx="9" cy="9.5" r="1.4"/></svg>
             </button>
-            <div class="menu" id="bgMenu"></div>
+            <!-- Menyn byggs i body av popMenu() och ligger alltså inte här: den är
+                 `position:fixed` så att samma meny kan användas av enum-väljarna
+                 nere i den skrollande inställningslistan utan att klippas. -->
           </div>
           <!-- Titel + beskrivning bor här i stället för i ett eget band under
                previewn: de läses en gång och tog annars vertikal plats för alltid. -->
@@ -919,50 +1091,69 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
           </div>
         </div>
         <div class="controls">
-          <!-- Ett kort med tre avdelade sektioner i fast ordning: storlek först
-               (den man rör oftast), sedan av/på, sedan resten. Alternativen
-               sorteras in i sektion 2 och 3 utifrån sin TYP i registry.json —
-               panelen känner fortfarande ingen overlay vid namn.
-               #cardToggles/#cardTweaks är bara wrapper-divar nu (inte egna
-               .card) — renderOptions() bryr sig bara om att de finns. -->
+          <!-- EN yta, FYRA hopfällbara grupper i fast ordning: storlek först (den
+               man rör oftast), sedan av/på, sedan data, sedan utseende. Alternativen
+               sorteras in i grupp 2–4 utifrån sin TYP i registry.json — panelen
+               känner fortfarande ingen overlay vid namn.
+               Varje `.gbody` ÄR den behållare renderOptions() fyller; lägg inte en
+               wrapper inuti dem, avdelarlinjen mellan rader är `.row + .row` och
+               en wrapper bryter den. -->
           <div class="cards">
-            <div class="card">
-              <div class="subhead"><span class="bar"></span><span>Storlek &amp; opacitet</span></div>
-              <div class="row slide"><label>Skala</label>
-                <input type="range" id="scale" min="0.6" max="1.6" step="0.05" value="1">
-                <span class="val" id="scaleVal">1.00×</span></div>
-              <div class="row slide"><label>Opacitet</label>
-                <input type="range" id="opacity" min="0.2" max="1" step="0.05" value="1">
-                <span class="val" id="opacityVal">100%</span></div>
+            <div class="stack" id="optStack">
+              <section class="grp" id="grp-size">
+                <button class="ghead" aria-expanded="true" aria-controls="body-size">
+                  <span class="gbar"></span><span class="gname">Storlek &amp; opacitet</span>
+                  <span class="gcount">2</span>
+                  <svg class="gchev" viewBox="0 0 12 12"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>
+                </button>
+                <div class="gbody" id="body-size">
+                  <div class="row slide"><label>Skala</label>
+                    <input type="range" id="scale" min="0.6" max="1.6" step="0.05" value="1">
+                    <span class="val" id="scaleVal">1.00×</span></div>
+                  <div class="row slide"><label>Opacitet</label>
+                    <input type="range" id="opacity" min="0.2" max="1" step="0.05" value="1">
+                    <span class="val" id="opacityVal">100%</span></div>
+                </div>
+              </section>
 
-              <div class="subhead"><span class="bar"></span><span>Av / på</span></div>
-              <div id="cardToggles">
-                <!-- bool-alternativ ur registret sätts in HÄR, före raden nedan.
-                     De måste bli riktiga DOM-syskon till den: avdelarlinjen är
-                     `.row + .row`, och en wrapper runt dem hade brutit den. -->
-                <div class="row" id="rowAot"><span class="rlabel">Alltid överst</span>
-                  <span class="state" id="aotState">På</span>
-                  <label class="sw" id="aotSwitch"><input type="checkbox" checked><span class="track"></span><span class="knob"></span></label></div>
-              </div>
+              <section class="grp" id="grp-toggles">
+                <button class="ghead" aria-expanded="true" aria-controls="cardToggles">
+                  <span class="gbar"></span><span class="gname">Av / på</span>
+                  <span class="gcount"></span>
+                  <svg class="gchev" viewBox="0 0 12 12"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>
+                </button>
+                <!-- bool-alternativ ur registret sätts in HÄR, före raden nedan. -->
+                <div class="gbody" id="cardToggles">
+                  <div class="row" id="rowAot"><span class="rlabel">Alltid överst</span>
+                    <span class="state" id="aotState">På</span>
+                    <label class="sw" id="aotSwitch"><input type="checkbox" checked><span class="track"></span><span class="knob"></span></label></div>
+                </div>
+              </section>
 
               <!-- Tal- och valalternativ (int/float/enum) står FÖR SIG och inte
                    bland färgerna. Ett reglage som byter DATA — delta-källa,
                    tidsfönster — hör inte under rubriken "Utseende", och när det låg
-                   där drunknade det dessutom i en lista på tolv färgrader.
-                   Sorteringen går fortfarande på `type` i registret, alltså känner
-                   panelen ingen overlay vid namn. -->
-              <div id="behaviorSection">
-                <div class="subhead"><span class="bar"></span><span>Data</span></div>
-                <div id="cardBehavior"></div>
-              </div>
+                   där drunknade det dessutom i en lista på tolv färgrader. -->
+              <section class="grp" id="grp-data">
+                <button class="ghead" aria-expanded="true" aria-controls="cardBehavior">
+                  <span class="gbar"></span><span class="gname">Data</span>
+                  <span class="gcount"></span>
+                  <svg class="gchev" viewBox="0 0 12 12"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>
+                </button>
+                <div class="gbody" id="cardBehavior"></div>
+              </section>
 
-              <!-- Kan vara tom (overlayn har inga färgalternativ) — döljs som EN
-                   enhet (rubrik + rader) av renderOptions(), inte bara #cardTweaks
-                   för sig, annars blir rubriken kvar ensam. -->
-              <div id="tweaksSection">
-                <div class="subhead"><span class="bar"></span><span>Utseende</span></div>
-                <div id="cardTweaks"></div>
-              </div>
+              <!-- Kan vara tom (overlayn har inga färgalternativ) — hela gruppen
+                   döljs då av renderOptions(), inte bara raderna, annars står
+                   rubriken kvar ovanför ingenting. -->
+              <section class="grp" id="grp-look">
+                <button class="ghead" aria-expanded="true" aria-controls="cardTweaks">
+                  <span class="gbar"></span><span class="gname">Utseende</span>
+                  <span class="gcount"></span>
+                  <svg class="gchev" viewBox="0 0 12 12"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>
+                </button>
+                <div class="gbody" id="cardTweaks"></div>
+              </section>
             </div>
           </div>
         </div>
@@ -1005,8 +1196,11 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
             </div>
             <div class="card">
               <h3>Kortkommandon</h3>
-              <div class="kv"><span>Ctrl + Alt + Space</span><span>Växla race / edit</span></div>
-              <p class="hint">I edit-läge drar du varje overlay på plats. Positionen sparas när du stänger panelen.</p>
+              <!-- Brickan skrivs av JS ur get_globals, inte hårdkodad: kommandot går
+                   att byta i Inställningar, och en fast text här hade ljugit så fort
+                   någon gjorde det. -->
+              <div class="kv"><span id="omHotkey">—</span><span>Växla race / edit</span></div>
+              <p class="hint">I edit-läge drar du varje overlay på plats. Positionen sparas när du stänger panelen. Kombinationen ändras under Inställningar.</p>
             </div>
           </div>
         </div>
@@ -1034,12 +1228,30 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
       <div class="pane" id="pane-installningar">
         <div class="titleband">
           <h2>Inställningar</h2>
-          <p>Allmänna appinställningar kommer hit.</p>
+          <p>Allmänna appinställningar.</p>
         </div>
         <div class="controls">
           <div class="cards single">
-            <div class="card"><h3>Kommer snart</h3>
-              <p class="hint">Den här fliken är under utveckling.</p>
+            <div class="card">
+              <h3>Kortkommando</h3>
+              <!-- Kombinationen registreras GLOBALT i Windows, alltså kan den vara
+                   upptagen av ett annat program. Registreringen görs därför om direkt
+                   när man spelar in en ny, och misslyckas den läggs den GAMLA tillbaka
+                   — annars hade man kunnat hamna helt utan kortkommando. -->
+              <div class="row"><span class="rlabel">Växla race / edit</span>
+                <span class="keycap" id="hkCap">—</span>
+                <span class="hkbtns">
+                  <button class="pb-btn" id="hkSet" title="Spela in en ny tangentkombination">
+                    <svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="12" rx="1.5"/><path d="M7 11h.01M11 11h.01M15 11h.01M8 15h8"/></svg>
+                    <span>Ändra</span>
+                  </button>
+                  <button class="pb-btn" id="hkReset" title="Tillbaka till Ctrl+Alt+Space">
+                    <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg>
+                    <span>Standard</span>
+                  </button>
+                </span>
+              </div>
+              <p class="hint">Klicka <b>Ändra</b> och tryck kombinationen. Minst en av Ctrl, Alt, Shift eller Win måste ingå — ett globalt kortkommando utan modifierare hade fångat tangenten i alla program. Esc avbryter.</p>
             </div>
           </div>
         </div>
@@ -1110,6 +1322,107 @@ function toast(msg, isErr){
   sync();
 })();
 
+/* ── EN meny för hela panelen ────────────────────────────────────────────────
+   Panelen hade två sorters "välj ett värde": bakgrundsväljarens egenritade meny och
+   `<select>`, vars lista ritas av Windows. Det är samma sorts inkonsekvens som två
+   olika knappstilar, men värre, eftersom listan är det man LÄSER när man väljer.
+   Nu bygger både bakgrundsväljaren och varje enum-alternativ sin meny här.
+
+   Menyn läggs i <body> och är `position:fixed` av ett konkret skä: enum-väljarna bor
+   i .controls, som skrollar (overflow-y:auto). En absolut positionerad meny inuti
+   den hade klippts av behållarens kant så fort raden låg nära nedkanten. Priset är
+   att menyn inte följer med vid skroll — därför stängs den vid skroll, vilket ändå
+   är rätt beteende: menyn hör till en rad man tittar på.
+
+   Öppnas uppåt när det inte finns plats nedåt. Utan det hamnar sista radens meny
+   utanför fönstret, och det är just de sista raderna (färgerna) som har flest. */
+let openPop = null;
+function closePop(){
+  const p = openPop; if (!p) return;
+  openPop = null;
+  p.el.remove();
+  p.anchor.classList.remove('open');
+  const trigger = p.anchor.querySelector('[aria-haspopup]');
+  if (trigger) trigger.setAttribute('aria-expanded', 'false');
+  if (p.onClose) p.onClose();
+  if (p.focusBack && trigger) { try { trigger.focus(); } catch {} }
+}
+/** popMenu(anchor, {items, minWidth, onClose, onHover}) — items:
+ *  {label, tag, sel, act, onPick, onHover}. Returnerar inget; menyn stänger sig. */
+function popMenu(anchor, spec){
+  if (openPop && openPop.anchor === anchor) return closePop();
+  closePop();
+  const el = document.createElement('div');
+  el.className = 'pop';
+  el.setAttribute('role', 'listbox');
+  const rows = [];
+  for (const it of spec.items){
+    if (it.sep){ const s = document.createElement('div'); s.className = 'popsep'; el.appendChild(s); continue; }
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'popitem' + (it.sel ? ' sel' : '') + (it.act ? ' act' : '');
+    b.setAttribute('role', 'option');
+    b.setAttribute('aria-selected', String(!!it.sel));
+    b.innerHTML = `<span class="tick"></span><span class="nm"></span>`;
+    b.querySelector('.tick').textContent = it.sel ? '✓' : '';
+    b.querySelector('.nm').textContent = it.label;
+    if (it.tag){ const t = document.createElement('span'); t.className = 'tag'; t.textContent = it.tag; b.appendChild(t); }
+    if (it.title) b.title = it.title;
+    // Hovra = se det direkt (bakgrundsväljaren). Det ÄR bläddrandet.
+    if (it.onHover) b.addEventListener('mouseenter', () => it.onHover());
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const pick = it.onPick;
+      openPop && (openPop.focusBack = false);
+      closePop();
+      if (pick) pick();
+    });
+    el.appendChild(b);
+    rows.push(b);
+  }
+  if (spec.onLeave) el.addEventListener('mouseleave', () => spec.onLeave());
+  // Måttet kräver att menyn ligger i DOM:en, men den får inte blinka på fel plats
+  // först — därför osynlig tills den är placerad.
+  el.style.visibility = 'hidden';
+  document.body.appendChild(el);
+  const r = anchor.getBoundingClientRect();
+  const w = Math.max(spec.minWidth || 0, r.width, 224);
+  el.style.width = w + 'px';
+  const h = el.offsetHeight;
+  const below = window.innerHeight - r.bottom - 8;
+  const top = (h <= below || r.top - 8 < h) ? r.bottom + 6 : r.top - h - 6;
+  el.style.top = Math.max(8, Math.min(top, window.innerHeight - h - 8)) + 'px';
+  el.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
+  el.style.visibility = '';
+  anchor.classList.add('open');
+  const trigger = anchor.querySelector('[aria-haspopup]');
+  if (trigger) trigger.setAttribute('aria-expanded', 'true');
+  openPop = { el, anchor, onClose: spec.onClose, focusBack: true };
+
+  // Tangentbord: menyn måste gå att använda utan mus, annars är den ett steg bakåt
+  // mot <select> (som kunde det).
+  const cur = rows.find(b => b.classList.contains('sel')) || rows[0];
+  if (cur) cur.focus();
+  el.addEventListener('keydown', (e) => {
+    const i = rows.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+      e.preventDefault();
+      const n = rows.length; if (!n) return;
+      const j = e.key === 'ArrowDown' ? (i + 1 + n) % n : (i - 1 + n) % n;
+      rows[j].focus();
+      rows[j].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Escape' || e.key === 'Tab'){
+      e.preventDefault(); closePop();
+    }
+  });
+}
+// Klick utanför, skroll och storleksändring stänger. `capture` så att en meny inuti
+// den skrollande listan stängs innan skrollen målas — annars ligger den kvar i luften.
+addEventListener('click', () => closePop());
+addEventListener('scroll', () => closePop(), true);
+addEventListener('resize', () => closePop());
+addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
+
 /* ── bakgrund till förhandsvisningen ─────────────────────────────────────── */
 /* Bilderna hämtas som data-URL från Rust i stället för via en vanlig sökväg: den
    paketerade appen läser sitt webbinnehåll ur ett arkiv inne i exe:n, så en fil som
@@ -1143,67 +1456,46 @@ async function showBg(id){
 }
 
 async function pickBg(id){
-  bgCurrent = id; showBg(id); renderBgMenu();
+  bgCurrent = id; showBg(id);
   try { await invoke('set_preview_background', { id }); }
   catch(e){ toast('Kunde inte spara bakgrunden: ' + errMsg(e), true); }
 }
 
-function renderBgMenu(){
-  const m = $('bgMenu'); m.innerHTML = '';
-  const add = (label, id, tag) => {
-    const b = document.createElement('button');
-    b.className = 'bgitem' + (id === bgCurrent ? ' sel' : '');
-    b.innerHTML = `<span class="tick"></span><span class="nm"></span>`;
-    b.querySelector('.tick').textContent = id === bgCurrent ? '✓' : '';
-    b.querySelector('.nm').textContent = label;
-    if (tag){ const t = document.createElement('span'); t.className = 'tag'; t.textContent = tag; b.appendChild(t); }
-    // Hovra = se den direkt. Det ÄR bläddrandet — utan det måste man klicka sig
-    // igenom listan och spara fem gånger för att hitta rätt bild.
-    b.addEventListener('mouseenter', () => showBg(id));
-    b.addEventListener('click', () => { pickBg(id); closeBgMenu(); });
-    m.appendChild(b);
-    return b;
-  };
-  add('Ingen bakgrund', '');
-  for (const b of backgrounds) add(b.label, b.id, b.custom ? 'egen' : '');
-
-  const sep = document.createElement('div'); sep.className = 'bgsep'; m.appendChild(sep);
-  const open = document.createElement('button');
-  open.className = 'bgitem act';
-  open.textContent = 'Öppna mappen …';
-  open.title = 'Lägg egna bakgrunder i den här mappen';
-  open.addEventListener('mouseenter', () => showBg(bgCurrent));   // sluta förhandsvisa
-  open.addEventListener('click', async () => {
-    try { await invoke('open_background_dir'); }
-    catch(e){ toast('Kunde inte öppna mappen: ' + errMsg(e), true); }
+function openBgMenu(){
+  const items = [{ label: 'Ingen bakgrund', sel: bgCurrent === '',
+                   onHover: () => showBg(''), onPick: () => pickBg('') }];
+  for (const b of backgrounds)
+    items.push({ label: b.label, tag: b.custom ? 'egen' : '', sel: b.id === bgCurrent,
+                 onHover: () => showBg(b.id), onPick: () => pickBg(b.id) });
+  items.push({ sep: true });
+  items.push({
+    label: 'Öppna mappen …', act: true, title: 'Lägg egna bakgrunder i den här mappen',
+    onHover: () => showBg(bgCurrent),                 // sluta förhandsvisa
+    onPick: async () => {
+      try { await invoke('open_background_dir'); }
+      catch(e){ toast('Kunde inte öppna mappen: ' + errMsg(e), true); }
+    },
   });
-  m.appendChild(open);
+  popMenu($('bgPick'), {
+    items, minWidth: 236,
+    // Lämnar man menyn eller stänger den utan att välja ska den valda bilden tillbaka.
+    onLeave: () => showBg(bgCurrent),
+    onClose: () => showBg(bgCurrent),
+  });
 }
 
-function closeBgMenu(){
-  $('bgPick').classList.remove('open');
-  $('btnBg').setAttribute('aria-expanded', 'false');
-  showBg(bgCurrent);                        // ångra eventuell hover-förhandsvisning
-}
 $('btnBg').addEventListener('click', async (e) => {
   e.stopPropagation();
-  const p = $('bgPick');
-  if (p.classList.contains('open')) return closeBgMenu();
+  if (openPop && openPop.anchor === $('bgPick')) return closePop();
   // Läs om katalogen varje gång menyn öppnas — det är så en fil man just lagt i
   // mappen dyker upp utan att appen startas om.
   await loadBackgrounds();
-  p.classList.add('open');
-  $('btnBg').setAttribute('aria-expanded', 'true');
+  openBgMenu();
 });
-// Lämnar man menyn utan att välja ska den valda bilden tillbaka.
-$('bgMenu').addEventListener('mouseleave', () => showBg(bgCurrent));
-addEventListener('click', () => { if ($('bgPick').classList.contains('open')) closeBgMenu(); });
-addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('bgPick').classList.contains('open')) closeBgMenu(); });
 
 async function loadBackgrounds(){
   try { backgrounds = await invoke('list_backgrounds'); }
   catch { backgrounds = []; }
-  renderBgMenu();
 }
 
 /* ── sektionsflikar ── */
@@ -1214,6 +1506,149 @@ document.querySelectorAll('.nav').forEach(btn => {
     if (btn.dataset.sec === 'overlays') requestAnimationFrame(fitPreview);
   });
 });
+
+/* ── hopfällbara grupper i inställningslistan ────────────────────────────────
+   Kravet är enkelt men konsekvensen är inte: en overlay kan ha tolv färgrader, och
+   då ligger reglaget man vill åt tre skärmar bort från det man just tittade på.
+   Fäller man ihop "Utseende" är hela listan två skärmar kortare.
+
+   Läget sparas i localStorage och INTE i settings.json. Skälet: det är panelens egen
+   vy-state, inte användardata — det hör inte till en overlay, det ska inte följa med
+   en preset, och det ska inte kunna göra settings.json ogiltig (§8.3b). Går
+   localStorage inte att nå (OBS, en webbläsare i privat läge) är alla grupper öppna,
+   vilket är rätt utgångsläge.
+
+   Höjden animeras i px och inte med `height:auto` → transitions fungerar inte på auto.
+   `display:none` sätts FÖRST när animeringen är klar, annars finns inget att animera. */
+const GRP_KEY = 'simmatrix.groups';
+function grpRead(){
+  try { return JSON.parse(localStorage.getItem(GRP_KEY)) || {}; } catch { return {}; }
+}
+function grpWrite(st){ try { localStorage.setItem(GRP_KEY, JSON.stringify(st)); } catch {} }
+
+function setGroupOpen(grp, open, animate){
+  const body = grp.querySelector('.gbody');
+  const head = grp.querySelector('.ghead');
+  if (!body || !head) return;
+  head.setAttribute('aria-expanded', String(open));
+  const done = () => {
+    body.classList.remove('anim');
+    body.style.height = '';
+    if (!open) grp.classList.add('closed');
+  };
+  if (!animate){
+    grp.classList.toggle('closed', !open);
+    body.style.height = '';
+    return;
+  }
+  if (open){
+    grp.classList.remove('closed');
+    const h = body.scrollHeight;
+    body.style.height = '0px';
+    body.classList.add('anim');
+    requestAnimationFrame(() => { body.style.height = h + 'px'; });
+  } else {
+    body.style.height = body.scrollHeight + 'px';
+    body.classList.add('anim');
+    requestAnimationFrame(() => { body.style.height = '0px'; });
+  }
+  // transitionend kommer inte alls om övergången är nollställd (reduced motion), så
+  // en timer är sista ordet i båda fallen.
+  const t = setTimeout(done, 260);
+  body.addEventListener('transitionend', function once(e){
+    if (e.propertyName !== 'height') return;
+    body.removeEventListener('transitionend', once);
+    clearTimeout(t); done();
+  });
+}
+
+(function groups(){
+  const st = grpRead();
+  for (const grp of document.querySelectorAll('.grp')){
+    const head = grp.querySelector('.ghead');
+    if (!head) continue;
+    if (st[grp.id] === false) setGroupOpen(grp, false, false);
+    head.addEventListener('click', () => {
+      const open = grp.classList.contains('closed');
+      setGroupOpen(grp, open, true);
+      const s = grpRead(); s[grp.id] = open; grpWrite(s);
+    });
+  }
+})();
+
+/* Antalet rader i gruppens rubrik. Poängen är hopfällt läge: en stängd grupp måste
+   säga hur mycket som ligger under den. */
+function countGroup(grp){
+  const g = typeof grp === 'string' ? $(grp) : grp;
+  if (!g) return 0;
+  const n = g.querySelectorAll('.gbody > .row:not(.grad)').length;
+  const c = g.querySelector('.gcount');
+  if (c) c.textContent = n ? String(n) : '';
+  return n;
+}
+
+/* ── mjukare skroll i inställningslistan ─────────────────────────────────────
+   Windows skickar hela hjulsnäpp (deltaY ±100) och webbläsaren hoppar dit direkt.
+   Med kort, tidsbaserad utjämning blir samma rörelse mjuk utan att kännas seg —
+   TAU 0,07 s är ungefär fyra frames, alltså precis så mycket att ögat följer med
+   och inte så mycket att listan glider vidare efter fingret.
+
+   TRACKPAD OCH PINCH RÖRS INTE. En styrplatta skickar redan många små deltan och är
+   mjuk av sig själv; att lägga utjämning ovanpå den gör den svampig. Därför tas bara
+   riktiga hjulsnäpp (|deltaY| >= 40, deltaMode 0) över, och ctrl+hjul (zoom) lämnas
+   helt i fred.
+   Basvärdet läses ur scrollTop varje gång animeringen står stilla, så att dragning i
+   skrollisten och tangentbordsskroll aldrig hamnar i osynk med målvärdet. */
+function smoothWheel(box){
+  let target = 0, anim = 0, last = 0;
+  const TAU = 0.07;
+  const step = (now) => {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const cur = box.scrollTop;
+    /* Målvärdet klampas mot den VERKLIGA maxskrollen varje frame, och loopen ger upp
+       om en frame inte flyttade något. Utan båda spinner rAF för evigt när målet
+       ligger utanför vad rutan kan skrolla — scrollHeight-clientHeight är inte exakt
+       samma tal som webbläsarens maxskroll (subpixel), så `target` kunde stanna ett
+       par pixlar bortom kanten och skillnaden aldrig bli mindre än 0,5. Symptomet var
+       inte synligt skrollande utan en loop som ALDRIG dog: den fortsatte dra
+       scrollTop tillbaka mot sitt mål efteråt (så listan hoppade tillbaka när man
+       drog i skrollisten) och dess scroll-event stängde varje meny man öppnade. */
+    const max = box.scrollHeight - box.clientHeight;
+    target = Math.max(0, Math.min(max, target));
+    const diff = target - cur;
+    if (Math.abs(diff) < 1){ box.scrollTop = target; anim = 0; return; }
+    let want = cur + diff * (1 - Math.exp(-dt / TAU));
+    /* MINST EN PIXEL PER FRAME. scrollTop snappar till heltal i den här behållaren
+       (mätt), så de sista pixlarna av en exponentiell utjämning avrundas bort: steget
+       blir 0,4 px, scrollTop står kvar, och nästa frame räknar samma sak igen. Loopen
+       levde då vidare för evigt de sista två pixlarna — osynligt, men den drog
+       scrollTop tillbaka mot sitt mål när man drog i skrollisten och dess scroll-event
+       stängde varje meny man öppnade. */
+    if (Math.abs(want - cur) < 1) want = cur + Math.sign(diff);
+    box.scrollTop = want;
+    // Ingen rörelse trots att vi bad om minst en pixel: kanten är nådd (den verkliga
+    // maxskrollen är inte exakt scrollHeight - clientHeight).
+    if (box.scrollTop === cur){ anim = 0; return; }
+    anim = requestAnimationFrame(step);
+  };
+  box.addEventListener('wheel', (e) => {
+    if (e.ctrlKey || e.deltaMode !== 0 || Math.abs(e.deltaY) < 40) return;
+    const max = box.scrollHeight - box.clientHeight;
+    if (max <= 0) return;
+    if (!anim) target = box.scrollTop;
+    const next = Math.max(0, Math.min(max, target + e.deltaY));
+    // Redan i botten/toppen: låt eventet gå vidare som vanligt i stället för att
+    // svälja det, annars känns listan låst.
+    if (next === target && (target === 0 || target === max)) return;
+    target = next;
+    e.preventDefault();
+    if (!anim){ last = performance.now(); anim = requestAnimationFrame(step); }
+  }, { passive: false });
+}
+{
+  const box = document.querySelector('#pane-overlays .controls');
+  if (box) smoothWheel(box);
+}
 
 /* ── overlay-lista ── */
 async function loadOverlays(){
@@ -1468,7 +1903,125 @@ function throttleIpc(fn, ms = THROTTLE_MS){
   return call;
 }
 
-/* Alternativen sorteras i fyra sektioner: skala/opacitet ligger fast först,
+/* ── färgvärden: en solid hex ELLER en gradient ───────────────────────────────
+   Ett färgalternativ med `"gradient": true` i registry.json får skickas som en
+   gradient i stället för en färg. Formen är LÅST till
+     linear-gradient(<vinkel>deg, <hex> 0%, <hex> 100%)
+   och det är inte av lathet: värdet sätts som CSS-variabel i overlayn, och Rust
+   validerar strängen tecken för tecken innan den sparas (is_gradient i lib.rs) —
+   en fri CSS-sträng där hade varit en väg att injicera CSS. Panelen och Rust måste
+   alltså vara överens om exakt en form.
+
+   Två stopp och inte fler: en bakgrund i en overlay ska läsa som EN yta med ljus
+   uppifrån (§4b), och tre stopp gör den till dekoration. Vinkeln går i steg om 15°
+   av samma skäl som typskalan saknar halvpixlar — mellanlägen man inte kan träffa
+   igen är inte inställningar. */
+function splitHex(s){
+  const raw = String(s || '').replace('#', '').trim();
+  const full = /^[0-9a-fA-F]{3,4}$/.test(raw) ? raw.split('').map(c => c + c).join('') : raw;
+  const rgb = '#' + full.slice(0, 6).padEnd(6, '0').toLowerCase();
+  const a = full.length >= 8 ? parseInt(full.slice(6, 8), 16) / 255 : 1;
+  return { rgb: /^#[0-9a-f]{6}$/.test(rgb) ? rgb : '#000000', a };
+}
+/* Andra stoppet seedas mörkare än det första. Sätter man båda till samma färg ser
+   gradientläget ut att vara trasigt — man slår på det och ingenting händer. */
+function darkerStop(st){
+  const n = parseInt(st.rgb.slice(1), 16);
+  const mix = (c) => Math.round(c * 0.45);
+  const rgb = '#' + [mix(n >> 16 & 255), mix(n >> 8 & 255), mix(n & 255)]
+    .map(v => v.toString(16).padStart(2, '0')).join('');
+  return { rgb, a: st.a };
+}
+const stopHex = (st, alpha) => (alpha && st.a < 0.999)
+  ? st.rgb + Math.round(st.a * 255).toString(16).padStart(2, '0')
+  : st.rgb;
+function parseColorValue(s, d){
+  const G = { mode: 'solid', angle: 180, stops: [{ rgb: '#000000', a: 1 }, { rgb: '#000000', a: 1 }] };
+  const m = /^linear-gradient\(\s*(-?[\d.]+)deg\s*,(.+)\)$/i.exec(String(s || '').trim());
+  if (m && d.gradient){
+    G.mode = 'grad';
+    const deg = Math.round(Number(m[1]) / 15) * 15;
+    G.angle = isFinite(deg) ? Math.max(0, Math.min(360, deg)) : 180;
+    const parts = m[2].split(',').map(t => t.trim()).filter(Boolean);
+    G.stops[0] = splitHex(parts[0] ? parts[0].split(/\s+/)[0] : '#000000');
+    G.stops[1] = parts[1] ? splitHex(parts[1].split(/\s+/)[0]) : darkerStop(G.stops[0]);
+    return G;
+  }
+  G.stops[0] = splitHex(s || d.default || '#000000');
+  G.stops[1] = darkerStop(G.stops[0]);
+  return G;
+}
+function colorValue(G, d){
+  if (G.mode === 'grad' && d.gradient)
+    return `linear-gradient(${G.angle}deg, ${stopHex(G.stops[0], d.alpha)} 0%, ${stopHex(G.stops[1], d.alpha)} 100%)`;
+  return stopHex(G.stops[0], d.alpha);
+}
+
+/* Ett färgkluster: alfa-reglage (i sitt slot med fast bredd), hexfält och färgruta.
+   Samma kod bygger färgradens egen kontroll OCH gradientens andra stopp — de två
+   ska vara identiska att använda, och en andra kopia hade glidit isär vid första
+   ändringen. `st` muteras på plats; anroparen äger objektet. */
+function colorCluster(st, o){
+  const slot = document.createElement('span'); slot.className = 'aslot';
+  const swatch = document.createElement('input');
+  swatch.type = 'color'; swatch.className = 'ocol'; swatch.value = st.rgb;
+  const hexIn = document.createElement('input');
+  hexIn.type = 'text'; hexIn.className = 'hexf'; hexIn.spellcheck = false; hexIn.autocomplete = 'off';
+  hexIn.title = 'Färgkod — klistra in #RRGGBB' + (o.alpha ? ' eller #RRGGBBAA' : '');
+  hexIn.setAttribute('aria-label', o.label + ' — färgkod');
+
+  const canon = () => stopHex(st, o.alpha).toUpperCase();
+  let alphaIn = null, alphaOut = null;
+  const sync = () => {
+    swatch.value = st.rgb;
+    // Skriv inte över fältet medan användaren skriver i det — markören hade hoppat
+    // till slutet vid varje tecken.
+    if (document.activeElement !== hexIn) hexIn.value = canon();
+    if (alphaIn){ alphaIn.value = st.a; paintRange(alphaIn); }
+    if (alphaOut) alphaOut.textContent = Math.round(st.a * 100) + '%';
+  };
+
+  if (o.alpha){
+    alphaIn = document.createElement('input');
+    alphaIn.type = 'range'; alphaIn.className = 'oalpha';
+    alphaIn.min = 0; alphaIn.max = 1; alphaIn.step = 0.01; alphaIn.value = st.a;
+    alphaIn.title = 'Genomskinlighet';
+    alphaOut = document.createElement('span'); alphaOut.className = 'val';
+    alphaOut.textContent = Math.round(st.a * 100) + '%';
+    alphaIn.addEventListener('input', () => {
+      st.a = parseFloat(alphaIn.value);
+      alphaOut.textContent = Math.round(st.a * 100) + '%';
+      if (document.activeElement !== hexIn) hexIn.value = canon();
+      o.onChange();
+    });
+    alphaIn.addEventListener('change', () => o.onSettle());
+    slot.appendChild(alphaIn); slot.appendChild(alphaOut);
+  }
+
+  hexIn.value = canon();
+  swatch.addEventListener('input', () => { st.rgb = swatch.value.toLowerCase(); sync(); o.onChange(); });
+  swatch.addEventListener('change', () => o.onSettle());
+  /* Hexfält: klistra in eller skriv en färgkod i stället för att sikta i systemets
+     färgruta. Tar #RRGGBB, #RRGGBBAA och kortformen #RGB, med eller utan brädgård.
+     Ogiltig inmatning MARKERAS men rensas aldrig medan man skriver — ett fält som
+     nollställer sig mitt i "#0DE" är obrukbart. */
+  hexIn.addEventListener('input', () => {
+    const raw = hexIn.value.trim().replace(/^#/, '');
+    const full = /^[0-9a-fA-F]{3}$/.test(raw) ? raw.split('').map(c => c + c).join('') : raw;
+    if (!/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(full)){ hexIn.classList.add('bad'); return; }
+    hexIn.classList.remove('bad');
+    st.rgb = '#' + full.slice(0, 6).toLowerCase();
+    if (full.length === 8 && o.alpha) st.a = parseInt(full.slice(6, 8), 16) / 255;
+    sync(); o.onChange();
+  });
+  const settle = () => { hexIn.classList.remove('bad'); hexIn.value = canon(); o.onSettle(); };
+  hexIn.addEventListener('blur', settle);
+  hexIn.addEventListener('keydown', e => { if (e.key === 'Enter'){ settle(); hexIn.blur(); } });
+
+  return { slot, hexIn, swatch, sync };
+}
+
+/* Alternativen sorteras i fyra grupper: skala/opacitet ligger fast först,
    bool-alternativen bland av/på-reglagen, tal och val (int/float/enum) under "Data"
    och färgerna under "Utseende". Sorteringen går på `type` i registret — inte på
    overlay-id — så en ny overlay hamnar rätt utan att panelen ändras. */
@@ -1525,102 +2078,106 @@ function renderOptions(o){
       row.className = 'row';
       row.innerHTML = `<span class="rlabel"></span>`;
       row.querySelector('.rlabel').textContent = d.label;
-      const sel = document.createElement('select'); sel.className = 'osel';
-      for (const c of (d.values || [])){
-        const op = document.createElement('option');
-        op.value = JSON.stringify(c.value); op.textContent = c.label;
-        if (c.value === val) op.selected = true;
-        sel.appendChild(op);
-      }
-      // Värdet går genom JSON så en enum kan vara tal lika väl som sträng —
-      // <option>.value är alltid en sträng och hade annars tystat gjort om 30 till "30".
-      sel.addEventListener('change', () => send(JSON.parse(sel.value)));
-      row.appendChild(sel);
+      /* Egen väljare (.dd + .pop) och inte `<select>`: listan i ett select ritas av
+         Windows, med annan typografi och radhöjd än panelens övriga menyer. Se .pop
+         i CSS:en. Värdet hålls som JS-värde hela vägen, så en enum kan vara ett TAL
+         lika väl som en sträng — `<option>.value` är alltid en sträng och gjorde
+         tidigare tyst om 30 till "30" (därför JSON-omvägen som stod här). */
+      const dd = document.createElement('div'); dd.className = 'dd';
+      const btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'dd-btn';
+      btn.setAttribute('aria-haspopup', 'listbox');
+      btn.setAttribute('aria-expanded', 'false');
+      btn.innerHTML = `<span class="ddv"></span>` +
+        `<svg viewBox="0 0 12 12"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>`;
+      let cur = val;
+      const labelOf = (v) => {
+        const c = (d.values || []).find(x => x.value === v);
+        return c ? c.label : String(v);
+      };
+      const paint = () => { btn.querySelector('.ddv').textContent = labelOf(cur); };
+      paint();
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        popMenu(dd, {
+          minWidth: dd.offsetWidth,
+          items: (d.values || []).map(c => ({
+            label: c.label, sel: c.value === cur,
+            onPick: () => { cur = c.value; paint(); send(c.value); persist.flush(); },
+          })),
+        });
+      });
+      dd.appendChild(btn);
+      row.appendChild(dd);
 
     } else if (d.type === 'color'){
       /* <input type="color"> kan BARA ge ogenomskinlig hex. Ytor och skuggor behöver
          alfa, så färgen kombineras med ett eget alfa-reglage och skickas som
-         8-siffrig hex (#rrggbbaa), vilket CSS förstår direkt. */
+         8-siffrig hex (#rrggbbaa), vilket CSS förstår direkt.
+         Är alternativet dessutom märkt `"gradient": true` går värdet att byta mot en
+         tvåstoppsgradient — se parseColorValue. Färgradens EGEN kontroll styr då
+         första stoppet och en indragen rad under styr det andra, i stället för att
+         raden blir en egen liten redigerare: färgraden ska se likadan ut oavsett
+         läge, annars hoppar hela kolumnen när man slår på gradienten. */
       row.className = 'row';
       row.innerHTML = `<span class="rlabel"></span>`;
       row.querySelector('.rlabel').textContent = d.label;
-      const s = String(val || d.default || '#000000');
-      const rgb = '#' + s.replace('#','').slice(0,6).padEnd(6,'0');
-      const a0 = s.replace('#','').length >= 8 ? parseInt(s.slice(-2),16)/255 : 1;
 
-      const inp = document.createElement('input');
-      inp.type = 'color'; inp.className = 'ocol'; inp.value = rgb;
-      let alpha = a0;
-      let alphaIn = null, alphaOut = null;      // sätts nedan om färgen har alfa
+      const G = parseColorValue(val, d);
+      const emit = () => send(colorValue(G, d));
+      const settle = () => persist.flush();
 
-      /** Det gällande värdet som text — exakt det som skickas till overlayn. */
-      const canon = () => (d.alpha && alpha < 0.999
-        ? inp.value + Math.round(alpha*255).toString(16).padStart(2,'0')
-        : inp.value).toUpperCase();
+      const c1 = colorCluster(G.stops[0], { alpha: d.alpha, label: d.label, onChange: emit, onSettle: settle });
 
-      const emit = () => {
-        send(canon().toLowerCase());
-        // Skriv inte över fältet medan användaren skriver i det — markören hade
-        // hoppat till slutet vid varje tecken.
-        if (document.activeElement !== hexIn) hexIn.value = canon();
-      };
-      inp.addEventListener('input', emit);
-      inp.addEventListener('change', () => persist.flush());
-
-      // Alfa-reglaget ligger i ett slot som finns även när färgen saknar alfa, så att
-      // färgrutan hamnar i samma kolumn på ALLA färgrader.
-      const slot = document.createElement('span'); slot.className = 'aslot';
-      if (d.alpha){
-        const al = document.createElement('input');
-        al.type = 'range'; al.className = 'oalpha';
-        al.min = 0; al.max = 1; al.step = 0.01; al.value = alpha;
-        al.title = 'Genomskinlighet';
-        const out = document.createElement('span'); out.className = 'val';
-        out.textContent = Math.round(alpha*100) + '%';
-        al.addEventListener('input', () => {
-          alpha = parseFloat(al.value);
-          out.textContent = Math.round(alpha*100) + '%';
-          emit();
+      let subs = [];
+      const dropSubs = () => { for (const s of subs) s.remove(); subs = []; };
+      const buildSubs = () => {
+        const angleRow = document.createElement('div');
+        angleRow.className = 'row slide gen grad';
+        angleRow.innerHTML = `<label>Vinkel</label><input type="range" min="0" max="360" step="15">` +
+                             `<span class="val"></span>`;
+        const ai = angleRow.querySelector('input'), av = angleRow.querySelector('.val');
+        ai.value = G.angle; av.textContent = G.angle + '°'; paintRange(ai);
+        ai.addEventListener('input', () => {
+          G.angle = Math.round(Number(ai.value)); av.textContent = G.angle + '°'; emit();
         });
-        al.addEventListener('change', () => persist.flush());
-        slot.appendChild(al); slot.appendChild(out);
-        alphaIn = al; alphaOut = out;
+        ai.addEventListener('change', settle);
+
+        const stopRow = document.createElement('div');
+        stopRow.className = 'row gen grad';
+        stopRow.innerHTML = `<span class="rlabel">Andra färgen</span>`;
+        const c2 = colorCluster(G.stops[1], { alpha: d.alpha, label: d.label + ' — andra färgen',
+                                              onChange: emit, onSettle: settle });
+        stopRow.appendChild(c2.slot); stopRow.appendChild(c2.hexIn); stopRow.appendChild(c2.swatch);
+
+        const parent = row.parentNode;
+        parent.insertBefore(angleRow, row.nextSibling);
+        parent.insertBefore(stopRow, angleRow.nextSibling);
+        subs = [angleRow, stopRow];
+      };
+
+      if (d.gradient){
+        const gb = document.createElement('button');
+        gb.type = 'button'; gb.className = 'gbtn' + (G.mode === 'grad' ? ' on' : '');
+        gb.title = 'Använd en gradient som bakgrund';
+        gb.setAttribute('aria-pressed', String(G.mode === 'grad'));
+        gb.setAttribute('aria-label', d.label + ' — gradient');
+        gb.innerHTML = `<svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="1"/>` +
+                       `<path d="M4.5 20.5 20.5 4.5v16z"/></svg>`;
+        gb.addEventListener('click', () => {
+          G.mode = G.mode === 'grad' ? 'solid' : 'grad';
+          gb.classList.toggle('on', G.mode === 'grad');
+          gb.setAttribute('aria-pressed', String(G.mode === 'grad'));
+          if (G.mode === 'grad') buildSubs(); else dropSubs();
+          emit(); settle();
+        });
+        c1.slot.insertBefore(gb, c1.slot.firstChild);
       }
 
-      /* Hexfält: klistra in eller skriv en färgkod i stället för att sikta i
-         systemets färgruta. Tar #RRGGBB, #RRGGBBAA och kortformen #RGB, med eller
-         utan brädgård — det är de former man faktiskt får kopierade till sig.
-         Alfa i koden vinner över reglaget när färgen tillåter alfa; skriver man
-         #0DE622FF blir reglaget 100 %, precis som koden säger. */
-      const hexIn = document.createElement('input');
-      hexIn.type = 'text'; hexIn.className = 'hexf'; hexIn.spellcheck = false;
-      hexIn.autocomplete = 'off'; hexIn.value = canon();
-      hexIn.title = 'Färgkod — klistra in #RRGGBB' + (d.alpha ? ' eller #RRGGBBAA' : '');
-      hexIn.setAttribute('aria-label', d.label + ' — färgkod');
-      hexIn.addEventListener('input', () => {
-        const raw = hexIn.value.trim().replace(/^#/, '');
-        // Kortformen är en förkortning där varje tecken står för två: f0a → ff00aa.
-        const full = /^[0-9a-fA-F]{3}$/.test(raw)
-          ? raw.split('').map(c => c + c).join('') : raw;
-        if (!/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(full)){ hexIn.classList.add('bad'); return; }
-        hexIn.classList.remove('bad');
-        inp.value = '#' + full.slice(0,6).toLowerCase();
-        if (full.length === 8 && d.alpha){
-          alpha = parseInt(full.slice(6,8),16) / 255;
-          // Programmatiska värden utlöser inget `input`, så reglagets fyllda del
-          // måste målas om för hand (samma skäl som paintAll() i select()).
-          if (alphaIn){ alphaIn.value = alpha; paintRange(alphaIn); }
-          if (alphaOut) alphaOut.textContent = Math.round(alpha*100) + '%';
-        }
-        emit();
-      });
-      // Halvskriven kod ska inte bli kvar i rutan. Vid blur (och Enter) återgår
-      // fältet till det värde som faktiskt gäller.
-      const settle = () => { hexIn.classList.remove('bad'); hexIn.value = canon(); persist.flush(); };
-      hexIn.addEventListener('blur', settle);
-      hexIn.addEventListener('keydown', e => { if (e.key === 'Enter'){ settle(); hexIn.blur(); } });
-
-      row.appendChild(slot); row.appendChild(hexIn); row.appendChild(inp);
+      row.appendChild(c1.slot); row.appendChild(c1.hexIn); row.appendChild(c1.swatch);
+      // Undergrupperna måste sättas in EFTER att raden hamnat i sin behållare (de
+      // placeras med row.nextSibling), så det sker i slutet av loopen nedan.
+      if (d.gradient && G.mode === 'grad') row._buildSubs = buildSubs;
 
     } else {
       row.className = 'row';
@@ -1639,15 +2196,19 @@ function renderOptions(o){
 
     // `.gen` märker raderna som genererade så nästa overlay kan städa bort dem utan
     // att röra "Alltid överst", som är statisk och har sina lyssnare kopplade en gång.
+    // Gradientens undergrupper får samma klass och städas alltså med samma svep.
     row.classList.add('gen');
     if (!d.type || d.type === 'bool') toggles.insertBefore(row, aot);
     else if (d.type === 'color'){ tweaks.appendChild(row); nTweaks++; }
     else { behavior.appendChild(row); nBehavior++; }
+    // Först nu har raden en förälder att sätta undergrupperna i.
+    if (row._buildSubs){ row._buildSubs(); row._buildSubs = null; }
   }
-  // Döljs som HELA sektionen (rubrik + rader) — #cardTweaks ensamt hade lämnat
-  // "Utseende"-rubriken kvar ovanför ingenting.
-  $('tweaksSection').style.display = nTweaks ? '' : 'none';
-  $('behaviorSection').style.display = nBehavior ? '' : 'none';
+  // Döljs som HELA gruppen (rubrik + rader) — bara raderna hade lämnat rubriken
+  // kvar ovanför ingenting, och en tom hopfällbar grupp är värre än ingen grupp.
+  $('grp-look').hidden = !nTweaks;
+  $('grp-data').hidden = !nBehavior;
+  for (const id of ['grp-size', 'grp-toggles', 'grp-data', 'grp-look']) countGroup(id);
 }
 
 /* ── live-preview (overlayn laddas app-relativt, samma bundle) ── */
@@ -1824,6 +2385,87 @@ $('clearRef').addEventListener('click', async () => {
   catch(err){ toast('Kunde inte ta bort referensen: ' + errMsg(err), true); }
 });
 
+/* ── kortkommando (växla race/edit) ──────────────────────────────────────────
+   Kombinationen registreras GLOBALT i Windows, alltså kan den vara upptagen av ett
+   annat program — och det är hela skälet till att den ska gå att byta: Ctrl+Alt+Space
+   krockar bland annat med några ljudspelare och överlagringsverktyg, och när den gör
+   det finns ingen väg till edit-läge utom panelens flytta-knapp.
+
+   Vi spelar in `event.code` och inte `event.key`: `key` är vad tangenten SKRIVER, och
+   det beror på tangentbordslayouten (svensk `+` sitter där amerikansk `=` sitter).
+   Ett globalt kortkommando bor i den fysiska tangenten, och `code` är den. Namnen
+   nedan är exakt de som Rust-sidan (global-hotkey) parsar: "A", "5", "F7", "Space",
+   "ArrowUp", "Numpad5", "Minus" … så strängen kan skickas rakt igenom.
+
+   MINST EN MODIFIERARE krävs. Utan den fångas tangenten i ALLA program — trycker man
+   "P" i en chat medan spelet är igång växlar overlayn läge. */
+const HK_DEFAULT = 'Ctrl+Alt+Space';
+let hotkey = HK_DEFAULT;
+let hkCapturing = false;
+const MOD_CODES = new Set(['ControlLeft','ControlRight','AltLeft','AltRight',
+                           'ShiftLeft','ShiftRight','MetaLeft','MetaRight']);
+// "Super" är namnet global-hotkey förstår; "Win" är namnet på tangenten användaren
+// tittar på. Bara visningen översätts.
+const hkPretty = s => String(s).split('+').map(t => t === 'Super' ? 'Win' : t).join(' + ');
+function hkKeyName(code){
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if (/^Digit\d$/.test(code)) return code.slice(5);
+  return code;
+}
+function showHotkey(){
+  const cap = $('hkCap');
+  if (cap && !hkCapturing){ cap.classList.remove('cap', 'bad'); cap.textContent = hkPretty(hotkey); }
+  const om = $('omHotkey');
+  if (om) om.textContent = hkPretty(hotkey);
+}
+function hkStop(){
+  hkCapturing = false;
+  removeEventListener('keydown', hkCapture, true);
+  showHotkey();
+}
+async function hkApply(combo){
+  const cap = $('hkCap');
+  try {
+    const saved = await invoke('set_hotkey', { value: combo });
+    hotkey = saved || combo;
+    hkStop();
+    toast('Kortkommando: ' + hkPretty(hotkey));
+  } catch(err){
+    // Misslyckad registrering betyder nästan alltid "upptagen av ett annat program".
+    // Rust har då lagt tillbaka den gamla kombinationen, så vi visar den igen.
+    if (cap){ cap.classList.add('bad'); cap.textContent = hkPretty(combo); }
+    toast('Kunde inte registrera ' + hkPretty(combo) + ': ' + errMsg(err), true);
+    setTimeout(() => { if (hkCapturing) hkStop(); }, 1600);
+  }
+}
+function hkCapture(e){
+  e.preventDefault(); e.stopPropagation();
+  if (e.key === 'Escape') return hkStop();
+  if (MOD_CODES.has(e.code)) return;              // vänta in den riktiga tangenten
+  const cap = $('hkCap');
+  const mods = [];
+  if (e.ctrlKey) mods.push('Ctrl');
+  if (e.altKey) mods.push('Alt');
+  if (e.shiftKey) mods.push('Shift');
+  if (e.metaKey) mods.push('Super');
+  if (!mods.length){
+    if (cap){ cap.classList.add('bad'); cap.textContent = 'Minst en modifierare'; }
+    return;
+  }
+  if (cap) cap.classList.remove('bad');
+  hkApply(mods.concat(hkKeyName(e.code)).join('+'));
+}
+if ($('hkSet')) $('hkSet').addEventListener('click', () => {
+  if (hkCapturing) return hkStop();
+  hkCapturing = true;
+  const cap = $('hkCap');
+  if (cap){ cap.classList.add('cap'); cap.classList.remove('bad'); cap.textContent = 'Tryck en kombination …'; }
+  // capture:true så inspelningen ligger före panelens egna tangentlyssnare (Escape
+  // stänger annars bara en meny och man förstår inte varför inget händer).
+  addEventListener('keydown', hkCapture, true);
+});
+if ($('hkReset')) $('hkReset').addEventListener('click', () => hkApply(HK_DEFAULT));
+
 /* ── uppdatering ── */
 $('checkUpd').addEventListener('click', async () => {
   const m = $('updmsg'); m.textContent = 'Söker …';
@@ -1987,7 +2629,9 @@ async function loadGlobals(){
     const g = await invoke('get_globals');
     $('gateSwitch').querySelector('input').checked = !!(g && g.hide_until_connected);
     bgCurrent = (g && g.preview_background) || '';
+    if (g && g.hotkey) hotkey = g.hotkey;
   } catch {}
+  showHotkey();
   // Läs katalogen FÖRE vi försöker visa bilden: har användaren tagit bort filen ska
   // det bli ett tyst nollställt val, inte ett felmeddelande vid varje appstart.
   await loadBackgrounds();

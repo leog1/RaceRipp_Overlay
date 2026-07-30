@@ -12,7 +12,9 @@ use serde::{Deserialize, Serialize};
 use tauri::{
     AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+// Code/Modifiers behövs inte längre: kombinationen byggs inte i kod utan PARSAS ur
+// en sträng (settings.json / panelen), vilket global-hotkey gör via FromStr.
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tauri_plugin_shell::process::CommandChild;
 
 // ── Registret (kompileras in; katalog över overlays) ────────────────────────
@@ -51,6 +53,13 @@ struct OverlayOption {
     // color: har fargen ett justerbart alfa? Panelen visar da ett extra reglage.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     alpha: bool,
+    // color: får värdet vara en GRADIENT i stället för en färg? Bara för alternativ
+    // vars token används som en YTA (`background`). Sätt den aldrig på en token som
+    // sitter på `stroke`, `fill`, `border-color` eller `background-color` — en
+    // gradient är ogiltig där, och overlayn slutar då rita elementet i stället för
+    // att falla tillbaka på något. Kontrollera var tokenen används först.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    gradient: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     values: Vec<OverlayOptionValue>,
 }
@@ -182,13 +191,72 @@ fn sanitize_option(o: &OverlayOption, v: &serde_json::Value) -> serde_json::Valu
         "enum" => {
             if o.values.iter().any(|c| c.value == *v) { v.clone() } else { o.default.clone() }
         }
-        // Färg: #rgb eller #rrggbb. Overlays sätter värdet som CSS-variabel, och en
-        // ovaliderad sträng där hade varit ett sätt att injicera CSS.
+        // Färg: #rgb eller #rrggbb — och för ett alternativ märkt `gradient` även en
+        // tvåstoppsgradient i EXAKT den form panelen skickar. Overlays sätter värdet
+        // som CSS-variabel, och en ovaliderad sträng där hade varit ett sätt att
+        // injicera CSS: `red;} html{display:none` i ett färgfält räcker.
         "color" => {
-            if v.as_str().map(is_hex_color).unwrap_or(false) { v.clone() } else { o.default.clone() }
+            let ok = v
+                .as_str()
+                .map(|s| is_hex_color(s) || (o.gradient && is_gradient(s)))
+                .unwrap_or(false);
+            if ok { v.clone() } else { o.default.clone() }
         }
         _ => V::Bool(v.as_bool().unwrap_or_else(|| o.default.as_bool().unwrap_or(false))),
     }
+}
+
+// En gradient, och BARA i den form kontrollpanelen bygger:
+//   linear-gradient(<0..360>deg, <hex> <0..100>%, <hex> <0..100>%)
+// Två till fyra stopp tillåts (panelen skickar två; taket finns så en handredigerad
+// settings.json med tre stopp inte tvättas bort i onödan).
+//
+// Formen är låst med FLIT och det är inte en begränsning av bekvämlighetsskäl:
+// värdet hamnar i `document.documentElement.style.setProperty('--token', v)` i
+// bus.js, alltså rakt in i CSS. En generell CSS-parser här hade varit både större
+// och farligare — allt som inte matchar mönstret nedan faller tillbaka på registrets
+// standardvärde. Parentes, klammer, semikolon och citattecken kan därför inte
+// förekomma alls, vilket är det som gör injektion omöjlig.
+fn is_gradient(s: &str) -> bool {
+    let s = s.trim();
+    let Some(inner) = s
+        .strip_prefix("linear-gradient(")
+        .and_then(|r| r.strip_suffix(')'))
+    else {
+        return false;
+    };
+    // Inget av detta får finnas i en giltig gradient — och vart och ett av dem är
+    // vägen ut ur deklarationen (eller in i url(), var(), calc()).
+    if inner.contains(['(', ')', ';', '{', '}', '/', '\\', '"', '\'', '@']) {
+        return false;
+    }
+    let mut parts = inner.split(',');
+    // Vinkeln
+    let Some(angle) = parts.next().and_then(|a| a.trim().strip_suffix("deg").map(str::to_owned)) else {
+        return false;
+    };
+    match angle.trim().parse::<f64>() {
+        Ok(a) if a.is_finite() && (0.0..=360.0).contains(&a) => {}
+        _ => return false,
+    }
+    // Stoppen: "<hex> <procent>%"
+    let stops: Vec<&str> = parts.collect();
+    if !(2..=4).contains(&stops.len()) {
+        return false;
+    }
+    for st in stops {
+        let mut it = st.split_whitespace();
+        let (Some(color), Some(pos)) = (it.next(), it.next()) else { return false };
+        if it.next().is_some() || !is_hex_color(color) {
+            return false;
+        }
+        let Some(p) = pos.strip_suffix('%') else { return false };
+        match p.parse::<f64>() {
+            Ok(v) if v.is_finite() && (0.0..=100.0).contains(&v) => {}
+            _ => return false,
+        }
+    }
+    true
 }
 
 fn is_hex_color(s: &str) -> bool {
@@ -267,6 +335,21 @@ struct Settings {
     // Bara ett namn, ingen sökväg — se get_background.
     #[serde(default = "default_preview_bg")]
     preview_background: String,
+    // Kortkommandot som växlar race/edit. Lagras som TEXT och inte som ett
+    // strukturerat värde: global-hotkey parsar exakt den här formen
+    // ("Ctrl+Alt+Space", "Ctrl+Shift+F7"), och panelen bygger samma sträng ur
+    // `event.code`, så texten går hela vägen utan översättning i mitten.
+    // Nedgraderingsvägen (§8.3b): en äldre build ignorerar fältet som okänt och
+    // tappar bara valet — filen blir inte oläsbar.
+    #[serde(default = "default_hotkey")]
+    hotkey: String,
+}
+
+// Ctrl+Alt+Space har varit kombinationen sedan 0.1 och står i dokumentationen, så
+// standardvärdet ändras inte. Den KAN vara upptagen av ett annat program, och det är
+// precis varför den går att byta — inte ett skäl att byta standard.
+fn default_hotkey() -> String {
+    "Ctrl+Alt+Space".into()
 }
 
 // Förhandsvisningen visar en bana som standard: poängen med rutan är att se hur
@@ -282,6 +365,7 @@ fn default_settings() -> Settings {
     // installation har ingen fil alls och går den här vägen, så bakgrunden måste
     // sättas här också — annars fick bara uppgraderande användare den.
     s.preview_background = default_preview_bg();
+    s.hotkey = default_hotkey();
     for d in registry() {
         s.overlays.insert(d.id.clone(), default_state_for(d));
     }
@@ -901,6 +985,78 @@ fn set_edit_mode(app: AppHandle, edit: bool) {
     let _ = app.emit("edit-mode", edit);
 }
 
+// ── Kortkommandot ───────────────────────────────────────────────────────────
+// Den REGISTRERADE kombinationen, så att både plugin-handlern (som får varje
+// genväg appen äger) och set_hotkey (som måste avregistrera den gamla) vet vilken
+// som gäller. Ett OnceLock och inte en konstant: den kan bytas i drift.
+static HOTKEY: OnceLock<Mutex<Option<Shortcut>>> = OnceLock::new();
+fn hotkey_slot() -> &'static Mutex<Option<Shortcut>> {
+    HOTKEY.get_or_init(|| Mutex::new(None))
+}
+fn current_hotkey() -> Option<Shortcut> {
+    hotkey_slot().lock().ok().and_then(|g| *g)
+}
+
+// Växla klick-igenom (race) ↔ interaktivt (edit). Samma väg som panelens
+// set_edit_mode, men startad från tangentbordet. Låg tidigare inne i
+// plugin-handlerns closure; den behövde flyttas ut när handlern slutade äga
+// kombinationen (den jämför nu mot HOTKEY i stället för mot en infångad kopia).
+fn toggle_edit_from_hotkey(app: &AppHandle) {
+    let next = !CLICK_THROUGH.load(Ordering::Relaxed);
+    CLICK_THROUGH.store(next, Ordering::Relaxed);
+    for id in overlay_ids() {
+        if let Some(w) = app.get_webview_window(id) {
+            let _ = w.set_ignore_cursor_events(next);
+        }
+    }
+    // next == true betyder klick-igenom, dvs. edit-läget lämnas.
+    if next {
+        persist_positions(app);
+    }
+    let _ = app.emit("edit-mode", !next);
+}
+
+// Byt kortkommando. Registreringen görs OM direkt, för det är enda sättet att veta
+// om kombinationen går att få: en global genväg kan vara upptagen av ett annat
+// program, och det syns inte förrän man försöker. Misslyckas den läggs den GAMLA
+// tillbaka — annars hade ett felklick lämnat användaren helt utan kortkommando, och
+// det enda sättet in i edit-läge vore panelens flytta-knapp.
+#[tauri::command]
+fn set_hotkey(app: AppHandle, state: State<Mutex<Settings>>, value: String) -> Result<String, String> {
+    let text = value.trim().to_string();
+    let want: Shortcut = text
+        .parse()
+        .map_err(|e| format!("«{text}» går inte att tolka som en tangentkombination ({e})"))?;
+    // Minst en modifierare. Panelen kräver samma sak, men regeln måste finnas HÄR
+    // också: IPC:n är inte panelens text, och ett globalt kortkommando på en bar
+    // tangent fångar den i alla program — man kan inte skriva bokstaven längre.
+    if want.mods.is_empty() {
+        return Err("kombinationen måste innehålla Ctrl, Alt, Shift eller Win".into());
+    }
+    let prev = current_hotkey();
+    if prev != Some(want) {
+        let gs = app.global_shortcut();
+        if let Some(p) = prev {
+            let _ = gs.unregister(p);
+        }
+        if let Err(e) = gs.register(want) {
+            if let Some(p) = prev {
+                let _ = gs.register(p);
+            }
+            return Err(format!("{e}"));
+        }
+        if let Ok(mut g) = hotkey_slot().lock() {
+            *g = Some(want);
+        }
+    }
+    {
+        let mut s = state.lock().unwrap();
+        s.hotkey = text.clone();
+        save_settings(&app, &s);
+    }
+    Ok(text)
+}
+
 // Skriv referens-path till motorns config-fil (motorn pollar den och laddar .ld).
 #[tauri::command]
 fn set_reference(app: AppHandle, state: State<Mutex<Settings>>, path: String) {
@@ -1104,6 +1260,10 @@ struct GlobalsPayload {
     reference_ld: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     preview_background: String,
+    // Panelen visar kombinationen på två ställen (Inställningar och Om) och får den
+    // härifrån — en hårdkodad text i HTML:en hade ljugit så fort någon bytt den.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    hotkey: String,
 }
 
 #[tauri::command]
@@ -1113,6 +1273,7 @@ fn get_globals(state: State<Mutex<Settings>>) -> GlobalsPayload {
         hide_until_connected: s.hide_until_connected,
         reference_ld: s.reference_ld.clone(),
         preview_background: s.preview_background.clone(),
+        hotkey: s.hotkey.clone(),
     }
 }
 
@@ -1140,35 +1301,26 @@ fn set_hide_until_connected(app: AppHandle, state: State<Mutex<Settings>>, value
         hide_until_connected: value,
         reference_ld: String::new(),
         preview_background: String::new(),
+        hotkey: String::new(),
     });
 }
 
 // ── App-uppstart ────────────────────────────────────────────────────────────
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let toggle = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::Space);
-    let toggle_h = toggle.clone();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
+                // Jämför mot den REGISTRERADE kombinationen (HOTKEY) och inte mot en
+                // kopia som fångats in här: den går att byta i drift sedan 0.5.1, och
+                // en infångad `toggle` hade slutat matcha i samma sekund — hotkeyen
+                // hade fungerat exakt en gång per appstart och sedan verkat död.
                 .with_handler(move |app, sc, ev| {
-                    if sc == &toggle_h && ev.state == ShortcutState::Pressed {
-                        let next = !CLICK_THROUGH.load(Ordering::Relaxed);
-                        CLICK_THROUGH.store(next, Ordering::Relaxed);
-                        for id in overlay_ids() {
-                            if let Some(w) = app.get_webview_window(id) {
-                                let _ = w.set_ignore_cursor_events(next);
-                            }
-                        }
-                        // next == true betyder klick-igenom, dvs. edit-läget lämnas.
-                        if next {
-                            persist_positions(app);
-                        }
-                        let _ = app.emit("edit-mode", !next);
+                    if ev.state == ShortcutState::Pressed && current_hotkey() == Some(*sc) {
+                        toggle_edit_from_hotkey(app);
                     }
                 })
                 .build(),
@@ -1187,6 +1339,7 @@ pub fn run() {
             save_preset,
             delete_preset,
             set_edit_mode,
+            set_hotkey,
             set_reference,
             get_globals,
             set_hide_until_connected,
@@ -1227,6 +1380,7 @@ pub fn run() {
                 })
                 .collect();
             let gate = settings.hide_until_connected;
+            let hotkey = settings.hotkey.clone();
 
             app.manage(Mutex::new(settings));
             size_control_window(&handle);
@@ -1242,10 +1396,24 @@ pub fn run() {
             // Registrera hotkeyen, men låt inte appen krascha om genvägen redan
             // ägs av något annat program — panelens "flytta"-knapp (set_edit_mode)
             // fungerar ändå, så edit-läget går att nå utan hotkeyen.
-            if let Err(e) = app.global_shortcut().register(toggle.clone()) {
-                eprintln!("[shell] kunde ej registrera Ctrl+Alt+Space ({e}). \
+            // Kombinationen kommer ur settings.json och kan alltså vara handredigerad
+            // till något som inte går att tolka; då gäller standardvärdet i stället
+            // för ingen hotkey alls (samma resonemang som §8.3b).
+            let want: Shortcut = hotkey.parse().unwrap_or_else(|e| {
+                eprintln!("[shell] kortkommandot «{hotkey}» går inte att tolka ({e}) — använder {}.",
+                          default_hotkey());
+                default_hotkey().parse().expect("standardkortkommandot måste gå att tolka")
+            });
+            match app.global_shortcut().register(want) {
+                Ok(()) => {
+                    if let Ok(mut g) = hotkey_slot().lock() {
+                        *g = Some(want);
+                    }
+                }
+                Err(e) => eprintln!("[shell] kunde ej registrera {hotkey} ({e}). \
                            Genvägen är troligen upptagen av ett annat program. \
-                           Använd panelens flytta-knapp för att växla edit-läge.");
+                           Byt den under Inställningar, eller använd panelens \
+                           flytta-knapp för att växla edit-läge."),
             }
             Ok(())
         })
@@ -1537,6 +1705,94 @@ mod tests {
         assert!(p.is_file(), "saknas: {}", p.display());
     }
 
+    // ── Gradienter ──────────────────────────────────────────────────────────
+    // Värdet hamnar rakt i CSS (bus.js sätter det som CSS-variabel), så det här är
+    // en SÄKERHETSGRÄNS och inte formatpolis. Testet är därför skrivet som en lista
+    // av försök att komma ut ur deklarationen.
+    #[test]
+    fn gradient_slapper_bara_igenom_exakt_var_form() {
+        for ok in [
+            "linear-gradient(180deg, #121416 0%, #060708 100%)",
+            "linear-gradient(0deg, #121416db 0%, #060708 100%)",
+            "linear-gradient(360deg, #abc 0%, #abcd 50%, #001122 100%)",
+            "  linear-gradient(45deg, #000 0%, #fff 100%)  ",
+        ] {
+            assert!(is_gradient(ok), "borde ha släppts igenom: {ok:?}");
+        }
+        for bad in [
+            // Injektion: ut ur värdet och in i en egen regel.
+            "red;} html{display:none",
+            "linear-gradient(180deg, #000 0%, #fff 100%); background:url(x)",
+            "linear-gradient(180deg, var(--panel) 0%, #fff 100%)",
+            "linear-gradient(180deg, #000 0%, #fff 100%) , url('x')",
+            // Fel form, alltså inte något panelen kan ha skickat.
+            "linear-gradient(180deg, #000, #fff)",         // procent saknas
+            "linear-gradient(180, #000 0%, #fff 100%)",    // deg saknas
+            "linear-gradient(400deg, #000 0%, #fff 100%)", // vinkel utanför 0..360
+            "linear-gradient(180deg, #000 0%, #fff 140%)", // stopp utanför 0..100
+            "linear-gradient(180deg, rgb(0,0,0) 0%, #fff 100%)",
+            "linear-gradient(180deg, #000 0%)",            // ett enda stopp
+            "radial-gradient(180deg, #000 0%, #fff 100%)",
+            "linear-gradient(180deg, #000 0%, #fff 100%",  // oavslutad
+            "",
+        ] {
+            assert!(!is_gradient(bad), "borde ha avvisats: {bad:?}");
+        }
+
+        // TÄNDERNA. Den uppenbara implementationen — "börjar det med linear-gradient(
+        // så är det en gradient" — släpper igenom injektionerna ovan. Att den gör det
+        // är vad som visar att listan mäter något (samma grepp som `naivLoop` i
+        // tests/overlay-loop.mjs och `UtanDepakoll` i tests/lap_recorder.py).
+        fn naiv(s: &str) -> bool {
+            s.trim_start().starts_with("linear-gradient(")
+        }
+        let sluppit_igenom = [
+            "linear-gradient(180deg, #000 0%, #fff 100%); background:url(x)",
+            "linear-gradient(180deg, var(--panel) 0%, #fff 100%)",
+        ];
+        assert!(sluppit_igenom.iter().all(|s| naiv(s)),
+                "den naiva varianten skulle ha släppt igenom dem — annars mäter listan inget");
+    }
+
+    // En gradient får bara sparas på ett alternativ som är MÄRKT för det. Utan den
+    // grinden kunde en handredigerad settings.json lägga en gradient på en token som
+    // sitter på `stroke` (delta-barens --track), och då slutar elementet ritas.
+    #[test]
+    fn gradient_kraver_att_alternativet_tillater_det() {
+        let d = testdef();
+        let grad = serde_json::json!("linear-gradient(180deg, #000000 0%, #ffffff 100%)");
+        let solid = d.options.iter().find(|o| o.id == "farg").unwrap();
+        assert_eq!(sanitize_option(solid, &grad), solid.default,
+                   "gradient utan gradient:true skulle fallit tillbaka på standardvärdet");
+
+        let mut yta = solid.clone();
+        yta.gradient = true;
+        assert_eq!(sanitize_option(&yta, &grad), grad);
+    }
+
+    // ── Kortkommandot ───────────────────────────────────────────────────────
+    // Panelen bygger strängen ur `event.code`. Att de namnen faktiskt går att tolka
+    // är inget vi kan se i panelen — där syns bara ett felmeddelande — så det
+    // kontrolleras här, mot samma parser som registreringen använder.
+    #[test]
+    fn panelens_kortkommandostrangar_gar_att_tolka() {
+        for s in [
+            "Ctrl+Alt+Space", "Ctrl+Shift+E", "Alt+F7", "Ctrl+Alt+Numpad5",
+            "Ctrl+Alt+ArrowUp", "Super+Shift+D", "Ctrl+Alt+1", "Ctrl+Alt+Minus",
+        ] {
+            let sc: Result<Shortcut, _> = s.parse();
+            assert!(sc.is_ok(), "gick inte att tolka: {s} ({:?})", sc.err());
+            assert!(!sc.unwrap().mods.is_empty(), "{s} borde ha modifierare");
+        }
+        // Standardvärdet MÅSTE gå att tolka: uppstarten faller tillbaka på det med
+        // expect() när settings.json innehåller skräp.
+        let def: Result<Shortcut, _> = default_hotkey().parse();
+        assert!(def.is_ok(), "standardkortkommandot går inte att tolka");
+        // En bar tangent avvisas av set_hotkey — den fångas i alla program.
+        let bare: Shortcut = "Space".parse().unwrap();
+        assert!(bare.mods.is_empty());
+    }
+
     // ── Presets ─────────────────────────────────────────────────────────────
     // Hjälpare: bygg ett schema som täcker alla fyra optionstyperna, så testerna
     // nedan går på samma väg som en riktig overlay.
@@ -1552,6 +1808,7 @@ mod tests {
                 step: None,
                 unit: None,
                 alpha: false,
+                gradient: false,
                 values: vec![],
             }
         }

@@ -92,7 +92,9 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
 </style>
 </head>
 <body>
-  <div class="edit-badge">● Edit mode — Ctrl+Alt+Space</div>
+  <!-- Ingen tangentkombination i texten: den går att byta i panelen sedan 0.5.1, och
+       en hårdkodad sträng här hade börjat ljuga i samma sekund. -->
+  <div class="edit-badge">● Edit mode</div>
   <div id="ui">
     <div class="delta-row">
       <div class="gauge">

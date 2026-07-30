@@ -15,7 +15,7 @@
 > X" i §7).
 ## 1. Vad projektet är
 Modulärt overlay-paket för **Assetto Corsa Competizione (ACC)**.
-Version 0.5.0.
+Version 0.5.1.
 - **Funktionellt** som **Race Element**: lätt, rensat, praktiskt, ingen FPS-förlust.
 - **Visuellt** som **RaceLab**: mörkt, polerat, animerat, premium.
 - Kvalitetsribban är hög och användaren är detaljpetig ner till pixelnivå.
@@ -37,9 +37,21 @@ Overlays är "dumma renderare": DATA från WebSocket, CONFIG (skala/opacitet) fr
 
 Det gäller även overlayns EGNA inställningar: `options` i registret är ett deklarativt
 schema (`type`: `bool` | `int` | `float` | `enum` | `color`, plus `min`/`max`/`step`/
-`values`/`unit`), och kontrollpanelen bygger reglaget/väljaren generiskt ur det. Panelen
-känner inte till en enda overlay vid namn. `type` får utelämnas och betyder då `bool`.
-Rust validerar värdet mot schemat innan det sparas eller skickas (§8.3b).
+`values`/`unit`/`alpha`/`gradient`), och kontrollpanelen bygger reglaget/väljaren
+generiskt ur det. Panelen känner inte till en enda overlay vid namn. `type` får utelämnas
+och betyder då `bool`. Rust validerar värdet mot schemat innan det sparas eller
+skickas (§8.3b).
+
+`"gradient": true` på ett färgalternativ betyder att värdet får vara en
+**tvåstoppsgradient** i stället för en färg, i exakt formen
+`linear-gradient(<0..360>deg, <hex> 0%, <hex> 100%)` — panelen bygger den och
+`lib.rs:is_gradient()` validerar den tecken för tecken (värdet går rakt in i CSS, se
+§8.4j). Flaggan hör BARA på ett alternativ vars token används som en YTA
+(`background`): en gradient är ogiltig i `stroke`, `fill`, `border-color` och
+`background-color`, och elementet slutar då ritas i stället för att falla tillbaka på
+något. Kontrollera var tokenen faktiskt används först — delta-barens `col-track` sitter
+på `stroke` och får alltså INTE flaggan, medan inputs-traces `col-track`
+(pedalspalternas botten) är en `background` och får den.
 `hz` i registret sätter overlayns rendertakt (§8.5).
 
 **Delta hör också till overlayn.** Motorn räknar ut ALLA referenskällor som gäller
@@ -206,11 +218,19 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
   tredjedelen. **Den ska förbli precis på gränsen till omärklig:** en gradient man
   KAN SE blir en gradient man ser åtta gånger i ett kort med åtta rader, och då läser ytan
   som blank plast i stället för material.
-- **4-punktsraster.** Padding, gap, radhöjd (`--ui-row-h`), radie, ikonstorlek,
+- **4-punktsraster.** Padding, gap, radhöjd (`--ui-row-h`), ikonstorlek,
   listbredd: multiplar av
 4. Typskalan har inga halvpixlar
   (12,5 px renderades som 12 på en skärm och 13 på nästa). Behöver du ett mellanting:
   ta grannvärdet, inte 2 px emellan.
+- **Radierna är SMÅ och pillerformer finns inte.** `--ui-r-xs/sm/md/lg` = 2/4/6/8 px
+  (halverade i 0.5.1 från 6/10/14). En 14 px radie på ett 1000 px brett kort läser som
+  en app-widget, inte som ett instrument, och tillsammans med `border-radius:999px` på
+  varje bricka och chip var det den tydligaste kvarvarande signalen om att gränssnittet
+  var genererat snarare än ritat — mätverktyg har nästan raka hörn. Kvar som piller är
+  BARA växlarens spår och knopp: den är en pinnswitch och läser fel som rektangel.
+  Lägg alltså inte tillbaka 999 px på listbrickan, presetchipsen eller menytaggarna,
+  och håll nya radier i tokens (inga råa px i en regel).
 - **En kontrollkolumn, och alla kluster är 376 px breda.** Etikett vänster, kontroll i
   högerkolumnen (`--ui-ctl-w`). Reglage 300 + gap 16 + värde 60 = 376; färgrad 200
   (`.aslot`) + 16 + 96 (hexfält) + 16 + 48 (färgruta) = 376; väljaren 376 rakt av. Det
@@ -218,19 +238,41 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
   sicksacka några pixlar — ny kontrolltyp: räkna ut klustret och landa på
 376. Etiketterna har SAMMA typografi oavsett kontrolltyp, annars ser de två kortsorterna
   ut att komma från olika program.
+  **Gradientknappen får INTE en egen kolumn** utan bor först i `.aslot` (24 + 12 px av
+  alfa-reglagets plats). En egen kolumn hade krympt klustret på ALLA färgrader för en
+  knapp som finns på tre av tolv. Och `.aslot` måste ha `min-width:0` — se §8.4h, den
+  fällan slog till en tredje gång just här.
 - **Två sorters rubrik, och skillnaden är avsiktlig.** KORTRUBRIK (`.card
 > h3`, `.list-head`): versal, spärrad, **amber, utan streck** — versaler plus egen färg
-  behöver ingen tredje markör. AVDELARRUBRIK inne i ett kort (`.subhead`): versal,
-  spärrad, **neutralt grå (`--dim`) med en 2 px-stapel i `--ui-brand`**. Samma princip,
-  bara EN signal bär färgen — här stapeln i stället för texten. Den kan inte vara amber
-  eftersom den sitter tre gånger i SAMMA kort, och tre amberrader läser som tre kort som
-  växt ihop. Lägg alltså inte streck på en
-  kortrubrik, och gör inte en `.subhead` amber.
-- **Korten är exakt lika breda som förhandsvisningen.** `#previewBox` har
-  `margin:16px 20px 0` och `.controls` `padding:16px 20px 24px` — samma 20 px, och
-  ändras det ena måste det andra följa med. Två block med olika bredd ovanpå varandra
-  läser som två olika vyer hur små pixlarna än är. Referens och Om behåller sin smala
-  spalt (`.cards.single`); de har ingen preview
+  behöver ingen tredje markör. GRUPPRUBRIK i inställningsstacken (`.ghead`): versal,
+  spärrad, **neutralt grå (`--dim`) med en 2 px amberstapel**. Samma princip, bara EN
+  signal bär färgen — här stapeln i stället för texten. Stapeln kan inte vara
+  `--ui-brand`: den sitter fyra gånger i samma stack, och fyra röda markörer upprepar
+  ordbildens färg där den inte identifierar något. Lägg alltså inte streck på en
+  kortrubrik, och gör inte en grupprubrik amber i TEXTEN.
+- **Inställningarna är EN yta indelad i hopfällbara grupper (`.stack` > `.grp`).**
+  Här låg fram till 0.5.1 ett enda kort med fyra rubriker rakt i flödet. Det gick isär på
+  två sätt: rubrikerna var det enda som skilde grupperna åt (en lista med tolv färgrader
+  flöt ihop med gruppen ovanför), och det fanns ingen väg att fälla ihop en grupp man
+  inte arbetar i — tolv färgrader tvingade fram skrollning för att nå ett reglage tre
+  rader ovanför. Reglerna nu:
+  - **Separationen är EN linje i behållarens egen kulör** (`--ui-edge-dk` mellan
+    grupper), ingen egen bakgrund, ingen inre radie, ingen skugga. Ytan ska förbli en;
+    separationen ska gå att SE men inte att räkna. Vill du avdela något inne i en yta:
+    linje, inte nytt lager (samma regel som "djup kommer av kant och sheen").
+  - **Hela rubrikraden är knappen**, 40 px hög, med radantal till höger. Antalet finns
+    för hopfällt läge: en stängd grupp måste säga hur mycket som ligger under den.
+  - **Läget sparas i `localStorage`, inte i `settings.json`.** Det är panelens vy-state
+    — det hör inte till en overlay, ska inte följa med en preset och ska inte kunna
+    göra settings.json ogiltig (§8.3b). Utan localStorage är allt öppet, vilket är rätt
+    utgångsläge.
+  - **En tom grupp döljs HELT** (`.grp[hidden]`), inte bara sina rader: en tom
+    hopfällbar grupp är värre än ingen grupp.
+- **Stacken är exakt lika bred som förhandsvisningen.** `#previewBox` har
+  `margin:16px 20px 0` och `.controls` `padding:0 20px 24px` (+ `margin-top:16px`) —
+  samma 20 px, och ändras det ena måste det andra följa med. Två block med olika bredd
+  ovanpå varandra läser som två olika vyer hur små pixlarna än är. Referens, Om och
+  Inställningar behåller sin smala spalt (`.cards.single`); de har ingen preview
   att linjera mot.
 - **Grönt betyder "på"** (PÅ-brickan, påslagna växlare). Därför är
   fokusringen amber och reglagens fyllnad neutralt vit — ett halvdraget reglage är
@@ -249,8 +291,12 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
 `.controls` (som äger skrollen, §8.4f) och står därför kvar bredvid previewn där man ser
   effekten. Ingen egen kortyta och ingen kant: med ram och bakgrund läser vyn som tre
   staplade lådor.
-  Etiketten heter **PRESET och inte UTSEENDE** — kortet under har redan en
-  avdelarrubrik med det ordet.
+  Etiketten heter **PRESET och inte UTSEENDE** — stacken under har redan en
+  grupprubrik med det ordet.
+  **Luften under presetraden ligger i `.controls`:s `margin-top`, aldrig i dess
+  `padding-top`.** En padding tillhör innehållet och skrollar bort: högst upp fanns 16 px,
+  men efter en pixels skroll låg stackens överkant kant i kant med presetraden — det var
+  det som såg ut som en kollision. Marginalen ligger utanför skrollboxen och står still.
   **Aktiv preset RÄKNAS UT** ur nuvarande värden (`presetMatches`), den lagras inte
   som "senast valda": rör man ett reglage efteråt stämmer en lagring inte längre, och en
   markör som ljuger är värre än ingen markör. Markören är amber (grönt betyder "på", och
@@ -258,20 +304,45 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
   bygger inte om DOM:en — den anropas 60 ggr/s medan man drar ett reglage, och en
   ombyggnad dödar hover (×-knappen försvinner under pekaren) och startar om chipsens
   sidoskroll.
-- **Titelraden bär ordbilden ensam och statusen som brickor.** Ordbilden är 20 px hög
-  och inte 16: den är ritad
-  459×55 med en ljus kontur per bokstav, och vid 16 px hamnar konturen under en
+- **Titelraden bär ordbilden till vänster och statusen i MITTEN.** Ordbilden är ritad
+  459×55 med en ljus kontur per bokstav; vid för låg höjd hamnar konturen under en
   pixel så bokstävernas hål sluts (mätt genom att rendera 16/18/20/22/24 bredvid
-  varandra). Statusen är tonade BRICKOR vars yta bär tillståndet
-  — en 6 px prick är för lite yta för något man ska se i ögonvrån. **Offline är
-  medvetet neutralt**, inte en röd bricka: en röd yta vid varje kallstart läser som
-  ett fel, och att motorn inte hunnit upp är inget fel. Tillståndsklassen sitter på
-  brickan och inte på pricken, för `:has()` finns först i Chromium 105.
+  varandra). Statusen är PRICK + TEXT, ingen yta och ingen kant — en 36 px titelrad har
+  inte plats för en tredje ram, och en pillerform där läste som en knapp man kan trycka
+  på. Två regler som är lätta att råka bryta:
+  - **Bara PRICKEN bär färg.** Texten är alltid `--dim`. Den var tonad i tillståndets
+    kulör fram till 0.5.1 och lästes då som en glöd omkring orden: två färgade fält för
+    EN uppgift, i den enda raden som ska vara helt lugn. Behöver tillståndet mer vikt är
+    det pricken som ska växa. Offline-pricken är röd (`--red` är en SIGNALfärg, §4);
+    resten av raden förblir neutral, för att motorn inte hunnit upp vid en kallstart är
+    inget fel.
+  - **Gruppen är absolut centrerad** (`.tb-center`, `left:50%` + `translateX(-50%)`) och
+    ligger inte i flödet: i flödet hamnade "mitten" där ordbildens plus knapparnas bredd
+    råkade lägga den, och den FLYTTADE sig i sidled när Broadcasting-raden dök upp mitt
+    under körning. Den bär `data-tauri-drag-region="deep"` själv (§8.4i).
+  Tillståndsklassen sitter på raden och inte på pricken, för `:has()` finns först i
+  Chromium 105.
 - Reglagen är egenritade (`::-webkit-slider-*`); `accent-color` ger systemets. Den
   fyllda delen är en gradient med brytpunkten i `--p`, som `paintRange()` sätter. En
   delegerad `input`-lyssnare täcker alla reglage, även de som byggs
   generiskt ur registret — men programmatiska värdeändringar utlöser inget `input`,
   därför körs `paintAll()` när en overlay väljs.
+  **Greppet är en FADER** (10×18 px, nästan raka hörn) och inte en boll: en vit cirkel
+  på ett pillerformat spår är varje webbformulärs reglage, en stående rektangel i ett
+  rakt spår är en potentiometer. Skala inte greppet vid hover (det gjorde den runda) —
+  en fader som växer ser ut att glida ur sitt spår; den ljusnar i stället.
+- **EN meny i hela panelen (`.pop` + `.popitem`).** Både bakgrundsväljaren och varje
+  enum-alternativ bygger sin lista med `popMenu()`. Panelen hade tidigare två sorters
+  "välj ett värde": den egenritade menyn och `<select class="osel">`, vars lista ritas av
+  WINDOWS — annan typografi, annan radhöjd, annan markeringsfärg, plus en vit ruta i
+  WebView2 om man glömmer färga `option`. Det är listan man LÄSER när man väljer, så det
+  var den mest synliga inkonsekvensen som fanns.
+  Menyn ligger i `<body>` och är `position:fixed`: enum-väljarna bor i `.controls`, som
+  skrollar, och en absolut meny där klipptes av behållarens kant på de nedersta raderna
+  (alltså färgerna, de som har flest). Priset är att den inte följer med vid skroll —
+  därför stängs den vid skroll, vilket ändå är rätt beteende. Den öppnas UPPÅT när det
+  inte finns plats nedåt, och den måste gå att styra med tangentbordet (piltangenter,
+  Enter, Esc): utan det är den ett steg bakåt mot `<select>`, som kunde det.
 
 - Panelen sätter `font-family:inherit` på `button,input,select,textarea` en gång
   globalt: formulärkontroller ärver inte typsnitt, så varje ny kontroll som glömmer sin
@@ -400,20 +471,39 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   praktiken är en no-op — själva OMRÄKNINGEN är alltså aldrig körd skarpt. Kräver en
   skärm på 125/150 %, en 4K (200 % → ska bli 1440×900; 100 % → 2880×1800) och en
   1366×768-laptop (ska klampas till golvet 960×600, inte hamna utanför).
-- **Panelens design i den RIKTIGA appen.** Hela panelen (ikonlist med tooltips, kortens
-  ytor och riktning, presetraden, statusbrickorna, ordbilden 20 px, hexfälten,
-  avdelarrubrikerna) är verifierad genom att renderas i Chrome headless mot en
-  Tauri-stub i 1440×900 / 1100×900 / 960×600 och MÄTAS: preview och kort på exakt samma
-  x och bredd i alla tre (1060/720/580 px), ingen vågrät skroll, `--ui-card` =
-  rgb(16,19,18), `--ui-stage` = rgb(8,9,10), previewns `box-shadow` `none`; alla fem
-  flikarna renderade och presetradens fem tillstånd sedda i skärmdump. **Men ingenting
-  är sett i den riktiga appen.** Två saker stubben per definition inte kan bevisa, båda
-  värda att testa: att titelraden fortfarande går att DRA i (§8.4i — stubben har ingen
-  fönsterhantering) och att `#bcRow`:s felmeddelande syns som tooltip. Två fällor i
-  mätmetoden: headless Chrome under `--virtual-time-budget` fryser CSS-transitioner
-  halvvägs (en avstängd växlare såg grön ut och var det inte — kör
-  `--force-prefers-reduced-motion`), och de fullbreda korten är trånga på golvet 960 px
-  där reglagekolumnen på 376 px tar en tredjedel av bredden.
+- **Panelens design i den RIKTIGA appen.** Hela panelen (ikonlist med tooltips,
+  inställningsstacken med hopfällbara grupper, presetraden, statusen i mitten, hexfälten,
+  gradientraderna, den delade menyn, kortkommando-inspelningen) är verifierad genom att
+  renderas i Chrome headless mot en Tauri-stub i 1440×900 / 1100×900 / 960×600 och
+  MÄTAS: preview och stack på exakt samma x och bredd i alla tre (1060/720/580 px), ingen
+  vågrät skroll, 16 px mellan presetraden och stacken både i vila och mitt i en skroll,
+  ETT etikettläge per kontrolltyp (alla hexfält och färgrutor i samma kolumn), statusens
+  text `rgb(127,134,125)` i alla tre tillstånden medan pricken byter färg, grupperna
+  fällda och återöppnade med rätt `aria-expanded`, menyn öppnad uppåt med samma bredd som
+  väljaren, gradientläget på/av med två undergrupper och ett värde som Rust-testet
+  godkänner, och en inspelad kombination (`Ctrl+Shift+E`) skickad till `set_hotkey` medan
+  en bar tangent avvisas. Panelen kastade inget fel i någon körning.
+  **Men ingenting är sett i den riktiga appen.** Tre saker stubben per definition inte kan
+  bevisa: att titelraden fortfarande går att DRA i (§8.4i — statusgruppen ligger nu mitt i
+  raden och täcker en del av dragytan), att `#bcRow`:s felmeddelande syns som tooltip, och
+  att den mjuka skrollen känns rätt med ett riktigt hjul (den är driven för hand i
+  mätningen, se §9). Kvar från förr: de fullbreda korten är trånga på golvet 960 px där
+  kontrollkolumnen på 376 px tar en tredjedel av bredden.
+- **Gradientbakgrunderna i en overlay.** Rustvalideringen och panelens serialisering är
+  täckta av tester, och previewn visar värdet — men ingen har sett en gradient i ett
+  riktigt overlay-FÖNSTER, där ytan dessutom är halvtransparent över spelet. Kontrollera
+  särskilt pedalspalterna (`col-track` i inputs-trace): de var förut beroende av
+  panelbakgrunden genom sin egen genomskinlighet, vilket var hela skälet att de fick
+  egna alternativ.
+- **Flimret i trace-spetsarna.** Rapporterat i spelet ("de spetsiga pikarna grafen ritar
+  ut från gasen flimrar lite"), orsaken hittad och förklarad (miter-spetsar som passerar
+  `miterLimit` plus heltalsavrundad x i ett rörligt spår, §8.5) och åtgärdad — men
+  ingenting av det syns i ett test, och ingen har kört spelet efteråt. Titta på en
+  hastig gaslättning i en kurva: spetsen ska stå still i formen, inte pulsera.
+- **Kortkommandots ombindning.** `set_hotkey` registrerar om genvägen i drift och lägger
+  tillbaka den gamla vid fel (§8.8g). Tre saker att prova: att en NY kombination faktiskt
+  växlar edit-läge, att en kombination som ett annat program äger ger ett fel i panelen i
+  stället för att tysta försvinna, och att valet finns kvar efter omstart.
 - **Presetsystemet i drift.** Rustsidan är täckt av fyra enhetstester som var
   och en är körd mot en MEDVETET trasig variant och faller där (partiell preset som
   fyller i defaults, ingen optionsvalidering, ingen finite-kontroll på skala, ingen
@@ -714,6 +804,12 @@ overlay vald — och det är precis det som gör dem dyra.
   dök upp — mitt under körning, med hela panelen till höger flyttad i sidled.
   Lägg till `min-width:0` på varje
   flexbarn vars bredd är ett designbeslut.
+  **Tredje gången: `.aslot` i 0.5.1.** Ett `<input type=range>` har en INTRINSIC bredd på
+  129 px i Chromium (mätt), och när gradientknappen (24 + 12 px) flyttade in i slotten
+  blev min-content 221 px mot flex-basis 200. Slotten växte alltså 21 px på just de rader
+  som har en gradient, etiketten slutade 21 px tidigare, och den lodräta linje hela
+  högerkolumnen bygger på bröts på tre rader av tolv. Det syns inte i CSS:en och inte i
+  panelen om man har fel overlay vald — bara i en mätning av varje rads etikettkant.
   Den bakomliggande orsaken var dock typografisk, och det är den viktiga lärdomen: versalt
   "BROADCASTING" är ~88 px vid 10 px och kan aldrig få plats i en list på 60–80 px.
 `min-width:0` skyddar panelen från att FLYTTA sig, men gör bara felet snyggare — texten
@@ -745,6 +841,48 @@ föräldrar), vilket är rätt om man någon gång lägger ett textfält i titel
 Knappar behöver inget: `isClickableElement()` låter `BUTTON`, `INPUT`, `A` m.fl.
 blockera dragning av sig själva.
 
+### 8.4j Ett värde som blir CSS måste valideras som CSS
+Färgalternativens värden hamnar i `documentElement.style.setProperty('--token', v)` i
+bus.js, alltså rakt in i en CSS-deklaration. Så länge de var `#rrggbb` räckte
+`is_hex_color`. Gradienterna (0.5.1) öppnar samma väg för en sträng med kommatecken,
+parenteser och funktionsanrop i sig, och då är `starts_with("linear-gradient(")` inte en
+validering — `red;} html{display:none` och `linear-gradient(…) , url('x')` går rakt
+igenom den.
+
+`lib.rs:is_gradient()` matchar därför EXAKT den form panelen bygger och inget annat:
+vinkel i grader inom 0–360, två till fyra stopp med validerad hex och procent, och
+**inga** `(`, `)`, `;`, `{`, `}`, `/`, `\`, `"`, `'`, `@` någonstans i innehållet. Allt
+som inte matchar faller tillbaka på registrets standardvärde.
+
+Två saker som hör ihop med det:
+- **Panelen och Rust måste vara överens om formen.** Panelen serialiserar alltid
+  `linear-gradient(<deg>deg, <hex> 0%, <hex> 100%)` (gemener). Ändrar du den ena sidan
+  tystas värdet av den andra — det ser ut som att inställningen inte sparas.
+- **En generell CSS-parser är fel svar.** Den vore både större och farligare än
+  mönstret; poängen är att mängden tillåtna strängar är LITEN och känd.
+
+### 8.4k En rAF-loop som aldrig dör syns inte — men den håller i allt annat
+Skrollen i inställningslistan jämnas ut för hand (`smoothWheel`): hjulet sätter ett
+målvärde och en rAF-loop glider dit. Två saker fick loopen att leva vidare i evighet
+efter att rörelsen tog slut, och SYMPTOMET var inte skroll:
+
+- `scrollTop` snappar till heltal i den behållaren (mätt), så de sista pixlarna av en
+  exponentiell utjämning avrundas bort: steget blir 0,4 px, `scrollTop` står kvar, och
+  nästa frame räknar exakt samma sak igen. Loopen måste därför flytta **minst en pixel
+  per frame** och ge upp när `scrollTop` inte ändrades trots det.
+- Målet kan ligga utanför den verkliga maxskrollen (`scrollHeight - clientHeight` är
+  inte exakt samma tal), så skillnaden mot målet nådde aldrig under tröskeln. Klampa
+  målet mot maxvärdet i VARJE frame, inte bara när hjulet rullar.
+
+Det som gjorde felet dyrt att förstå: en levande loop drar `scrollTop` tillbaka mot sitt
+mål, så listan hoppade tillbaka när man drog i skrollisten, och dess `scroll`-event
+stängde varje meny man öppnade (menyerna stänger vid skroll, §4b). Buggen såg alltså ut
+som "menyerna går inte att öppna".
+
+Och: **första framet har `dt ≈ 0`.** En "flyttade den sig?"-kontroll utan måttet med sig
+dödade därför loopen direkt vid start — mätbart bara genom att driva loopen för hand
+(§9).
+
 ### 8.5 Flicker-mönster att aldrig upprepa
 Alla dessa fanns i delta-baren och gav synligt flimmer:
 - **Tröskel som slår ut ett element helt.** `valueArc()` returnerade `''` när
@@ -767,8 +905,21 @@ Alla dessa fanns i delta-baren och gav synligt flimmer:
 - **30 Hz-grind på "nu minus förra renderingen".** Minsta jitter sköt en render ett
   helt refresh-intervall. Använd fast deadline: `if(now<nextT)return;
   nextT=Math.max(now,nextT+FRAME_MS)`.
+- **`lineJoin:'miter'` på ett canvas-trace flimrar i spetsarna.** Rapporterat om
+  inputs-trace: de spetsiga pikarna gasspåret ritar "flimrade lite". En pedal som släpps
+  och trycks igen inom två sampel ger en nästan 180-gradig vändning, och då växer
+  spetsens miter-längd mot oändligheten — canvas byter till bevel så fort `miterLimit`
+  passeras, alltså poppar spetsen mellan lång och avhuggen, olika för varje frame
+  eftersom vinkeln ändras när spåret skrollar. **Runda hörn har ingen sådan gräns och
+  kan därför inte växla.** `lineCap:'round'` hör ihop med det: färgbytena (ABS/TC) ritas
+  som egna strokes och avhuggna ändar syntes som en hårfin skarv i varje övergång.
+- **Att avrunda x till heltalspixlar i ett SKROLLANDE spår.** Spåret flyttar sig ett
+  brutet antal pixlar per frame, så avrundningen slår om vid olika tidpunkter för olika
+  sampel: en ensam spets vaggade mellan lodrät och lutande varje frame. Subpixel-x rör
+  sig jämnt och kantutjämningen tar hand om skärpan. (Avrundning är rätt för STILLASTÅENDE
+  gridlinjer — det är rörelsen som gör den fel.)
 
-De två sista bodde i en kopia per overlay. De ligger nu i **`bus.js:startLoop(tick,
+De två sista av loop-punkterna bodde i en kopia per overlay. De ligger nu i **`bus.js:startLoop(tick,
 {hz, dtCap})`** — skriv ALDRIG en egen rAF-loop i en ny overlay, anropa den. Takten
 kommer ur `hz` i `registry.json` via `__OVERLAY_INIT__` (§8.3), så en sällan-ändrad
 widget kan köra 5 Hz utan att röra kärnan. `tick(dt, now)` får `dt` i sekunder;
@@ -1249,6 +1400,32 @@ sig långsammast, alltså i kurvorna där kurvan har mest form.
 Spikskyddet (§8.8) delas av båda referenssorterna genom `delta.lap_delta()`. Det är den
 sortens regel som blir fel i den andra kopian.
 
+### 8.8g Kortkommandot går att byta — tre saker som då slutar hålla
+Ctrl+Alt+Space registreras GLOBALT i Windows och kan vara upptagen av ett annat program.
+Det var hela skälet att göra den utbytbar (Inställningar-fliken), och bytet drog med sig
+tre fällor:
+
+- **Handlern får inte jämföra mot en infångad kopia.** `Builder::with_handler` fick
+  tidigare `move |app, sc, ev| if sc == &toggle_h`, alltså kombinationen som gällde vid
+  uppstart. Efter ett byte matchar den aldrig — hotkeyen hade fungerat exakt en gång per
+  appstart och sedan verkat död. Handlern läser nu `HOTKEY` (den REGISTRERADE
+  kombinationen).
+- **Registreringen måste göras om DIREKT, med återställning vid fel.** Det finns inget
+  sätt att veta om en genväg är ledig utan att försöka ta den. Misslyckas den läggs den
+  gamla tillbaka — annars lämnar ett felklick användaren helt utan kortkommando, och enda
+  vägen in i edit-läge är panelens flytta-knapp.
+- **Minst en modifierare, kontrollerat på BÅDA sidor.** Panelen kräver det, men IPC:n är
+  inte panelens text: en bar tangent som globalt kortkommando fångas i alla program —
+  trycker man "P" i en chat växlar overlayn läge.
+
+Två detaljer värda att spara: panelen spelar in `event.code` och inte `event.key`
+(`key` beror på tangentbordslayouten; ett globalt kortkommando bor i den FYSISKA
+tangenten), och namnen `code` ger — "KeyE", "Space", "ArrowUp", "Numpad5" — är precis de
+`global-hotkey` parsar, så strängen går hela vägen utan översättning. Undantaget är
+Windows-tangenten: parsern vill ha `Super`, användaren läser `Win`, och bara VISNINGEN
+översätts. Strängen får aldrig hårdkodas i en overlay eller i panelens HTML (delta-barens
+edit-bricka och Om-fliken gjorde det) — den hämtas ur `get_globals`.
+
 ### 8.9 websockets-API:t
 Installerat: **16.0**, där `websockets.serve` är den nya asyncio-implementationen.
 `await websockets.serve(...)` ger ett `Server` med `close()`/`wait_closed()` — det
@@ -1307,6 +1484,18 @@ hoppar över sig själv. Två regler som gäller allt testarbete här:
   fönsterbredder inklusive golvet 960×600. Kör med `--force-prefers-reduced-motion`:
   under `--virtual-time-budget` fryser CSS-transitioner halvvägs och ett avstängt
   tillstånd kan se påslaget ut.
+  Tre saker som kostade tid i 0.5.1-mätningen och gäller varje gång:
+  - **`--dump-dom` räcker inte** när mätningen behöver KLICKA och vänta in layouten
+    mellan stegen. Driv sidan över CDP i stället (`--remote-debugging-port` +
+    `Runtime.evaluate` med `awaitPromise`); Node har global `WebSocket` och `fetch`, så
+    det behövs inget beroende.
+  - **`getComputedStyle` ger FÖRRA värdet direkt efter en klassändring** när egenskapen
+    har en `transition` — statusprickens färg lästes som röd i det frame den blev grön.
+    Vänta ut övergången (eller läs efter ett par frames) innan du bedömer en färg.
+  - **rAF är hårt strypt i headless** (mätt: 1 tick på 600 ms — kompositören producerar
+    inga frames). En rAF-driven animation går alltså inte att mäta genom att vänta; byt
+    ut `requestAnimationFrame` mot en kö och driv den med en egen klocka, precis som
+    `tests/lib/overlay-harness.mjs` gör.
 - **Appen:** skärmdump med `System.Drawing.Graphics.CopyFromScreen`, och stäng
   panelen med `WM_CLOSE` till rätt hwnd (appens `MainWindow` kan vara ett
   overlay-fönster, så enumerera fönster och matcha på titeln "Control").

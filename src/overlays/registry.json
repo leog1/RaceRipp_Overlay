@@ -59,7 +59,8 @@
           "type": "color",
           "label": "Varvtidsradens bakgrund",
           "default": "#060708e6",
-          "alpha": true
+          "alpha": true,
+          "gradient": true
         },
         {
           "id": "col-track",
@@ -183,13 +184,30 @@
           "type": "color",
           "label": "Panelbakgrund",
           "default": "#121416db",
-          "alpha": true
+          "alpha": true,
+          "gradient": true
         },
         {
           "id": "col-plot",
           "type": "color",
           "label": "Grafyta",
           "default": "#141613",
+          "alpha": true,
+          "gradient": true
+        },
+        {
+          "id": "col-track",
+          "type": "color",
+          "label": "Pedalspalternas botten",
+          "default": "#00000073",
+          "alpha": true,
+          "gradient": true
+        },
+        {
+          "id": "col-slot-edge",
+          "type": "color",
+          "label": "Pedalspalternas kant",
+          "default": "#ffffff09",
           "alpha": true
         },
         {

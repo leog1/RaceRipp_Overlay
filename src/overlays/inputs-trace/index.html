@@ -199,12 +199,12 @@ class InputsTrace{
   _drawGhost(now,key,color,pxPerMs){
     if(this.src==='off')return;
     const s=this.samples,n=s.length; if(n<2)return; const ctx=this.ctx;
-    const X=smp=>Math.round(this.cw-(now-smp.t)*pxPerMs);
+    const X=smp=>this.cw-(now-smp.t)*pxPerMs;
     ctx.save();
     ctx.globalAlpha=GHOST_ALPHA;
     ctx.strokeStyle=color;
     ctx.lineWidth=Math.max(1,Math.round(this.traceW*0.6));
-    ctx.lineJoin='miter';ctx.miterLimit=12;ctx.lineCap='butt';
+    ctx.lineJoin='round';ctx.lineCap='round';
     let started=false,any=false;
     ctx.beginPath();
     for(let k=0;k<n;k++){
@@ -219,10 +219,25 @@ class InputsTrace{
     if(any)ctx.stroke();
     ctx.restore();}
   _yOf(v){return this.plotBot-v*(this.plotBot-this.plotTop);}
+  /* RUNDA HÖRN OCH SUBPIXEL-X, och båda är buggfixar och inte smak (§8.5c i denna
+     fil, §8.5 i CLAUDE.md):
+
+     1. `lineJoin:'miter'` med `miterLimit:12` FLIMRAR i spetsarna. En gaspedal som
+        släpps och trycks igen inom två sampel ger en nästan 180-gradig vändning, och
+        då växer spetsens miter-längd mot oändligheten. Canvas byter till bevel så
+        fort gränsen passeras — alltså poppar spetsen fram och tillbaka mellan lång
+        spets och avhuggen, olika för varje frame eftersom vinkeln ändras när spåret
+        skrollar. Runda hörn har ingen sådan gräns och kan därför inte växla.
+     2. `Math.round` på x lade varje sampel på närmaste heltalspixel. Spåret skrollar
+        med ett brutet antal pixlar per frame, så avrundningen slår om vid olika
+        tidpunkter för olika sampel — en ensam spets vaggade mellan lodrät och lutande
+        varje frame. Subpixel-x rör sig jämnt; kantutjämningen tar hand om skärpan.
+     lineCap 'round' hör ihop med 1: färgbytena (ABS/TC) ritas som EGNA strokes, och
+     med avhuggna ändar syntes en hårfin skarv i varje övergång. */
   _drawLine(now,key,flag,base,alt,pxPerMs){
     const s=this.samples,n=s.length; if(n<2)return; const ctx=this.ctx;
-    const X=smp=>Math.round(this.cw-(now-smp.t)*pxPerMs);
-    ctx.lineWidth=this.traceW;ctx.lineJoin='miter';ctx.miterLimit=12;ctx.lineCap='butt';
+    const X=smp=>this.cw-(now-smp.t)*pxPerMs;
+    ctx.lineWidth=this.traceW;ctx.lineJoin='round';ctx.lineCap='round';
     let k=0;
     while(k<n-1){const segAlt=s[k][flag]||s[k+1][flag];ctx.strokeStyle=segAlt?alt:base;
       ctx.beginPath();ctx.moveTo(X(s[k]),this._yOf(s[k][key]));ctx.lineTo(X(s[k+1]),this._yOf(s[k+1][key]));

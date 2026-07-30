@@ -63,7 +63,9 @@ Utan ACC igång sänder motorn **mock-data** (så allt rör sig). Startar du ACC
 den automatiskt till riktig telemetri.
 Kontrollpanelen öppnas; overlays läggs ut enligt registret. **Ctrl+Alt+Space**
 växlar race ⇄ edit — i edit-läge drar du varje overlay på plats (sparas när panelen
-stängs). Opacitet/skala styrs per overlay i panelen.
+stängs). Kombinationen kan bytas under **Inställningar** (den registreras globalt i
+Windows och kan alltså vara upptagen av ett annat program). Opacitet/skala styrs per
+overlay i panelen.
 
 ## OBS
 Motorns HTTP-server serverar overlays direkt. Lägg en **Browser Source** mot t.ex.

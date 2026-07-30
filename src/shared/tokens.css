@@ -229,9 +229,20 @@
      andra halvan på 11 hamnar ingenting på samma linje, och resultatet läses som
      slarv långt innan man kan peka ut varför. Behöver du ett mellanting: välj
      grannvärdet, inte 2 px emellan.
-     Radierna går i steg om 4 av samma skäl (6 → 10 → 14), så en knapp inuti ett
-     kort får en hörnradie som följer kortets i stället för att konkurrera. */
-  --ui-r-sm: 6px; --ui-r-md: 10px; --ui-r-lg: 14px;
+     Radierna går i steg om 2 (2 → 4 → 6 → 8), så en knapp inuti ett kort får en
+     hörnradie som följer kortets i stället för att konkurrera.
+
+     STEGEN ÄR HALVERADE mot vad de var (6/10/14 → 4/6/8, plus 2 px för det
+     minsta). Skälet: en 14 px radie på ett kort som är 1000 px brett läser som en
+     app-widget, inte som ett instrument, och tillsammans med pillerformade
+     brickor (999 px) var det den tydligaste kvarvarande signalen om att
+     gränssnittet var genererat och inte ritat. Mätverktyg — MoTeC i2, en
+     oscilloskopmeny, en CAD-inspektor — har nästan raka hörn: radien finns för
+     att kanten inte ska se vass ut, inte för att formen ska vara mjuk.
+     PILLERFORMER (999 px) är därför borta ur panelen överallt utom på växlaren,
+     som ÄR en pinnswitch och läser fel som rektangel. Lägg inte tillbaka dem på
+     brickor och chips — de var det som gjorde listan och presetraden runda. */
+  --ui-r-xs: 2px; --ui-r-sm: 4px; --ui-r-md: 6px; --ui-r-lg: 8px;
   /* Typskalan följer samma tanke: fyra steg, inga halva pixlar. Halvpixlar
      renderas dessutom olika beroende på DPI, så 12,5 px blev 12 på en skärm och
      13 på nästa — ett radavstånd som vandrar mellan maskiner. */
