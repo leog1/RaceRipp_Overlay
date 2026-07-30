@@ -15,7 +15,7 @@
 > X" i §7).
 ## 1. Vad projektet är
 Modulärt overlay-paket för **Assetto Corsa Competizione (ACC)**.
-Version 0.5.2.
+Version 0.5.3.
 - **Funktionellt** som **Race Element**: lätt, rensat, praktiskt, ingen FPS-förlust.
 - **Visuellt** som **RaceLab**: mörkt, polerat, animerat, premium.
 - Kvalitetsribban är hög och användaren är detaljpetig ner till pixelnivå.
@@ -462,7 +462,22 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   maskinen): `asdict()` 94,3 µs mot `dict(vars())` 1,1 µs för en ram med 20 bilar;
   `json.dumps` 60 µs; nio referensuppslagningar (tre källor × delta + två pedalkanaler)
   13,3 µs på en 8176-punkters kurva. Det är svaret på "MoTeC-referensen känns dyr":
-  matematiken är mätbart gratis.
+  matematiken är mätbart gratis. Samma mätning på pyaccsharedmemory (§8.6f):
+`read_physic_map` 69,8 µs, `read_graphics_map` 108,7 µs, `read_static_map` 22,1 µs,
+`copy.deepcopy(physics)` **206,7 µs**, `PhysicsMap.is_equal` 0,2 µs. Deepcopyn är den
+  största enskilda posten i hela motorn och gör ingen nytta alls.
+- **Overlayernas CPU A/B-mätt per overlay, utanför Tauri.** Motorn serverar overlays
+  över sin OBS-HTTP, så varianterna växlas genom att byta filer på disk och mätas i en
+  REN Chrome-instans (ett dokument, ingen panel, ingen preview). Det var enda sättet att
+  få signal: samma mätning inne i appen varierade 13–48 % mellan körningar, eftersom
+  kontrollpanelens preview och referensinläsningen dränkte skillnaden.
+  Delta-baren, 8 körningar à 30 s i BÅDA körordningarna (% av en kärna):
+  gammal 19,65 · bara loop-ändringen 20,24 · bara lagerpromotion 17,27 · **båda 16,50**.
+  Inputs-trace, 6 körningar: 19,87 → **18,27**.
+  Två saker att ta med sig: lagerpromotionen (§8.5g) är det som bär vinsten, och
+  loop-ändringen (§8.5) mätte SÄMRE än utgångsläget när den kördes ensam — den betalar
+  sig först ihop med lagren. **Mät om båda tillsammans om du rör någondera**, och tro
+  inte på en mätning gjord inne i appen med panelen öppen.
 - **Panelens nya chrome mätt headless** (Chrome, Tauri-stub, `--force-prefers-reduced-motion`,
   1440×900 och golvet 960×600): statusen har `background: rgba(0,0,0,0)` och
   `border: 0px none`, ordbilden 14 px, `--ui-card` = rgb(14,16,15) mot `--app-bg`
@@ -518,6 +533,31 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   session, alt-tabba, dra skalreglaget fram och tillbaka i tio sekunder, gå tillbaka in
   och jämför FPS mot innan. Sitter tappet kvar är det INTE reglagestormen som var
   orsaken, och nästa misstänkta är att fönstren finns över spelet alls.
+- **FPS-arbetet i 0.5.3 är mätt i CPU, inte i FPS.** Lagerpromotionen (§8.5g),
+  loop-schemaläggningen (§8.5), motorns snabbväg förbi `read_shared_memory` (§8.6f) och
+  motorns BELOW_NORMAL-prioritet är alla mätta — men i **CPU-procent på den här
+  maskinen, med mock-data och utan ACC igång**. Ingen har sett vad de gör med
+  bildfrekvensen i spelet. Rapporten som startade arbetet var "141 → i snitt 120 med
+  spikar, och märkbart sämre efter några varv". Testa så: kör samma bana och bil med
+  appen helt stängd, sedan med den igång, och jämför både snitt och 1 %-låg över minst
+  fem varv. **Räkna inte med att tappet är borta.** Appens hela CPU-avtryck är ~12 % av
+  EN kärna av sex, alltså ~2 % av maskinen — det kan inte ensamt kosta 20 FPS. Resten
+  sitter med största sannolikhet i att två transparenta always-on-top-fönster ligger
+  över spelet och tar bort dess snabba presentationsväg (independent flip/MPO), och det
+  går inte att optimera bort utan att ta bort overlays. Blir tappet mätbart mindre men
+  inte noll är det väntat.
+- **Att motorns BELOW_NORMAL-prioritet inte gör telemetrin sen.** Verifierat att
+  prioriteten faktiskt sätts på hela motorträdet (Job Objectet, §8.1), men aldrig kört
+  med en CPU-mättad maskin under den. Ser du hack i traces just när spelet arbetar som
+  mest är detta första stället att titta.
+- **Vad som blir dyrare efter första varvet.** Användaren rapporterade "märkbart sämre
+  efter några varv än de första två". Det finns en app-sida av det: före första
+  inspelade varvet saknas `last`/`best` i ramens `refs`, så inputs-trace ritar inga
+  spökspår och delta-baren ingen båge. Efter varv 1–2 tillkommer två extra
+  canvas-strokes per frame och tre referensuppslagningar per ram i motorn. Det är alltså
+  ett STEG efter första varvet, inte något som växer i evighet — inget i appen samlar
+  på sig arbete över tid (buffertarna är tidsbundna, varven är två). Går tappet ändå
+  vidare uppåt lopp efter lopp ligger orsaken utanför appen.
 - **FPS-spikar efter en krasch i ACC** är rapporterade men ingen mekanism är hittad i
   appen. Grinden kan bara växla en gång per 1,5 s (`GATE_HOLD_MS`), alltså ingen
   visa/dölj-storm, och motorn gör inget extra vid en krasch. Nästa steg är att mäta med
@@ -1024,6 +1064,50 @@ widget kan köra 5 Hz utan att röra kärnan. `tick(dt, now)` får `dt` i sekund
 använd det till all utjämning. `tests/overlay-loop.mjs` bevakar loopen och jämför
 mot det trasiga mönstret för att bevisa att mätningen biter.
 
+**Hz-taket hoppar ARBETET — det gör inte begäran gratis.** Loopen bad om rAF vid
+varje vsync och slängde de flesta. En begäran är ingen no-op: GPU-processen skickar
+BeginFrame, renderarens kompositortråd väcker huvudtråden, callbacken körs, ingen
+skada rapporteras. På 144 Hz blev det ~114 tomma rundor i sekunden **per
+overlay-fönster**, och hela framepipelinen hölls aktiv i stället för att vila mellan
+ritningarna. `startLoop` sover därför bort merparten av väntan i en `setTimeout` och
+kopplar in rAF först `WAKE_MARGIN_MS` (12 ms) före deadline — marginalen betalar för
+att Windows timerkorn kan vara 15,6 ms, så en sen timer ändå hinner få sin rendering
+på rätt vsync. Mätt i `tests/overlay-loop.mjs`: 85 begäranden i stället för 145, med
+oförändrad takt. **Öka inte marginalen "för säkerhets skull"** — den är ren kostnad,
+en tom rAF-runda per vsync den täcker.
+Är overlayn dold av grinden sover loopen i 250 ms-svep (3 begäranden i stället för
+144). **Då måste den också VÄCKAS när grinden släpper** — `_applyGate` kör
+`_wakers`. Utan det visar overlayn den bild som ritades innan ACC tappades, i upp till
+en fjärdedels sekund efter att man tabbat in i bilen; fönstret är tillbaka direkt men
+innehållet är gammalt. Testet i `overlay-gate.mjs` faller på precis det.
+
+### 8.5g En yta som ändras varje frame ska ha ett EGET kompositorlager
+Overlays ritar små ändringar ovanpå dyra statiska ytor. Utan lagergräns bor båda i
+samma lager, och webbläsaren **rastrerar om rutorna under ändringen** — på CPU:n, i
+overlayns takt. Konkret vad som ritades om 30 ggr/s innan lagren fanns:
+- delta-barens båge och delta-siffra låg i diskens lager, alltså ritades diskens
+  **conic-gradient** (per pixel den dyraste ytan i hela paketet), dess radial- och
+  linear-gradient och tre inset-skuggor om vid varje ny bågvinkel;
+- inputs-traces canvas låg i panelens lager, alltså ritades panelbakgrund, kant,
+  radie och slagskugga om vid varje canvasuppdatering;
+- pedalstaplarnas fyllning ritade om spårets rundade hörn och kant vid varje `scaleY`.
+
+Regeln: **ändras ett element per frame får det ett eget lager.** Med lager laddas bara
+elementets egen textur upp och GPU:n lägger ihop bilden — det är den enda platsen i
+projektet där arbete faktiskt går att flytta från CPU till GPU, och simulatorn är
+CPU-bunden.
+
+Vilken flagga, och det är INTE smak:
+- **`transform:translateZ(0)`** för ytor med innehåll som ska förbli skarpt (text,
+  SVG, canvas). `will-change:transform` ber Chromium LÅSA rasterskalan — och overlays
+  skalas av användaren (`--ui-scale`, `--H`), så innehållet blir suddigt efter en
+  skaländring i stället för omritat.
+- **`will-change:transform`** bara på element som FAKTISKT animeras med transform
+  (pedalstapelns `.bar-fill`). Där är låst rasterskala rätt svar, inte ett fel.
+
+Lager är inte gratis (textur + kvad per lager) — promota det som ändras per frame,
+inte varje element som råkar ligga stilla ovanpå något.
+
 ### 8.5b Dolda overlays kostade CPU ändå — `visibility:hidden` räcker inte
 Synk-grinden dolde overlayn med `documentElement.style.visibility='hidden'`.
 Sidan målade då ingenting — men **fönstret fanns kvar**, så Windows komponerade
@@ -1250,6 +1334,37 @@ gratis; letar du FPS i motorn är det serialisering och antal klienter som betyd
 Inläsningen av en `.ld` är däremot inte gratis (tiondelar av en sekund till ett par
 sekunder) och körs därför i en tråd — annars stannar all telemetri mitt i sessionen,
 vilket är precis när man laddar en referens.
+
+**Den STÖRSTA posten i motorn ligger inte i vår kod utan i pyaccsharedmemory.**
+`accSharedMemory.read_shared_memory()` gör tre saker per anrop. Mätt här, µs per
+anrop: `read_physic_map` 69,8 · `read_graphics_map` 108,7 · `read_static_map` 22,1 ·
+`copy.deepcopy(physics)` **206,7**. Deepcopyn finns bara för att NÄSTA anrop ska kunna
+jämföra `suspension_travel` (`PhysicsMap.is_equal`, 0,2 µs) — alltså 206 µs för att
+spara fyra flyttal, 40 gånger i sekunden. STATIC-blocket är dessutom per definition
+statiskt och lästes ändå om varje ram.
+
+`AccSource._read_maps()` läser därför blocken själv: physics varje ram, graphics bara
+när fysiken FAKTISKT är ny, static var `STATIC_S` (1 s). Två saker att inte bryta:
+- **Kontraktet är oförändrat.** `None` betyder fortfarande "ingen ny data", inte "ACC
+  är borta" (§8.6e), och dedupen jämför exakt samma `suspension_travel`. Ändrar du
+  dedupen är blinket och hacken tillbaka.
+- **Det rör bibliotekets INRE** (modulfunktionerna och `physicSM`-handtagen) och är
+  alltså versionskänsligt. Går de inte att importera faller källan tillbaka på
+  `read_shared_memory()` och beter sig som förut. `tests/acc_source.py` kontroll 7
+  mäter båda vägarna.
+
+**Skapa inte en asyncio-task per klient och ram heller.** `Bus.broadcast` gjorde det
+för att slippa awaita klienterna i tur och ordning (en trög OBS-flik stallade hela
+40 Hz-loopen). Men med tre klienter blev det 120 tasks i sekunden som allokerades,
+schemalades och slängdes. Varje klient har nu EN skrivare som lever hela anslutningen
+och väcks med en `Event`; slotten `pending` skrivs bara över när skrivaren ligger
+efter, vilket är samma ramhoppning som förut.
+
+**Motorn ligger i `BELOW_NORMAL_PRIORITY_CLASS`** via Job Objectet (§8.1). Den behöver
+~3 % av en kärna; att den blir nedprioriterad några millisekunder syns ingenstans,
+men en schemaläggningskrock mitt i ett spelframe syns som en FPS-spik. Prioriteten
+sätts på JOBBET och inte på processen just för att den då gäller hela trädet, alltså
+även PyInstallers bootloader och dess barn.
 
 ### 8.6e "Ingen ny data" är INTE "ACC är borta" — mock-inblandningen
 Rapporterat: overlays **blinkade** var tredje–fjärde sekund och inputs-trace fick **små

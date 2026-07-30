@@ -12,11 +12,18 @@
  */
 
 // Globaler måste finnas innan bus.js laddas (modulen rör document vid laddning).
+import { installFakeTimers } from './lib/fake-timers.mjs';
+
 let NOW = 1000;
 let RAF = [];
 globalThis.performance = { now: () => NOW };
 globalThis.requestAnimationFrame = (fn) => { RAF.push(fn); return RAF.length; };
+globalThis.cancelAnimationFrame = () => {};
 globalThis.document = { documentElement: { style: {} } };
+/* Loopen sover mellan renderingarna i en timer och begär rAF först strax före
+   deadline — annars kostar 114 av 144 rAF-begäranden i sekunden ingenting annat än
+   väckningar. Timern måste därför följa TESTETS klocka. */
+const TIMERS = installFakeTimers(() => NOW);
 
 const { startLoop } = await import('../src/shared/bus.js');
 
@@ -44,18 +51,29 @@ function naivLoop(tick, { hz = 30 } = {}) {
   return () => { live = false; };
 }
 
-/** Kör en loop genom en serie vsync-intervall och returnerar alla tick. */
+/** Kör en loop genom en serie vsync-intervall och returnerar alla tick.
+ *  Räknar också hur många rAF-BEGÄRANDEN loopen gjorde: det är den kostnaden som
+ *  finns kvar när Hz-taket bara hoppar arbetet, och den mäts i kontroll 6. */
 function drive(loop, vsyncDeltas, opts = {}) {
   NOW = 1000; RAF = [];
+  let rafAsks = 0;
+  const realRaf = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = (fn) => { rafAsks++; return realRaf(fn); };
   const ticks = [];
   const stop = loop((dt, t) => ticks.push({ dt, t }), opts);
+  TIMERS.run();
   for (const d of vsyncDeltas) {
     NOW += d;
+    TIMERS.run();                           // timern kan ha förfallit under vsyncen
     const fn = RAF.shift();
     if (fn) fn(NOW);
     while (RAF.length > 1) RAF.shift();     // håll kön kort, som en riktig rAF
   }
-  return { ticks, stop };
+  globalThis.requestAnimationFrame = realRaf;
+  // Stoppa loopen innan nästa drive: annars ligger dess timer kvar i den fejkade
+  // kön och räknas in i nästa mätning.
+  stop();
+  return { ticks, stop, rafAsks };
 }
 
 /* Deterministisk jitter (LCG) så testet ger samma svar varje körning. */
@@ -113,12 +131,38 @@ function vsync(seconds, hz = 60, jitterMs = 0) {
   NOW = 1000; RAF = [];
   const ticks = [];
   const stop = startLoop((dt, t) => ticks.push(t), { hz: 30 });
-  for (let i = 0; i < 10; i++) { NOW += 16.7; const fn = RAF.shift(); if (fn) fn(NOW); }
+  TIMERS.run();
+  for (let i = 0; i < 10; i++) { NOW += 16.7; TIMERS.run(); const fn = RAF.shift(); if (fn) fn(NOW); }
   const before = ticks.length;
   stop();
-  for (let i = 0; i < 10; i++) { NOW += 16.7; const fn = RAF.shift(); if (fn) fn(NOW); }
+  for (let i = 0; i < 20; i++) { NOW += 16.7; TIMERS.run(); const fn = RAF.shift(); if (fn) fn(NOW); }
   check('stop() avslutar loopen', before > 0 && ticks.length === before,
         `${before} tick före stop, ${ticks.length} efter`);
+  check('stop() lämnar ingen timer kvar', TIMERS.pending === 0, `${TIMERS.pending} kvar`);
+}
+
+/* ── 6. En rAF-BEGÄRAN kostar även när man inte ritar ────────────────────────
+   Hz-taket hoppade bara arbetet: rAF begärdes ändå vid varje vsync, och varje
+   begäran är en BeginFrame från GPU-processen som väcker renderarens kompositor-
+   och huvudtråd. På 144 Hz blev det ~114 tomma rundor i sekunden per overlay-
+   fönster. Loopen sover därför i en timer och kopplar in rAF först nära deadline.
+
+   Mätningen skiljer de två mönstren åt: `naivLoop` begär rAF vid VARJE vsync och
+   ska alltså ligga nära 144, medan den riktiga loopen ska ligga en bra bit under.
+   Taket är 100 och inte 30: marginalen (WAKE_MARGIN_MS) betalar för Windows
+   timerupplösning på 15,6 ms, och den ska inte optimeras bort. */
+{
+  const ask = drive(startLoop, vsync(1, 144), { hz: 30 }).rafAsks;
+  const naiv = drive(naivLoop, vsync(1, 144), { hz: 30 }).rafAsks;
+  check('rAF begärs inte vid varje vsync', ask < 100, `${ask} begäranden/s på 144 Hz`);
+  check('mätningen skiljer timerväckning från rAF vid varje vsync', naiv > 140,
+        `naiv gav ${naiv} begäranden mot ${ask}`);
+  // Takten får inte ha blivit ojämnare av att sparandet infördes.
+  const t = drive(startLoop, vsync(1, 144), { hz: 30 }).ticks;
+  const gaps = t.slice(1).map((x, i) => x.t - t[i].t);
+  const worst = Math.max(...gaps.map((g) => Math.abs(g - 1000 / 30)));
+  check('takten är fortfarande jämn på 144 Hz', t.length >= 29 && t.length <= 31 && worst < 8,
+        `${t.length} tick, största avvikelse ${worst.toFixed(1)} ms`);
 }
 
 console.log(failed ? `\n${failed} kontroll(er) misslyckades` : '\nAllt OK');

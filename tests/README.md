@@ -53,6 +53,13 @@ Använd då `loadOverlay(..., { busFile })` med en `bus.js` skriven ur git
 (`fileAtRevision('src/shared/bus.js', rev)`); det är precis vad
 `overlay-preview.mjs <rev>` gör.
 
+**Harnessen driver också TIMERS** (`tests/lib/fake-timers.mjs`), bundna till samma
+fejkade klocka som rAF. `startLoop` sover mellan renderingarna i en `setTimeout` och
+begär rAF först nära deadline, så ett harness som bara driver rAF ser en loop som aldrig
+kommer igång. `h.tick()` kör förfallna timers FÖRST och sedan rAF-callbacken. Node:s
+riktiga `setTimeout` sparas undan innan bytet — annars hade harnessens egen
+microtask-flush hamnat i den fejkade kön och hängt uppstarten.
+
 Tre flaggor/rutiner som är lätta att missa:
 - `preview: true` — kör overlayn som om den satt i kontrollpanelens iframe
   (`window.self !== window.top`, alltså `IN_PREVIEW` i `bus.js`).
@@ -110,6 +117,16 @@ mot den riktiga loopens 31, och kontrollen fallerar om skillnaden försvinner.
 Kontrollerar också att `hz` kommer från anroparen (per-overlay-hz ur `registry.json`),
 att `dt` är tidsbaserat och klippt vid `dtCap`, och att `stop()` faktiskt stoppar.
 
+Kontroll 6 mäter något annat än takten: **hur många rAF-BEGÄRANDEN loopen gör**. Hz-taket
+hoppar bara arbetet, och en begäran som inte ritar något är ändå en BeginFrame som väcker
+två trådar per overlay-fönster (§8.5). Loopen sover därför i en timer och kopplar in rAF
+först nära deadline — 85 begäranden i sekunden i stället för 145 på en 144 Hz-skärm, med
+takten mätt oförändrad i samma körning. `naivLoop` ligger kvar på 145 och visar att
+mätningen skiljer mönstren åt. **Loopen går alltså inte att driva med bara rAF längre:**
+testet installerar `tests/lib/fake-timers.mjs`, som binder `setTimeout` till testets egen
+klocka. Ett test som glömmer det ser en loop som aldrig startar — och skulle "passera"
+genom att mäta noll frames.
+
 ## overlay-options.mjs
 De typade alternativen i `registry.json` (bool/int/float/enum/color). Viktigast är att ett
 alternativ som påverkar LAYOUT gäller vid **första** renderingen, inte när ett async
@@ -149,12 +166,25 @@ passerade därför mot den buggiga koden — overlayn hann ju komma tillbaka. Bl
 bara om man räknar hur många gånger overlayn *dolts*. Kör mot `git stash`:ad kod för att
 se att det biter (3 kontroller ska falla).
 
+Sista blocket mäter RENDERLOOPEN under grinden (§8.5): dold overlay ska varken rita
+eller be om frames (3 rAF-begäranden på 144 vsync i stället för 144), och när grinden
+släpper ska en rendering ske på FÖRSTA framet — annars visas telemetri som är upp till
+en sovperiod gammal i samma ögonblick som man tabbar in i bilen. Tar man bort
+`_wakers`-anropet i `_applyGate` faller två kontroller.
+
 ## acc_source.py
 Ett fejkat delat minne låter testet styra exakt när `read_shared_memory()` ger `None`,
 vilket är omöjligt mot riktiga ACC. Bevakar att "ingen ny data" inte tolkas som
 frånkoppling (§8.6e) och ut-varvsregeln, inklusive att det avgörande är om man är i
 depåfilen när mållinjen passeras (§8.8b). `--old` återskapar felet så man ser att
 kontrollerna biter (3 ska falla).
+
+Kontroll 7 bevakar **snabbvägen förbi `read_shared_memory()`** (§8.6f): biblioteket
+`copy.deepcopy`:ar hela physics-strukturen per ram (206,7 µs mätt) bara för att nästa ram
+jämföra `suspension_travel` (0,2 µs), och läser om det statiska blocket varje gång.
+Kontrollerna räknar hur ofta varje block läses, alltså att dedupen ger exakt samma
+`None`-svar som förut och att STATIC läses om efter `STATIC_S` men inte per ram. Bevisade
+tänder: tas dedupen bort faller 2 kontroller, läses STATIC varje ram faller 1.
 
 ## delta_source.py
 Vilken referens deltat kommer från (§8.8b, §8.8f) — valet, inte matematiken.

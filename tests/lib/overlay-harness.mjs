@@ -13,8 +13,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { installFakeTimers } from './fake-timers.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+
+/* Harnessens EGEN setTimeout, sparad innan de fejkade installeras. Utan den skulle
+   `await new Promise(r => setTimeout(r, 0))` nedan hamna i den fejkade kön och
+   aldrig köras — uppstarten hade hängt i stället för att flusha microtasks. */
+const realSetTimeout = globalThis.setTimeout;
 
 // Räknare för att bryta ESM-modulcachen vid varje loadOverlay (se importen nedan).
 let loadCounter = 0;
@@ -135,6 +141,10 @@ export async function loadOverlay(id, opts = {}) {
   globalThis.performance = { now: () => now };
   globalThis.matchMedia = () => ({ matches: false });
   globalThis.requestAnimationFrame = (fn) => { rafQueue.push(fn); return rafQueue.length; };
+  globalThis.cancelAnimationFrame = () => {};
+  // startLoop sover mellan renderingarna i en timer och kopplar in rAF först strax
+  // före deadline. Timern måste därför följa TESTETS klocka, inte väggklockan.
+  const timers = installFakeTimers(() => now);
   // Overlays lyssnar på 'message' (kontrollpanelens förhandsvisning skickar
   // ändringar den vägen — Tauris event når inte in i en iframe). Vi sparar
   // lyssnarna så testet kan skicka meddelanden med h.message().
@@ -213,8 +223,11 @@ export async function loadOverlay(id, opts = {}) {
   // Overlayn startar sin renderloop i fontsReady().then(...). Släpp fram
   // microtask-kön så uppstarten faktiskt hinner köra — vi vill testa overlayns
   // riktiga startväg, inte anropa frame() bakvägen.
-  await new Promise((r) => setTimeout(r, 0));
-  await new Promise((r) => setTimeout(r, 0));
+  await new Promise((r) => realSetTimeout(r, 0));
+  await new Promise((r) => realSetTimeout(r, 0));
+  // Loopens första steg ligger i en timer (se startLoop). Kör den så rAF-kön är
+  // laddad innan testet tickar första gången.
+  timers.run();
 
   const stepMs = 1000 / (opts.hz || 30);
   return {
@@ -226,14 +239,19 @@ export async function loadOverlay(id, opts = {}) {
     push(frame) { if (sink) sink(frame); },
     /** Skicka ett postMessage, som kontrollpanelen gör mot förhandsvisningen. */
     message(data) { for (const fn of (listeners.get('message') || [])) fn({ data }); },
-    /** Flytta klockan ett frame och kör overlayns rAF-callback. */
+    /** Flytta klockan ett frame och kör overlayns rAF-callback.
+     *  Timers körs FÖRST: loopen sover i en timer mellan renderingarna och begär
+     *  rAF först strax före deadline, så utan det steget är rAF-kön tom. */
     tick(ms = stepMs) {
       now += ms;
+      timers.run();
       const fn = rafQueue.shift();
       if (fn) fn(now);
       while (rafQueue.length > 1) rafQueue.shift();   // håll kön kort
       return now;
     },
+    /** Lämna tillbaka globalerna (setTimeout m.fl.) till Node. */
+    restore() { timers.restore(); },
     /** Skicka samma ram i n frames (låter lerpar landa). */
     settle(frame, n = 60) { for (let i = 0; i < n; i++) { this.push(frame); this.tick(); } },
     /** Texten i ett element, sammansatt av dess teckenceller. */

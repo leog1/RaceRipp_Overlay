@@ -13,6 +13,7 @@
  */
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { installFakeTimers } from './lib/fake-timers.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -320,6 +321,60 @@ const hideCount = (from = 0) => writes.slice(from).filter((w) => w.value === 'hi
   setEditMode(false);
   check('och döljs igen när edit-läget lämnas', hidden(),
         writes.map((w) => w.value || '(synlig)').join(' → '));
+}
+
+/* ── Renderloopen medan grinden döljer overlayn ─────────────────────────────
+   Två saker som hör ihop och som är lätta att bryta var för sig:
+
+   • Hz-taket hoppade ARBETET när overlayn var dold, men rAF begärdes ändå vid varje
+     vsync — 144 tomma rundor i sekunden bakom ett fönster som inte ens är på skärmen.
+     Loopen sover därför i långa svep i det läget.
+   • Och just därför måste den VÄCKAS när grinden släpper. Fönstret kommer tillbaka
+     direkt (§8.5b), men om loopen sover klart sin period först visas den bild som
+     ritades innan ACC tappades — upp till en fjärdedels sekund gammal telemetri, i
+     det ögonblick man tabbar in i bilen. */
+{
+  const { WsBus, startLoop } = await loadBus(true);
+  const timers = installFakeTimers(() => NOW);
+  const RAF = [];
+  let rafAsks = 0;
+  globalThis.requestAnimationFrame = (fn) => { rafAsks++; RAF.push(fn); return RAF.length; };
+  globalThis.cancelAnimationFrame = () => {};
+  globalThis.performance = { now: () => NOW };
+
+  const bus = new WsBus();
+  const ticks = [];
+  const stop = startLoop(() => ticks.push(NOW), { hz: 30 });
+  // En vsync på 144 Hz-skärm: kör förfallna timers, sedan en rAF-callback.
+  const vsync = (ms = 1000 / 144) => {
+    NOW += ms; timers.run();
+    const f = RAF.shift(); if (f) f(NOW);
+    while (RAF.length > 1) RAF.shift();
+  };
+
+  for (let i = 0; i < 144; i++) { bus._emit({ connected: true }); vsync(); }
+  check('loopen ritar 30 ggr/s medan overlayn syns',
+        ticks.length >= 28 && ticks.length <= 32, `${ticks.length} tick på 1 s`);
+
+  // Ihållande frånkoppling → grinden döljer.
+  bus._emit({ connected: false });
+  NOW += 2000; timers.run();
+  bus._emit({ connected: false });
+  const t0 = ticks.length, r0 = rafAsks;
+  for (let i = 0; i < 144; i++) vsync();
+  check('inga renderingar medan grinden döljer overlayn', ticks.length === t0,
+        `${ticks.length - t0} tick`);
+  check('och rAF begärs inte heller vid varje vsync', rafAsks - r0 < 12,
+        `${rafAsks - r0} begäranden på 144 vsync`);
+
+  // Tillbaka i ACC: bilden måste vara färsk med en gång.
+  const t1 = ticks.length;
+  bus._emit({ connected: true });
+  vsync();
+  check('en rendering sker på FÖRSTA framet efter att grinden släppt',
+        ticks.length > t1, `${ticks.length - t1} tick`);
+  stop();
+  timers.restore();
 }
 
 console.log(failed ? `\n${failed} kontroll(er) misslyckades` : '\nAllt OK');

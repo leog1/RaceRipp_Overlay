@@ -49,15 +49,26 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
   background:linear-gradient(to bottom, transparent 34.5%, var(--band) 34.5%, var(--band) 65.5%, transparent 65.5%);
   -webkit-mask:radial-gradient(circle 116px at 50% 50%, #000 111px, transparent 116px);
           mask:radial-gradient(circle 116px at 50% 50%, #000 111px, transparent 116px);}
-.gauge svg.ring{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;}
+/* EGET KOMPOSITORLAGER (translateZ). Bågens `d` och knoppens position skrivs om
+   30 ggr i sekunden. Utan eget lager bor ringen i diskens lager, och varje sådan
+   skrivning ritar om rutorna under den — alltså diskens conic-, radial- OCH
+   linear-gradient plus tre inset-skuggor, på CPU:n, 30 ggr i sekunden. En
+   conic-gradient är per pixel den dyraste ytan i hela overlayn.
+   Med eget lager ritas disken EN gång och GPU:n lägger ringen ovanpå.
+   translateZ och inte `will-change:transform`: will-change låser rasterskalan, och
+   #ui skalas av användaren — då hade ringen blivit suddig efter en skaländring. */
+.gauge svg.ring{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;
+  transform:translateZ(0);}
 .track{fill:none;stroke:var(--track);stroke-width:13;}
 .arc{fill:none;stroke-width:13;stroke-linecap:butt;}
 .knob{fill:#eef2ef;stroke:#04070a;stroke-width:1.3;}
 .endtick{stroke:rgba(255,255,255,0.18);stroke-width:2.5;stroke-linecap:round;}
 .g-label{align-self:end;justify-self:center;padding-bottom:7px;font-size:11.5px;font-weight:600;
   letter-spacing:3px;color:var(--dim);text-transform:uppercase;}
+/* Samma skäl som ringen: siffran byts varje frame och ligger mitt på diskens
+   gradienter. Eget lager → gradienterna ritas inte om för en textändring. */
 .g-value{align-self:center;justify-self:center;font-size:52px;font-weight:600;line-height:1;
-  letter-spacing:-0.5px;color:var(--green);display:flex;}
+  letter-spacing:-0.5px;color:var(--green);display:flex;transform:translateZ(0);}
 .g-mark{align-self:start;justify-self:center;padding-top:8px;width:26px;height:26px;opacity:.5;}
 .g-label,.g-value,.g-mark{position:relative;z-index:3;}
 .g-mark path,.g-mark line{fill:none;stroke:var(--dim);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
@@ -71,7 +82,11 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;}
 .col + .col::before{content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);
   width:1px;height:52px;background:var(--divider);}
-.time{font-size:40px;font-weight:600;line-height:1;letter-spacing:0.5px;color:var(--ink);display:flex;}
+/* Predicted skrivs om varje frame. Eget lager håller ändringen borta från barens
+   bakgrund, kant och avdelare. Alla tre .time får det: de är lika stora, och en
+   lagergräns som bara gäller den ena hade gjort dem olika skarpa. */
+.time{font-size:40px;font-weight:600;line-height:1;letter-spacing:0.5px;color:var(--ink);display:flex;
+  transform:translateZ(0);}
 .lab{font-size:12.5px;font-weight:600;letter-spacing:1.6px;color:var(--dim);text-transform:uppercase;
   display:flex;align-items:center;gap:7px;white-space:nowrap;}
 .lab svg{width:14px;height:14px;}.lab svg path{fill:currentColor;}

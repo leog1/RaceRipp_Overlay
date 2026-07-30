@@ -1983,9 +1983,11 @@ fn confine_engine(pid: u32) {
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
         SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PRIORITY_CLASS,
     };
-    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, BELOW_NORMAL_PRIORITY_CLASS, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
+    };
 
     unsafe {
         let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
@@ -1994,7 +1996,18 @@ fn confine_engine(pid: u32) {
             return;
         }
         let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        // Jobbet bär TVÅ regler:
+        //  • KILL_ON_JOB_CLOSE — hela motorträdet dör med appen (se ovan).
+        //  • PRIORITY_CLASS = BELOW_NORMAL — motorn ska aldrig konkurrera med
+        //    simulatorns trådar om en kärna. Den behöver ~3 % av en kärna och läser
+        //    delat minne 40 ggr/s; blir den nedprioriterad några millisekunder syns
+        //    det ingenstans, men en schemaläggningskrock mitt i ett spelframe syns
+        //    som en FPS-spik. Priteten gäller HELA jobbet, alltså även PyInstallers
+        //    bootloader och dess barn (§8.1) — det är själva poängen med att sätta
+        //    den på jobbet i stället för på processen.
+        info.BasicLimitInformation.LimitFlags =
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_PRIORITY_CLASS;
+        info.BasicLimitInformation.PriorityClass = BELOW_NORMAL_PRIORITY_CLASS;
         let sized = std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32;
         if SetInformationJobObject(
             job,

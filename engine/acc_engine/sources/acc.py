@@ -12,11 +12,41 @@ from ..frame import Frame
 # hoppas över, men kort nog att en riktig frånkoppling (alt-F4) märks snabbt.
 STALE_S = 2.0
 
+# Hur ofta STATIC-blocket läses om. Det är per definition statiskt (bana, bil,
+# förarnamn, sm-version) och ändras bara vid sessionsbyte — men biblioteket läser om
+# det vid varje anrop. En sekunds fördröjning på ett banbyte märks ingenstans.
+STATIC_S = 1.0
+
 try:
     from pyaccsharedmemory import accSharedMemory  # type: ignore
     _AVAILABLE = True
 except Exception:
     _AVAILABLE = False
+
+# ── Snabbvägen förbi accSharedMemory.read_shared_memory() ────────────────────
+# Biblioteket gör tre saker per anrop som vi inte har råd med 40 ggr/s i en process
+# som delar CPU med simulatorn. Mätt på den här maskinen, µs per anrop:
+#
+#   read_physic_map      69,8      behövs
+#   read_graphics_map   108,7      behövs
+#   read_static_map      22,1      statiskt block — läses nu var STATIC_S
+#   copy.deepcopy        206,7     ren förlust, se nedan
+#
+# Deepcopyn finns bara för att NÄSTA anrop ska kunna jämföra `suspension_travel`
+# (`PhysicsMap.is_equal`) — en jämförelse som kostar 0,2 µs. Att spara hela
+# physics-strukturen för det är 200 µs för fyra flyttal. Vi behåller alltså bara
+# fjädringsvärdet, och dedupen blir exakt densamma.
+#
+# Detta rör bibliotekets INRE (modulnivåfunktionerna och `physicSM`-handtagen), så
+# det är versionskänsligt. Går de inte att importera faller källan tillbaka på
+# `read_shared_memory()` och beter sig precis som förut — långsammare, men rätt.
+try:
+    from pyaccsharedmemory import (  # type: ignore
+        read_physic_map, read_graphics_map, read_static_map,
+    )
+    _FAST_READ = _AVAILABLE
+except Exception:
+    _FAST_READ = False
 
 
 class AccSource(Source):
@@ -30,12 +60,48 @@ class AccSource(Source):
         # Sessionen börjar i depån, så första varvet är alltid ett ut-varv.
         self._out_lap = True
         self._laps: Optional[int] = None
+        # Snabbvägens tillstånd (se _FAST_READ ovan).
+        self._fast = bool(_FAST_READ and self._sm is not None
+                          and hasattr(self._sm, "physicSM"))
+        self._prev_susp = None
+        self._static = None
+        self._static_t = 0.0
+
+    def _read_maps(self):
+        """(physics, graphics, static) — eller None när inget NYTT finns att läsa.
+
+        Samma kontrakt som `accSharedMemory.read_shared_memory()`: `None` betyder
+        "ingen ny data", inte "ACC är borta" (§8.6e). Dedupen är också densamma —
+        biblioteket jämför `suspension_travel` via `PhysicsMap.is_equal`, och det är
+        exakt vad som jämförs här; skillnaden är bara att vi sparar fjädringsvärdet
+        i stället för en deep-kopia av hela strukturen.
+        """
+        if not self._fast:
+            sm = self._sm.read_shared_memory()
+            return None if sm is None else (sm.Physics, sm.Graphics, sm.Static)
+
+        p = read_physic_map(self._sm.physicSM)
+        # packed_id 0 = ACC skriver inte. Biblioteket har samma kontroll (dess
+        # `last_physicsID` sätts till 0 och uppdateras aldrig).
+        if getattr(p, "packed_id", 0) == 0:
+            return None
+        susp = p.suspension_travel
+        if susp == self._prev_susp:
+            return None
+        self._prev_susp = susp
+
+        g = read_graphics_map(self._sm.graphicSM)
+        now = time.monotonic()
+        if self._static is None or (now - self._static_t) >= STATIC_S:
+            self._static = read_static_map(self._sm.staticSM)
+            self._static_t = now
+        return p, g, self._static
 
     def read(self) -> Frame:
         if not self._sm:
             return Frame(connected=False)
-        sm = self._sm.read_shared_memory()
-        if sm is None:
+        maps = self._read_maps()
+        if maps is None:
             # `None` betyder "INGEN NY DATA", inte "ACC är borta": pyaccsharedmemory
             # returnerar None så fort fysikpaketets id inte hunnit ändras sedan förra
             # läsningen, och vi pollar snabbare än ACC alltid hinner skriva.
@@ -51,7 +117,7 @@ class AccSource(Source):
             if self._last is not None and (time.monotonic() - self._last_t) < STALE_S:
                 return replace(self._last)
             return Frame(connected=False)
-        p, g, s = sm.Physics, sm.Graphics, sm.Static
+        p, g, s = maps
 
         # ACC_STATUS: ACC_LIVE == 2 (status kan vara enum eller int)
         st = getattr(g, "status", None)

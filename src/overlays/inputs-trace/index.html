@@ -43,16 +43,32 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent
   background:var(--plot);border:1px solid var(--edge);border-radius:calc(var(--r)*0.5);overflow:hidden;}
 .graph .grid{position:absolute;inset:0;width:100%;height:100%;}
 .graph .grid line{stroke:var(--grid);stroke-width:1;stroke-dasharray:3 4;}
-.graph canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
+/* EGET KOMPOSITORLAGER (translateZ). Utan det bor canvasen i samma lager som
+   panelen, och varje canvasändring — alltså 30 ggr i sekunden — tvingar webbläsaren
+   att RITA OM de rutor lagret består av: panelbakgrund, kant, radie och slagskugga
+   under traces. Det arbetet är CPU-raster, och CPU:n är det simmen redan slåss om.
+   Med eget lager laddas bara canvastexturen upp och GPU:n lägger ihop bilden.
+   translateZ och inte `will-change:transform`: will-change ber Chromium LÅSA
+   rasterskalan, och overlayn skalas av användaren (--H) — då blir innehållet suddigt
+   efter en skaländring i stället för omritat. */
+.graph canvas{position:absolute;inset:0;width:100%;height:100%;display:block;
+  transform:translateZ(0);}
 .bars{display:flex;align-items:flex-end;gap:var(--bar-gap);}
 .bar-col{display:flex;flex-direction:column;align-items:center;width:var(--bar-w);}
+/* Siffran byts upp till 30 ggr/s och låg annars i panelens lager: en textändring
+   ritade om panelbakgrunden under den. Eget lager av samma skäl som canvasen. */
 .bar-value{width:100%;text-align:center;white-space:nowrap;overflow:visible;
   font-size:var(--val-fs);font-weight:600;line-height:1;color:var(--dim);
-  font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;margin-bottom:calc(var(--H)*0.028);}
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;margin-bottom:calc(var(--H)*0.028);
+  transform:translateZ(0);}
 .bar-value.active{color:var(--ink);}
 .bar-slot{position:relative;width:var(--bar-w);height:var(--bar-h);background:var(--track);
   border:1px solid var(--slot-edge);border-radius:var(--bar-r);overflow:hidden;}
-.bar-fill{position:absolute;left:0;right:0;bottom:0;top:0;transform-origin:bottom center;transform:scaleY(0);}
+/* Här är `will-change:transform` RÄTT: elementet animeras faktiskt med transform
+   varje frame, vilket är precis vad flaggan är till för. Utan den ritas stapelspåret
+   (rundade hörn, kant) om vid varje scaleY. */
+.bar-fill{position:absolute;left:0;right:0;bottom:0;top:0;transform-origin:bottom center;
+  transform:scaleY(0);will-change:transform;}
 .bar-fill.clutch{background:var(--clutch);} .bar-fill.brake{background:var(--red);} .bar-fill.throttle{background:var(--green);}
 /* Referensmärke på stapeln: tunn linje vid referensvarvets värde just här på banan.
    Vit och halvgenomskinlig med flit — den ska läsas som "inte du" utan att lägga
@@ -135,6 +151,17 @@ class InputsTrace{
     this.marks={ throttle:root.querySelector('#m-throttle'), brake:root.querySelector('#m-brake') };
     this.samples=[]; this.latest={throttle:0,brake:0,clutch:0,abs:false,tc:false,rThrottle:null,rBrake:null};
     this.disp={throttle:0,brake:0,clutch:0};
+    /* x-koordinaten för varje sampel räknas ut EN gång per frame och återanvänds av
+       alla fyra ritpassen (två spår + två spöken). Förut hade varje pass sin egen
+       closure och räknade om samma tal, alltså fyra gånger per sampel och frame.
+       Arrayen återanvänds mellan frames — en ny typad array 30 ggr/s är skräp åt
+       GC:n, och en GC-paus i en overlay syns som ett hack i spåret. */
+    this._xs=new Float64Array(512);
+    /* Hur många sampel i bufferten som faktiskt BÄR ett referensvärde. Utan
+       räknarna gick spökpassen igenom hela historiken varje frame för att upptäcka
+       att det inte fanns någon referens — vilket är det normala läget innan man kört
+       ett varv, alltså precis när användaren startar sessionen. */
+    this._nRef={rThrottle:0,rBrake:0};
     this.src=SRC_DEFAULT; this._ref=null;
     this.setWindow(4.5);
     this.col=this._readColors(); this._resize();
@@ -169,6 +196,7 @@ class InputsTrace{
        sampel som redan fanns och skrollade ut under flera sekunder, alltså ett
        spökspår som till hälften kom från förra varvet och till hälften från filen. */
     for(const s of this.samples){s.rThrottle=null;s.rBrake=null;}
+    this._nRef.rThrottle=0; this._nRef.rBrake=0;
     this._ref=null;
     this._markBars();
   }
@@ -190,16 +218,24 @@ class InputsTrace{
              rThrottle:held?held.throttle:null, rBrake:held?held.brake:null};
     this.latest=s;
     this.samples.push(s);
+    if(s.rThrottle!==null)this._nRef.rThrottle++;
+    if(s.rBrake!==null)this._nRef.rBrake++;
     const cutoff=s.t-this.HISTORY_MS-200;
-    while(this.samples.length&&this.samples[0].t<cutoff)this.samples.shift();}
+    while(this.samples.length&&this.samples[0].t<cutoff){
+      const old=this.samples.shift();
+      if(old.rThrottle!==null)this._nRef.rThrottle--;
+      if(old.rBrake!==null)this._nRef.rBrake--;}}
   /* Spökspår: referensvarvet i samma kulör som ditt eget, men tunnare och nedtonat,
      ritat UNDER. Samma grepp som MoTeC i2 och RaceLab använder för jämförelsevarv —
      det inför inget nytt färgspråk, så "grönt = gas" håller. ABS/TC färgar med flit
      bara ditt eget spår; referensens vore bara brus. */
-  _drawGhost(now,key,color,pxPerMs){
+  _drawGhost(key,color,xs){
     if(this.src==='off')return;
+    // Ingen referens i bufferten: hoppa hela passet i stället för att gå igenom
+    // historiken för att upptäcka det. Det är normalläget innan man kört ett varv,
+    // alltså precis när sessionen börjar.
+    if(this._nRef[key]<2)return;
     const s=this.samples,n=s.length; if(n<2)return; const ctx=this.ctx;
-    const X=smp=>this.cw-(now-smp.t)*pxPerMs;
     ctx.save();
     ctx.globalAlpha=GHOST_ALPHA;
     ctx.strokeStyle=color;
@@ -210,7 +246,7 @@ class InputsTrace{
     for(let k=0;k<n;k++){
       const v=s[k][key];
       if(typeof v!=='number'||!isFinite(v)){started=false;continue;}  // hål = ingen referens där
-      const x=X(s[k]),y=this._yOf(v);
+      const x=xs[k],y=this._yOf(v);
       if(started){ctx.lineTo(x,y);any=true;} else {ctx.moveTo(x,y);started=true;}
     }
     // Stroke bara om vi faktiskt la till geometri. Utan detta anropades stroke() på
@@ -234,27 +270,35 @@ class InputsTrace{
         varje frame. Subpixel-x rör sig jämnt; kantutjämningen tar hand om skärpan.
      lineCap 'round' hör ihop med 1: färgbytena (ABS/TC) ritas som EGNA strokes, och
      med avhuggna ändar syntes en hårfin skarv i varje övergång. */
-  _drawLine(now,key,flag,base,alt,pxPerMs){
+  _drawLine(key,flag,base,alt,xs){
     const s=this.samples,n=s.length; if(n<2)return; const ctx=this.ctx;
-    const X=smp=>this.cw-(now-smp.t)*pxPerMs;
     ctx.lineWidth=this.traceW;ctx.lineJoin='round';ctx.lineCap='round';
     let k=0;
     while(k<n-1){const segAlt=s[k][flag]||s[k+1][flag];ctx.strokeStyle=segAlt?alt:base;
-      ctx.beginPath();ctx.moveTo(X(s[k]),this._yOf(s[k][key]));ctx.lineTo(X(s[k+1]),this._yOf(s[k+1][key]));
-      let m=k+1;while(m<n-1&&((s[m][flag]||s[m+1][flag])===segAlt)){ctx.lineTo(X(s[m+1]),this._yOf(s[m+1][key]));m++;}
+      ctx.beginPath();ctx.moveTo(xs[k],this._yOf(s[k][key]));ctx.lineTo(xs[k+1],this._yOf(s[k+1][key]));
+      let m=k+1;while(m<n-1&&((s[m][flag]||s[m+1][flag])===segAlt)){ctx.lineTo(xs[m+1],this._yOf(s[m+1][key]));m++;}
       ctx.stroke();k=m;}}
+  /* x för varje sampel, en gång per frame. Arrayen växer men krymper aldrig — den
+     är bunden av historiklängden och ska återanvändas, inte allokeras om. */
+  _xAxis(now){
+    const s=this.samples,n=s.length,pxPerMs=this.cw/this.VISIBLE_MS;
+    if(this._xs.length<n){let cap=this._xs.length||512;while(cap<n)cap*=2;this._xs=new Float64Array(cap);}
+    const xs=this._xs,cw=this.cw;
+    for(let k=0;k<n;k++)xs[k]=cw-(now-s[k].t)*pxPerMs;
+    return xs;}
   _render(dt){
     const ctx=this.ctx,now=Clock.now(),col=this.col;
-    ctx.clearRect(0,0,this.cw,this.ch);ctx.save();
-    ctx.beginPath();ctx.rect(0,0,this.cw,this.ch);ctx.clip();
-    const pxPerMs=this.cw/this.VISIBLE_MS;
+    /* Ingen egen clip-path. Canvas klipper ändå allt till sin egen yta, så
+       rect+clip var ett extra tillstånd i ritstacken varje frame — och en clip kan
+       tvinga fram ett eget renderpass i den GPU-accelererade canvasen. */
+    ctx.clearRect(0,0,this.cw,this.ch);
+    const xs=this._xAxis(now);
     // Ritordningen är hela poängen: spöket underst, sedan broms, sedan gas överst.
     // Din egen insats får aldrig hamna bakom referensens.
-    this._drawGhost(now,'rBrake',col.red,pxPerMs);
-    this._drawGhost(now,'rThrottle',col.green,pxPerMs);
-    this._drawLine(now,'brake','abs',col.red,col.abs,pxPerMs);
-    this._drawLine(now,'throttle','tc',col.green,col.tc,pxPerMs);
-    ctx.restore();
+    this._drawGhost('rBrake',col.red,xs);
+    this._drawGhost('rThrottle',col.green,xs);
+    this._drawLine('brake','abs',col.red,col.abs,xs);
+    this._drawLine('throttle','tc',col.green,col.tc,xs);
     const a=prefersReduced?1:(1-Math.exp(-dt/TAU));   // tidsbaserad, oberoende av Hz
     for(const key of ['throttle','brake','clutch']){
       this.disp[key]+=(this.latest[key]-this.disp[key])*a;const v=this.disp[key];

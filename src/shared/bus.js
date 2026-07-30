@@ -143,28 +143,93 @@ const IN_PREVIEW = (() => { try { return window.self !== window.top; } catch { r
  *  Utan tak ritades canvasen om vid varje vsync (144 Hz på en gamingskärm) på ett
  *  transparent always-on-top-fönster — det var en del av FPS-tappet (§3).
  *
+ *  ── Att BEGÄRA ett frame kostar även när man inte ritar ─────────────────────
+ *  Hz-taket ovan hoppade bara ARBETET. rAF begärdes ändå vid varje vsync, och en
+ *  begäran är inte gratis: GPU-processen skickar BeginFrame till renderaren, dess
+ *  kompositortråd väcker huvudtråden, callbacken körs, ingen skada rapporteras.
+ *  På 144 Hz blev det ~114 sådana rundor i sekunden PER overlay-fönster som gjorde
+ *  exakt ingenting — och de håller dessutom hela framepipelinen aktiv i stället för
+ *  att låta den gå ner i vila mellan ritningarna.
+ *
+ *  Därför sover loopen bort merparten av väntan i en TIMER och kopplar in rAF först
+ *  de sista `WAKE_MARGIN_MS` före deadline. Marginalen finns för att Windows
+ *  timerupplösning kan vara 15,6 ms: vaknar timern sent ska det fortfarande finnas
+ *  gott om tid kvar till deadline, så att den sista biten görs av rAF och renderingen
+ *  hamnar på rätt vsync. Utan marginal hade takten blivit ojämn i stället för billig,
+ *  och en ojämn takt är precis vad §8.5 handlar om.
+ *
+ *  Är overlayn dold (grinden) finns ingen deadline att passa alls — då sover loopen
+ *  i långa svep i stället för att ticka rAF 144 ggr/s bakom ett dolt fönster.
+ *
  *  @param {(dt:number, now:number)=>void} tick  dt i sekunder, now = rAF-tiden (ms)
  *  @param {{hz?:number, dtCap?:number}} [opts]  hz: explicit → INIT.hz → 30
  */
+/* Hur nära deadline vi växlar från timer till rAF.
+   12 ms är valt mot Windows timerkorn på 15,6 ms: vaknar timern ett helt korn för
+   sent hamnar vi 3,6 ms EFTER deadline, och renderingen görs då av första vsyncen
+   därefter — alltså högst en skärmframe senare än om vi väntat med rAF hela vägen.
+   Större marginal är inte säkrare, den är bara dyrare: varje vsync inom marginalen
+   är en tom rAF-runda till. */
+const WAKE_MARGIN_MS = 12;
+/* Sovtid när grinden döljer overlayn. Ingen ritar, och att komma tillbaka styrs av
+   WebSocket-ramar och skal-event — inte av loopen. */
+const GATED_SLEEP_MS = 250;
+/* Loopar som sover och behöver väckas när grinden slutar dölja overlayn. Utan detta
+   hade den långa sovtiden ovan kostat upp till 250 ms med en INAKTUELL bild när man
+   tabbade in i ACC igen — fönstret visas direkt, men innehållet är det som ritades
+   innan grinden slog till. §8.5b:s regel är att återkomsten sker omedelbart. */
+const _wakers = new Set();
+
 export function startLoop(tick, opts = {}) {
   const hz = opts.hz || (INIT && INIT.hz) || 30;
   const FRAME_MS = 1000 / hz;
   const dtCap = typeof opts.dtCap === 'number' ? opts.dtCap : 0.25;
   let lastT = performance.now(), nextT = lastT, live = true;
-  function step(now) {
+  let timer = 0, raf = 0;
+
+  function arm() {
+    timer = 0;
+    if (live) raf = requestAnimationFrame(step);
+  }
+  function schedule(now) {
     if (!live) return;
-    requestAnimationFrame(step);
-    if (now < nextT) return;
-    nextT = Math.max(now, nextT + FRAME_MS);
+    // Dold overlay: inget att passa, sov långt. Annars sov bort allt utom
+    // marginalen och låt rAF ta den sista biten så renderingen landar på en vsync.
+    const wait = (_gateHidden === true)
+      ? GATED_SLEEP_MS
+      : nextT - now - WAKE_MARGIN_MS;
+    if (wait > 1) timer = setTimeout(arm, wait);
+    else arm();
+  }
+  function step(now) {
+    raf = 0;
+    if (!live) return;
     // Rita inte alls när overlayn är dold. Fönstret är OS-dolt i det läget, så
-    // arbetet syns ingenstans — men rAF fortsätter ticka och canvas ritades om
-    // 30 ggr/s i onödan. lastT flyttas fram så dt inte hoppar vid återkomsten.
-    if (_gateHidden === true) { lastT = now; return; }
+    // arbetet syns ingenstans. lastT flyttas fram så dt inte hoppar vid återkomsten,
+    // och deadlinen flyttas med så vi inte vaknar till en hög förfallna frames.
+    if (_gateHidden === true) { lastT = now; nextT = now + FRAME_MS; return schedule(now); }
+    if (now < nextT) return schedule(now);
+    nextT = Math.max(now, nextT + FRAME_MS);
     const dt = Math.min(dtCap, (now - lastT) / 1000); lastT = now;
     tick(dt, now);
+    schedule(performance.now());
   }
-  requestAnimationFrame(step);
-  return () => { live = false; };
+  // Grinden släppte: rita så fort som möjligt i stället för att sova klart.
+  const waker = () => {
+    if (!live || raf) return;
+    if (timer) { clearTimeout(timer); timer = 0; }
+    nextT = performance.now();
+    arm();
+  };
+  _wakers.add(waker);
+
+  schedule(performance.now());
+  return () => {
+    live = false;
+    _wakers.delete(waker);
+    if (timer) { clearTimeout(timer); timer = 0; }
+    if (raf) { try { cancelAnimationFrame(raf); } catch {} raf = 0; }
+  };
 }
 
 // Hur länge `connected:false` måste hålla i sig innan grinden döljer overlayn.
@@ -286,6 +351,9 @@ function _applyGate() {
   _gateHidden = hidden;
   document.documentElement.style.visibility = hidden ? 'hidden' : '';
   _applyOsVisibility(hidden);
+  // Loopen sover långt medan overlayn är dold — väck den så bilden är färsk i samma
+  // ögonblick som fönstret kommer tillbaka, inte upp till en sovperiod senare.
+  if (!hidden) { for (const w of _wakers) { try { w(); } catch {} } }
 }
 
 // Grinden sätts direkt vid modulladdning, inte först när get_globals svarar.

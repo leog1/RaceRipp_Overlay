@@ -5,43 +5,74 @@ import asyncio, json
 import websockets
 
 
+class _Client:
+    """En ansluten klient med EN långlivad skrivtråd och en enda ram i kö.
+
+    Slotten `pending` är hela flödeskontrollen: broadcast lägger den färskaste ramen
+    där och väcker skrivaren. Hinner skrivaren inte med skrivs slotten bara över, och
+    klienten hoppar de mellanliggande ramarna — färsk telemetri är ändå det enda som
+    är värt något för en overlay.
+    """
+
+    __slots__ = ("ws", "pending", "wake", "task")
+
+    def __init__(self, ws):
+        self.ws = ws
+        self.pending = None
+        self.wake = asyncio.Event()
+        self.task = None
+
+
 class Bus:
     def __init__(self):
-        # ws -> pågående send-task (eller None). Vi håller reda på tasken för att
-        # kunna HOPPA en ram för en klient som inte hunnit ta emot förra.
-        self._clients: dict = {}
+        self._clients: dict = {}          # ws → _Client
 
     async def handler(self, ws):
-        self._clients[ws] = None
+        c = _Client(ws)
+        self._clients[ws] = c
+        c.task = asyncio.create_task(self._writer(c))
         try:
             await ws.wait_closed()
         finally:
             self._clients.pop(ws, None)
+            c.task.cancel()
 
     async def broadcast(self, frame: dict):
         """Skickar utan att blockera läsloopen.
 
-        Tidigare awaitades varje ws.send() i tur och ordning: en trög klient
-        (minimerad OBS, strypt browserflik) stallade hela 40 Hz-loopen och ALLA
-        overlays hackade. Nu skickas ramar parallellt, och en klient som ligger
-        efter får hoppa framen i stället — färsk telemetri är ändå det enda som
-        är värt något.
+        Två saker som var för sig har kostat prestanda och som båda ligger i den här
+        metoden:
+
+        • Awaita ALDRIG klienterna i tur och ordning. En trög klient (minimerad OBS,
+          strypt browserflik) stallade då hela 40 Hz-loopen och alla overlays hackade.
+
+        • Skapa inte en task per klient och ram heller. Det var lösningen på det
+          förra, men en `asyncio.create_task` är inte gratis: med tre klienter blev
+          det 120 tasks i sekunden som skapades, schemalades och slängdes — allokering
+          och GC-tryck i en process som delar CPU med simulatorn. Varje klient har
+          därför nu EN skrivare som lever hela anslutningen och väcks med en Event.
         """
         if not self._clients:
             return
         msg = json.dumps(frame, separators=(",", ":"))
-        for ws, task in list(self._clients.items()):
-            if task is not None and not task.done():
-                continue                      # hänger efter → hoppa denna ram
-            self._clients[ws] = asyncio.create_task(self._send(ws, msg))
+        for c in self._clients.values():
+            c.pending = msg
+            c.wake.set()
 
-    async def _send(self, ws, msg: str):
-        # Fångar allt: en död klient ska bara försvinna ur setet, aldrig ge en
-        # oupphämtad task-exception.
+    async def _writer(self, c: _Client):
         try:
-            await ws.send(msg)
+            while True:
+                await c.wake.wait()
+                c.wake.clear()
+                msg, c.pending = c.pending, None
+                if msg is None:
+                    continue
+                await c.ws.send(msg)
+        except asyncio.CancelledError:
+            raise
         except Exception:
-            self._clients.pop(ws, None)
+            # Död klient: ur kartan och tyst ut. Aldrig en oupphämtad task-exception.
+            self._clients.pop(c.ws, None)
 
     async def start(self, host: str, port: int):
         """Startar servern. Kastar OSError om porten redan är upptagen
