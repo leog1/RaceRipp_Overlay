@@ -1654,7 +1654,13 @@ function renderOptions(o){
 // ?id= säger åt bus.js vilken overlay detta är: iframen kör inuti "control"-
 // fönstret, så fönstrets label hade gett fel id och previewn hade aldrig fått
 // rätt sparad skala/opacitet eller reagerat på config/option-event.
+/* Sätts av pausePreviewWhenHidden längre ner. Ligger här för att setPreview aldrig
+   ska ladda in overlayn igen medan panelen är ur fokus — då hade en tangentbordsstyrd
+   listbyte startat previewns WebSocket mitt under körning, vilket är precis vad pausen
+   finns för att stoppa. */
+let previewPaused = false;
 function setPreview(o){
+  if (previewPaused) return;
   const pv = $('pv');
   const src = '../' + o.url + '?id=' + encodeURIComponent(o.id);
   if (pv.dataset.src !== src){
@@ -1941,10 +1947,9 @@ const statusSocket = (function statusLoop(){
    Ingen synlig skillnad: panelen är per definition inte synlig i det läget. */
 (function pausePreviewWhenHidden(){
   const pv = $('pv');
-  let paused = false;
   const setPaused = (v) => {
-    if (v === paused) return;
-    paused = v;
+    if (v === previewPaused) return;
+    previewPaused = v;
     pv.style.display = v ? 'none' : '';
     if (v){
       // dataset.src nollas också, annars tror setPreview att rätt sida redan är
