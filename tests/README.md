@@ -22,8 +22,9 @@ python tests/broadcast_protocol.py    # Broadcasting-UDP mot en falsk ACC-server
 ```
 `pnpm test` kör de sju Node-testerna. Python-testerna körs **från repo-roten**.
 
-`panel-layout.mjs` är det enda testet med ett yttre beroende: det startar **Chrome**
-headless och driver panelen över CDP. Hittas ingen Chrome FALLER testet med en
+`panel-layout.mjs` är det enda testet med yttre beroenden: det startar **Chrome**
+headless och driver panelen över CDP med global `WebSocket`, som finns **från Node 21**
+(CI kör 22 av det skälet — på 20 föll steget med `WebSocket is not defined`). Hittas ingen Chrome FALLER testet med en
 sökvägslista i felet — det hoppar aldrig tyst över sig själv (§9). Egen sökväg:
 `CHROME=<...\chrome.exe> node tests/panel-layout.mjs`. GitHubs `windows-latest` har
 Chrome förinstallerad, så det går igenom i CI som det är.

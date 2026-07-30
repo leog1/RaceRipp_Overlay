@@ -129,7 +129,13 @@ window.__PANEL_TEST__ = { calls: [] };
 `;
 
 /* ── liten CDP-klient ────────────────────────────────────────────────────────
-   Node har global WebSocket och fetch, så det behövs inget beroende. */
+   Node har global WebSocket och fetch, så det behövs inget beroende — men BARA från
+   Node 21. På 20 finns ingen global WebSocket, och felet blir ett naket
+   "WebSocket is not defined" mitt i en release. Säg det rakt ut i stället. */
+if (typeof WebSocket === 'undefined'){
+  throw new Error(`Node ${process.version} saknar global WebSocket (finns från v21). ` +
+                  'CDP-klienten här bygger på den — kör testet med Node 22 eller senare.');
+}
 async function connect(port){
   // Filtrera på type:'page'. /json/list listar ÄVEN bakgrundssidor och
   // tjänstearbetare för det som ligger i profilen, och de kommer först — ansluter
