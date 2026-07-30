@@ -8,7 +8,8 @@
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",
-    "test": "node tests/overlay-delta-bar.mjs && node tests/overlay-inputs-trace.mjs && node tests/overlay-loop.mjs && node tests/overlay-gate.mjs && node tests/overlay-options.mjs && node tests/overlay-preview.mjs && node tests/panel-layout.mjs"
+    "test": "node tests/overlay-delta-bar.mjs && node tests/overlay-inputs-trace.mjs && node tests/overlay-loop.mjs && node tests/overlay-gate.mjs && node tests/overlay-options.mjs && node tests/overlay-preview.mjs",
+    "test:panel": "node tests/panel-layout.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

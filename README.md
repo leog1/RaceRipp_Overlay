@@ -120,9 +120,9 @@ pnpm tauri build                          # installer i src-tauri/target/release
 ```
 `externalBin` ligger kvar i `src-tauri/tauri.conf.json`, så sidecarn måste vara byggd
 minst en gång även för `pnpm tauri dev`. **Bygg om den efter varje ändring i `engine/`**,
-annars kör du gammal motorkod. Tester: `pnpm test` (overlays + panelens layout-flik,
-den sista kräver Chrome) + `python tests/<namn>.py` från repo-roten — se
-`tests/README.md`.
+annars kör du gammal motorkod. Tester: `pnpm test` (overlays), `pnpm test:panel`
+(panelens layout-flik, kräver Chrome) och `python tests/<namn>.py` från repo-roten —
+se `tests/README.md`.
 
 ## Auto-update via GitHub
 1. Publikt repo. Byt `OWNER/REPO` i `src-tauri/tauri.conf.json` → `plugins.updater.endpoints`.

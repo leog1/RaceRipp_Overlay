@@ -128,6 +128,16 @@ window.__PANEL_TEST__ = { calls: [] };
 })();
 `;
 
+// Allt vi vet om Chrome-processen, i ett stycke. Läggs på varje anslutningsfel: på en
+// CI-runner är det enda man har att gå på.
+let chromeErr = '', chromeExit = null;
+function chromeDiag(){
+  return [
+    'chrome: ' + (chromeExit ? 'avslutade med ' + chromeExit : 'kör fortfarande'),
+    'stderr: ' + (chromeErr.trim() || '(tomt)'),
+  ].join(' | ');
+}
+
 /* ── liten CDP-klient ────────────────────────────────────────────────────────
    Node har global WebSocket och fetch, så det behövs inget beroende — men BARA från
    Node 21. På 20 finns ingen global WebSocket, och felet blir ett naket
@@ -150,9 +160,15 @@ async function connect(port){
     if (target) break;
     await new Promise(r => setTimeout(r, 100));
   }
-  if (!target) throw new Error('Chrome svarade inte med någon sidflik på felsökningsporten.');
+  if (!target) throw new Error('Chrome svarade inte med någon sidflik på felsökningsporten. ' + chromeDiag());
   const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((ok, no) => { ws.onopen = ok; ws.onerror = () => no(new Error('WS-fel')); });
+  await new Promise((ok, no) => {
+    ws.onopen = ok;
+    // Vanligaste orsaken här är Origin-kontrollen ovan; säg det i felet i stället för
+    // att lämna ett naket "WS-fel".
+    ws.onerror = (e) => no(new Error('kunde inte öppna DevTools-socketen (' +
+      (e && e.message ? e.message : 'okänt fel') + ') ' + chromeDiag()));
+  });
   let id = 0;
   const waiting = new Map();
   ws.onmessage = (e) => {
@@ -215,6 +231,10 @@ const profil = mkdtempSync(join(tmpdir(), 'simmatrix-panel-'));
 const port = 9333 + (process.pid % 400);
 const chrome = spawn(findChrome(), [
   '--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profil}`,
+  // Chrome avvisar DevTools-anslutningar med en `Origin`-header sedan 111. Skickar
+  // klienten en (Node-versionerna gör olika) stängs socketen direkt, och felet syns
+  // bara som "Chrome svarade inte". Tillåt den uttryckligen.
+  '--remote-allow-origins=*',
   '--window-size=1440,900', '--force-prefers-reduced-motion',
   '--no-first-run', '--no-default-browser-check', '--disable-gpu',
   // Headless-Chrome stryper timers i fönster den anser vara i bakgrunden, och
@@ -224,7 +244,12 @@ const chrome = spawn(findChrome(), [
   '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
   '--disable-renderer-backgrounding',
   'about:blank',
-], { stdio: 'ignore' });
+  // stderr fångas i stället för att kastas bort: startar Chrome inte alls är dess egen
+  // utskrift det ENDA som säger varför, och utan den blir CI-felet "Chrome svarade
+  // inte" — en återvändsgränd man inte kan felsöka på distans.
+], { stdio: ['ignore', 'ignore', 'pipe'] });
+chrome.stderr.on('data', d => { chromeErr += d; });
+chrome.on('exit', (code, sig) => { chromeExit = `kod ${code} signal ${sig}`; });
 
 let cdp;
 try {

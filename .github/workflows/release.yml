@@ -16,6 +16,36 @@ permissions:
   contents: write
 
 jobs:
+  # Panelens layouttest kor i ett EGET jobb, inte i release-jobbet. Skalet: det
+  # startar Chrome, och en releasepipeline ska inte kunna falla pa att en runner
+  # saknar en webblasare — bygget och publiceringen behover ingen. Jobbet gatar
+  # alltsa ingenting, men det gar rott om testet faller, sa felet ar fortfarande
+  # synligt och maste rattas. Det ar skillnaden mot att hoppa over testet.
+  panel:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install
+      - name: Kor panelens layouttest (Chrome)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          # Vilken Chrome runnern faktiskt har, innan testet startar den: faller
+          # steget ar det forsta man vill veta.
+          Get-ChildItem "C:\Program Files\Google\Chrome\Application\chrome.exe",
+                        "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" `
+                        -ErrorAction SilentlyContinue |
+            Select-Object FullName, VersionInfo
+          pnpm test:panel
+
   build:
     runs-on: windows-latest
     steps:

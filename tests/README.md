@@ -20,11 +20,17 @@ python tests/engine_smoke.py          # motorn: ramschema, takt, portkonflikt
 python tests/motec_reference.py       # MoTeC-delta mot en riktig .ld
 python tests/broadcast_protocol.py    # Broadcasting-UDP mot en falsk ACC-server
 ```
-`pnpm test` kör de sju Node-testerna. Python-testerna körs **från repo-roten**.
+`pnpm test` kör de sex overlay-testerna. `pnpm test:panel` kör panel-testet.
+Python-testerna körs **från repo-roten**.
 
 `panel-layout.mjs` är det enda testet med yttre beroenden: det startar **Chrome**
 headless och driver panelen över CDP med global `WebSocket`, som finns **från Node 21**
-(CI kör 22 av det skälet — på 20 föll steget med `WebSocket is not defined`). Hittas ingen Chrome FALLER testet med en
+(CI kör 22 av det skälet — på 20 föll steget med `WebSocket is not defined`).
+Det ligger därför i ett **eget script och ett eget CI-jobb**, inte i `pnpm test`: en
+releasepipeline ska inte kunna falla på att en runner saknar en webbläsare, och
+bygget behöver ingen. Jobbet gatar alltså inte releasen — men det går rött när
+testet faller, så felet är fortfarande synligt. Det är skillnaden mot att hoppa
+över det. Hittas ingen Chrome FALLER testet med en
 sökvägslista i felet — det hoppar aldrig tyst över sig själv (§9). Egen sökväg:
 `CHROME=<...\chrome.exe> node tests/panel-layout.mjs`. GitHubs `windows-latest` har
 Chrome förinstallerad, så det går igenom i CI som det är.

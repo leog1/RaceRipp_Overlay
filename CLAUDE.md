@@ -1546,10 +1546,12 @@ Handlern tar **ett** argument (`ws`), inte `(ws, path)`.
 
 ## 9. Så verifierar du utan att gissa
 Testerna ligger i `tests/` — **`tests/README.md` är sanningskällan** för vad varje test
-bevakar och hur man visar att det biter. `pnpm test` kör de sju
-Node-testerna; de sex Python-testerna körs var för sig från repo-roten.
-`tests/panel-layout.mjs` är det enda med ett yttre beroende (Chrome) — det FALLER med en
-sökvägslista om Chrome saknas i stället för att hoppa över sig själv.
+bevakar och hur man visar att det biter. `pnpm test` kör de sex
+overlay-testerna; de sex Python-testerna körs var för sig från repo-roten.
+`pnpm test:panel` kör panelens layouttest, som är det enda med ett yttre beroende
+(Chrome). Det bor i ett eget CI-JOBB som inte gatar releasen — bygget behöver ingen
+webbläsare, och en releasepipeline som faller på att en runner saknar en är fel sorts
+koppling. Det går ändå rött när testet faller, alltså inget tyst hopp över (§9).
 **CI kör alla utom `motec_reference.py`**, som kräver en `.ld` och därför alltid
 hoppar över sig själv. Två regler som gäller allt testarbete här:
 - **Ett test som inte kan falla bevisar ingenting.** Kör varje nytt test mot revisionen
