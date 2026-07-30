@@ -13,6 +13,7 @@ node tests/overlay-gate.mjs           # synk-grinden: blinkar overlayn?
 node tests/overlay-options.mjs        # typade alternativ, före första paint
 node tests/overlay-preview.mjs        # previewn får aldrig fönstrets skala
 node tests/panel-layout.mjs           # layout-flikens geometri (kräver Chrome)
+node tests/overlay-window-fit.mjs     # ryms overlayn + skuggan i fönstret? (Chrome)
 python tests/acc_source.py            # "ingen ny data" != frånkopplad, ut-varv
 python tests/delta_source.py          # vilken referens deltat kommer från
 python tests/lap_recorder.py          # motorns egna varvinspelningar (förra/bästa)
@@ -20,11 +21,13 @@ python tests/engine_smoke.py          # motorn: ramschema, takt, portkonflikt
 python tests/motec_reference.py       # MoTeC-delta mot en riktig .ld
 python tests/broadcast_protocol.py    # Broadcasting-UDP mot en falsk ACC-server
 ```
-`pnpm test` kör de sex overlay-testerna. `pnpm test:panel` kör panel-testet.
-Python-testerna körs **från repo-roten**.
+`pnpm test` kör de sex overlay-testerna. `pnpm test:panel` kör de två som behöver en
+webbläsare (panel-layout och overlay-window-fit). Python-testerna körs **från
+repo-roten**.
 
-`panel-layout.mjs` är det enda testet med yttre beroenden: det startar **Chrome**
-headless och driver panelen över CDP med global `WebSocket`, som finns **från Node 21**
+`panel-layout.mjs` och `overlay-window-fit.mjs` är de enda testerna med yttre
+beroenden: de startar **Chrome**
+headless och driver sidan över CDP med global `WebSocket`, som finns **från Node 21**
 (CI kör 22 av det skälet — på 20 föll steget med `WebSocket is not defined`).
 Det ligger därför i ett **eget script och ett eget CI-jobb**, inte i `pnpm test`: en
 releasepipeline ska inte kunna falla på att en runner saknar en webbläsare, och
@@ -241,11 +244,16 @@ skalat Nordschleife-varv.
 
 ## panel-layout.mjs
 Layout-flikens **geometri**, mätt i en riktig webbläsare: skärmvyns proportioner, att
-varje box ligger och mäter som overlayns riktiga fönster gör, att snappningen väljer
-NÄRMASTE kandidat (inte första träffen — annars går en bred overlay aldrig att
-centrera), att inställningsgrupperna är hopfällda tills man öppnar dem, att skärmvyn och
-stacken linjerar utan vågrät skroll, och att lägg till / ta bort går genom `set_enabled`
-(medlemskap i en layout ÄR påslagen, CLAUDE.md §2).
+varje box ligger och mäter som overlayns INNEHÅLL gör (inte som fönstret — fönstret bär
+ett skuggrum, och ritar vyn det hamnar det man ser en bit in från den plats man siktade
+på), att snappningen väljer NÄRMASTE kandidat (inte första träffen — annars går en bred
+overlay aldrig att centrera) och att den snappar mot den användbara ytan INNANFÖR
+kantmarginalen, att en vald box markeras i inställningslistan, att en egen upplösning
+ändrar vyns form och att antalet skärmar ritar skarvarna, att inställningsgrupperna är
+hopfällda tills man öppnar dem (utom skärmvyns egen, som är öppen), att skärmvyn och
+stacken linjerar utan vågrät skroll, och — viktigast — att **dölja inte är att ta bort**:
+ögat skriver `set_enabled` och boxen ligger kvar nedtonad, × skriver `set_member`
+(CLAUDE.md §2).
 
 Harnessen duger inte här: det som kan gå sönder finns bara i layouten, alltså i
 `getBoundingClientRect`. Panelen körs därför i headless Chrome mot en Tauri-stubb och
@@ -261,6 +269,31 @@ Två saker som gjorde testet trubbigt innan de rättades, och som är lätta att
   `getComputedStyle`-stubben ovan).
 
 Kräver Chrome. Se listan högst upp för hur den pekas ut.
+
+## overlay-window-fit.mjs
+**Bevakar:** att varje overlay ryms i sitt fönster MED sin slagskugga, vid skala 0,6 /
+1,0 / 1,6 — och att `contentWidth`/`contentHeight` i registret är sanna. Ett
+overlay-fönster är transparent och klipper allt utanför sig, så skuggan behöver
+riktig plats innanför kanten (`baseWidth` = innehåll + skuggrum, `padLeft`/`padTop` =
+var innehållet börjar). Skärmvyn i Layout-fliken ritar `content_*`, så ljuger de
+talen hamnar varje overlay fel på skärmen utan att något syns i panelen.
+
+Sidorna serveras över **HTTP** och inte som `file://`: ES-moduler över `file://`
+blockeras av CORS, alltså laddas `bus.js` aldrig och varken skalan eller marginalen
+tillämpas — mätningen ser då ut att hitta fel som inte finns. Sista passet kör
+**utan `__OVERLAY_INIT__`**, alltså som OBS och en vanlig webbläsare gör det: där
+gäller CSS-fallbacken, och den räknas i en `calc()` med `var(--ui-scale)` — en
+`calc()` med en odefinierad variabel är ogiltig, och då hamnar innehållet i
+fönstrets hörn med skuggan avklippt. Det var en riktig bugg.
+
+Skuggans räckvidd står som en tabell i testet (läst ur overlayernas CSS) och är det
+KRAV registret ska uppfylla. En overlay som saknas i tabellen får testet att falla:
+en ny overlay ska inte kunna glida in utan att någon räknat på dess skuggrum.
+
+**Visa att det biter:** tre varianter är körda och föll — ta bort `--ui-scale` ur
+både `tokens.css` och inputs-trace (de två kontrollerna utan INIT faller), lås
+inputs-traces `#ui` till fasta `top/left` (4 kontroller), sänk dess `baseHeight`
+till 222 (bottenkravet vid alla tre skalorna).
 
 ## Att lägga till en overlay-test
 ```js

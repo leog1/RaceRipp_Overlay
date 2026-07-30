@@ -20,12 +20,17 @@
  *
  * SÅ VISAR DU ATT TESTET BITER (§9): kör det mot en medvetet trasig variant.
  * Prova t.ex. i src/control-panel/index.html
- *   - ta bort `snapAxis`-anropen i pointermove  → 5 kontroller i 4 faller
- *   - ta första träffen i stället för närmaste  → 4 kontroller i 4 faller
- *   - strunta i `o.scale` i ovW()               → kontroll 3 och 4 faller
- *   - byt `st[grp.id] === true` mot `!== false` → 6 kontroller i 5 faller
- *   - sätt `stageK` till ett fast tal           → kontroll 2 faller
- * Alla fem är körda och föll. Kontroll 2 är därför medvetet räknad ur BEHÅLLAREN
+ *   - ta bort `snapAxis`-anropen i pointermove   → 5 kontroller i 4 faller
+ *   - ta första träffen i stället för närmaste   → 4 kontroller i 4 faller
+ *   - strunta i `o.scale` i ovW()                → kontroll 3 och 4 faller
+ *   - byt `st[grp.id] === true` mot `!== false`  → 6 kontroller i 5 faller
+ *   - sätt `stageK` till ett fast tal            → kontroll 2 faller
+ *   - rita FÖNSTRET i placeBox (o.x/o.y i st.f.  → 9 kontroller faller
+ *     ovX/ovY)
+ *   - låt layRemove anropa set_enabled           → kontroll 7 faller
+ *   - snappa mot skärmen i st.f. den användbara  → 6 kontroller i 4 faller
+ *     ytan (start=0, span=skärmen)
+ * Alla åtta är körda och föll. Kontroll 2 är därför medvetet räknad ur BEHÅLLAREN
  * och inte ur panelens `stageK`: en kontroll som hämtar omräkningsfaktorn ur koden
  * den granskar stämmer alltid mot sig själv och kan inte falla.
  */
@@ -65,26 +70,41 @@ const STUB = `
 window.__PANEL_TEST__ = { calls: [] };
 (function(){
   const SCREEN = { width: 1920, height: 1080 };
+  /* Fönstret är STÖRRE än innehållet: base_* är innehåll + skuggrum, medan content_ och pad_
+     beskriver det man faktiskt ser. Fixturen har därför olika padding på de två
+     overlays som ingår — en fixtur utan padding hade gjort hela innehållsräkningen
+     osynlig (en box på fönstrets plats och en på innehållets ser likadana ut när
+     paddingen är noll). */
   const defs = [
     { id: 'delta-bar', title: 'Delta + Lap-time Row', desc: 'D', url: 'overlays/delta-bar/index.html',
-      base_width: 810, base_height: 310, x: 460, y: 40, scale: 1.0, opacity: 1, enabled: true,
+      base_width: 800, base_height: 274, content_width: 736, content_height: 200,
+      pad_left: 36, pad_top: 20,
+      x: 424, y: 40, scale: 1.0, opacity: 1, enabled: true, member: true,
       option_defs: [
         { id: 'predicted', label: 'Predicted-kolumn', default: true },
         { id: 'col-green', type: 'color', label: 'Snabbare', default: '#0DE622' },
       ], options: { predicted: true, 'col-green': '#0DE622' } },
     { id: 'inputs-trace', title: 'Inputs Trace', desc: 'I', url: 'overlays/inputs-trace/index.html',
-      base_width: 744, base_height: 200, x: 100, y: 700, scale: 0.8, opacity: 0.9, enabled: true,
+      base_width: 808, base_height: 264, content_width: 744, content_height: 200,
+      pad_left: 32, pad_top: 22,
+      x: 100, y: 700, scale: 0.8, opacity: 0.9, enabled: true, member: true,
       option_defs: [
         { id: 'window', type: 'float', label: 'Tidsfönster', default: 4.5, min: 2, max: 10, step: 0.5, unit: ' s' },
       ], options: { window: 4.5 } },
     { id: 'lap-log', title: 'Laptime Log', desc: 'L', url: 'overlays/lap-log/index.html',
-      base_width: 400, base_height: 500, x: 20, y: 20, scale: 1.2, opacity: 1, enabled: false,
+      base_width: 400, base_height: 500, content_width: 400, content_height: 500,
+      pad_left: 0, pad_top: 0,
+      x: 20, y: 20, scale: 1.2, opacity: 1, enabled: false, member: false,
       option_defs: [], options: {} },
   ];
   let layouts = [{ id: 'race', name: 'Race', active: true, slots: [] }];
-  const slotsOf = () => defs.filter(d => d.enabled)
-    .map(d => ({ id: d.id, title: d.title, x: d.x, y: d.y,
-                 w: d.base_width * d.scale, h: d.base_height * d.scale }));
+  // Sloten bär INNEHÅLLETS rektangel (så gör layout_info i lib.rs) och om overlayn
+  // är dold just nu — en dold medlem hör kvar i layouten.
+  const slotsOf = () => defs.filter(d => d.member)
+    .map(d => ({ id: d.id, title: d.title,
+                 x: d.x + d.pad_left * d.scale, y: d.y + d.pad_top * d.scale,
+                 w: d.content_width * d.scale, h: d.content_height * d.scale,
+                 enabled: d.enabled }));
 
   const invoke = async (cmd, args = {}) => {
     window.__PANEL_TEST__.calls.push({ cmd, args });
@@ -101,6 +121,9 @@ window.__PANEL_TEST__ = { calls: [] };
       case 'set_scale':    if (d) d.scale = args.scale; return null;
       case 'set_opacity':  if (d) d.opacity = args.opacity; return null;
       case 'set_enabled':  if (d) d.enabled = args.enabled; return null;
+      // Medlemskap är EGET sedan 0.5.4: att dölja en overlay får inte kasta ut den
+      // ur layouten. Stubben håller isär dem precis som lib.rs gör.
+      case 'set_member':   if (d) d.member = args.member; return null;
       case 'set_option':   if (d) d.options[args.option] = args.value; return null;
       case 'create_layout':
         layouts.forEach(l => l.active = false);
@@ -298,9 +321,12 @@ try {
   sant(st.w > 200, 'skärmvyn ritades aldrig ut (bredd ' + Math.round(st.w) + ')');
   nara(st.w, 1920 * st.kVantat, 1.5, 'skärmvyn ska fylla ut rutan (fitStage räknar fel skalfaktor)');
 
-  // 3. Varje box ligger på rätt plats OCH har rätt storlek. Fixturens tre overlays
-  //    har olika mått, skala och position med flit.
-  console.log('3  boxarna ligger där overlayerna ligger');
+  /* 3. Varje box ligger på rätt plats OCH har rätt storlek. Boxen ska visa
+        INNEHÅLLET och inte fönstret: fönstret bär overlayns skuggrum, och ritade
+        vyn hela fönstret hamnade det man ser en bit in från den plats man siktade
+        på — en osynlig marginal som inte gick att ta bort. Väntevärdena räknas
+        därför ur content_ och pad_ och inte ur base_. */
+  console.log('3  boxarna visar innehållet, inte fönstret');
   const k = st.w / 1920;
   // Skärmens 1 px kant räknas bort: boxarna är positionerade mot dess INNERkant.
   const boxes = await cdp.eval(`
@@ -313,20 +339,36 @@ try {
     });
   `);
   lika(boxes.map(b => b.id), ['delta-bar', 'inputs-trace'],
-       'bara påslagna overlays ska ritas, i registrets ordning');
+       'bara medlemmar ska ritas, i registrets ordning');
   const b0 = boxes.find(b => b.id === 'delta-bar');
-  nara(b0.x, 460 * k, 1.5, 'delta-bar x');
-  nara(b0.y, 40 * k, 1.5, 'delta-bar y');
-  nara(b0.w, 810 * 1.0 * k, 1.5, 'delta-bar bredd');
-  nara(b0.h, 310 * 1.0 * k, 1.5, 'delta-bar höjd');
+  nara(b0.x, (424 + 36) * k, 1.5, 'delta-bar x (fönstrets x + vänstermarginalen)');
+  nara(b0.y, (40 + 20) * k, 1.5, 'delta-bar y');
+  nara(b0.w, 736 * 1.0 * k, 1.5, 'delta-bar bredd = INNEHÅLLET, inte base_width');
+  nara(b0.h, 200 * 1.0 * k, 1.5, 'delta-bar höjd = innehållet');
   const b1 = boxes.find(b => b.id === 'inputs-trace');
   nara(b1.w, 744 * 0.8 * k, 1.5, 'inputs-trace bredd (skala 0,8 måste räknas in)');
-  nara(b1.y, 700 * k, 1.5, 'inputs-trace y');
+  nara(b1.x, (100 + 32 * 0.8) * k, 1.5, 'inputs-trace x (marginalen skalar med overlayn)');
+  nara(b1.y, (700 + 22 * 0.8) * k, 1.5, 'inputs-trace y');
+  // Talfälten säger samma sak som vyn: innehållets koordinater, inte fönstrets.
+  const falt = await cdp.eval(`
+    const f = document.querySelectorAll('#lgrp-delta-bar .posf input');
+    return [Number(f[0].value), Number(f[1].value)];
+  `);
+  lika(falt, [460, 60], 'positionsfälten ska visa innehållets koordinater');
 
-  // 4. Snappning. Dragningen slutar 4 vypixlar från en rutnätslinje; boxens
-  //    vänsterkant ska hamna EXAKT på linjen, och med snappningen av ska den
-  //    ligga kvar där pekaren släppte.
-  console.log('4  snappning mot rutnätet');
+  /* 4. Snappning. Två saker mäts: att måltavlorna ligger inuti KANTMARGINALEN (den
+        användbara ytan, inte skärmen), och att NÄRMASTE kandidat vinner — annars
+        snappar en bred overlay alltid på sin vänsterkant och går aldrig att
+        centrera. Väntevärdena räknas fram här ur marginalen och celltätheten, alltså
+        ur samma indata panelen har, och inte ur panelens egna variabler (§9). */
+  console.log('4  snappning mot rutnätet innanför kantmarginalen');
+  const MARGIN = 8, COLS = 12;              // panelens standardvärden
+  const safeX = MARGIN, safeW = 1920 - 2 * MARGIN;
+  // Tröskeln är 7 VYpixlar; testfallet nedan bygger på att båda kandidaterna ryms
+  // inom den. Säg ifrån om rutan blivit så liten att fallet inte längre är
+  // konkurrensutsatt — annars passerar det av fel skäl.
+  sant(7 / k > 9, 'skärmvyn är för nedskalad för att fallet ska pröva "närmast vinner" (' +
+       (7 / k).toFixed(1) + ' skärmpixlar)');
   // dScreen är förflyttningen i SKÄRMpixlar; pekaren rör sig dScreen × stageK i vyn.
   const drag = async (id, dScreen) => cdp.eval(`
     const el = document.querySelector('.st-ov[data-id="${id}"]');
@@ -344,29 +386,61 @@ try {
              falt: Number(document.querySelector('#lgrp-delta-bar .posf input').value),
              skickat: window.__PANEL_TEST__.calls.filter(c => c.cmd === 'set_position').pop() };
   `);
-  /* delta-bar står på x=460 och är 810 bred. Rutnätet har 12 kolumner, alltså
-     linjer var 160:e skärmpixel.
-     A: dragningen slutar på 477, tre pixlar från linjen vid 480 — vänsterkanten
-     snappar dit. */
-  const snapped = await drag('delta-bar', 17);
-  nara(snapped.pixelX, 480, 0.6, 'vänsterkanten skulle snappat till rutnätslinjen vid 480');
-  nara(snapped.falt, 480, 0.6, 'positionsfältet ska säga samma sak som skärmvyn');
-  nara(snapped.skickat?.args?.x ?? -1, 480, 0.6, 'set_position ska ha skickats med det snappade värdet');
+  /* A: delta-barens innehåll står på x=460 och är 736 brett. Dras det 135 px åt
+     höger hamnar MITTEN på 963, tre pixlar från den användbara ytans mitt (960) —
+     ingen annan kandidat är i närheten. Rätt svar är alltså 592 (= 960 − 736/2).
+     Att det INTE är en rutnätslinje är poängen: mitten finns oavsett täthet och är
+     det man oftast siktar mot. */
+  const snapped = await drag('delta-bar', 135);
+  nara(snapped.pixelX, safeX + safeW / 2 - 736 / 2, 0.6, 'mitten skulle snappat till skärmens mitt');
+  nara(snapped.falt, 592, 0.6, 'positionsfältet ska säga samma sak som skärmvyn');
+  // Det som skickas till Rust är FÖNSTRETS position, alltså innehållets minus
+  // vänstermarginalen. Skickas innehållets koordinat hamnar overlayn 36 px fel på
+  // skärmen — och det syns inte i vyn, som ritar innehållet.
+  nara(snapped.skickat?.args?.x ?? -1, 592 - 36, 0.6,
+       'set_position ska ha fått FÖNSTRETS x (innehållet minus vänstermarginalen)');
 
-  /* B: NÄRMASTE kandidat ska vinna, inte första träffen. Dragningen slutar på 473:
-     vänsterkanten ligger 7 px från linjen vid 480, men HÖGERkanten (1283) bara 3 px
-     från linjen vid 1280. Rätt svar är alltså 470 (snappat på högerkanten). En
-     implementation som tar första träffen provar vänsterkanten först och svarar
-     480 — samma sorts fel som gör att en bred overlay aldrig går att centrera. */
-  const narmast = await drag('delta-bar', -7);
-  nara(narmast.pixelX, 470, 0.6, 'högerkanten låg närmare — den ska vinna');
-  nara(narmast.falt, 470, 0.6, 'positionsfältet efter närmast-snappningen');
+  /* B: NÄRMASTE kandidat ska vinna, inte första träffen. Dragningen slutar på 432:
+     vänsterkanten ligger 5,8 px från inputs-traces vänsterkant (423,2) men MITTEN
+     bara 1,3 px från rutnätslinjen vid 801,33. Rätt svar är alltså 433 (= 801,33 −
+     368, avrundat). En implementation som tar första träffen provar vänsterkanten
+     först och svarar 423 — samma sorts fel som gör att en bred overlay aldrig går
+     att centrera. */
+  const narmast = await drag('delta-bar', 432 - 592);
+  nara(narmast.pixelX, 433, 0.6, 'mitten låg närmare rutnätslinjen — den ska vinna');
+  nara(narmast.falt, 433, 0.6, 'positionsfältet efter närmast-snappningen');
 
   await cdp.eval(`document.getElementById('btnSnap').click();`);
   const fritt = await drag('delta-bar', 9);
-  nara(fritt.pixelX, 479, 0.6, 'med snappningen av ska boxen ligga kvar där pekaren släppte');
-  nara(fritt.falt, 479, 0.6, 'positionsfältet efter fri placering');
+  nara(fritt.pixelX, 442, 0.6, 'med snappningen av ska boxen ligga kvar där pekaren släppte');
+  nara(fritt.falt, 442, 0.6, 'positionsfältet efter fri placering');
   await cdp.eval(`document.getElementById('btnSnap').click();`);   // tillbaka på
+
+  /* C: KANTMARGINALEN. Dras boxen ut mot vänsterkanten ska den stanna på
+     marginalen och inte på skärmens kant — det var hela felet: en box i hörnet av
+     vyn la innehållet en bit in från skärmens hörn, och marginalen gick varken att
+     se eller ändra. Med marginalen satt till noll ska samma dragning ge x=0. */
+  const motKant = await drag('delta-bar', -442 + MARGIN + 2);
+  nara(motKant.pixelX, MARGIN, 0.6, 'vänsterkanten ska snappa till kantmarginalen');
+  const nollad = await cdp.eval(`
+    const inp = [...document.querySelectorAll('#lgrp-__view input[type=range]')].pop();
+    inp.value = 0;
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 120));
+    return { safeDold: document.getElementById('stSafe').hidden };
+  `);
+  sant(nollad.safeDold, 'den streckade kantrutan ska försvinna vid marginal 0');
+  const utanMarginal = await drag('delta-bar', -MARGIN - 2);
+  nara(utanMarginal.pixelX, 0, 0.6, 'med marginal 0 ska boxen kunna gå ända ut i kanten');
+  // Tillbaka till standardvärdet så resten av mätningen står på känd mark.
+  await cdp.eval(`
+    const inp = [...document.querySelectorAll('#lgrp-__view input[type=range]')].pop();
+    inp.value = ${MARGIN};
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 120));
+  `);
 
   // 5. Inställningsgrupperna är STÄNGDA som standard. Uttryckligt krav: fem öppna
   //    listor hade begravt skärmvyn.
@@ -380,8 +454,12 @@ try {
       rader: g.querySelector('.gcount').textContent,
     }));
   `);
-  lika(grp.map(g => g.id), ['lgrp-delta-bar', 'lgrp-inputs-trace'], 'en grupp per overlay i layouten');
-  for (const g of grp){
+  lika(grp.map(g => g.id), ['lgrp-__view', 'lgrp-delta-bar', 'lgrp-inputs-trace'],
+       'skärmvyns egna inställningar först, sedan en grupp per overlay i layouten');
+  // Skärmvyns grupp är ÖPPEN som standard — den beskriver ytan allt annat ligger på,
+  // och en stängd grupp där hade dolt att måtten och marginalen går att ändra alls.
+  sant(!grp[0].stangd && grp[0].hojd > 40, 'skärmvy-gruppen ska vara öppen som standard');
+  for (const g of grp.slice(1)){
     sant(g.stangd, g.id + ' skulle varit hopfälld');
     lika(g.aria, 'false', g.id + ' aria-expanded');
     nara(g.hojd, 0, 0.5, g.id + ' gbody-höjd i stängt läge');
@@ -413,20 +491,44 @@ try {
   nara(linje.bw, linje.aw, 1.0, 'stackens bredd mot skärmvyns');
   nara(linje.skroll, 0, 0.5, 'vågrät skroll');
 
-  // 7. Ta bort ur layouten och lägga tillbaka. Medlemskap ÄR påslagen, alltså ska
-  //    BÅDA vägarna gå genom set_enabled.
-  console.log('7  lägg till och ta bort overlay ur layouten');
+  /* 7. DÖLJA ÄR INTE ATT TA BORT. Det var samma sak till 0.5.3, och följden var att
+        ögonknappen i Overlays-fliken kastade ut overlayn ur layouten man byggt.
+        Ögat ska nu bara skriva `enabled` — boxen ligger kvar, nedtonad — och × ska
+        skriva `member`. */
+  console.log('7  dölj, visa, ta bort och lägg tillbaka');
+  const dold = await cdp.eval(`
+    document.querySelector('#lgrp-inputs-trace .ghide').click();
+    await new Promise(r => setTimeout(r, 220));
+    const box = document.querySelector('.st-ov[data-id="inputs-trace"]');
+    return { boxar: [...document.querySelectorAll('.st-ov')].map(e => e.dataset.id),
+             nedtonad: !!box && box.classList.contains('off'),
+             grupper: [...document.querySelectorAll('#layStack .grp')].map(g => g.id),
+             anrop: window.__PANEL_TEST__.calls.filter(c => c.cmd === 'set_enabled').pop(),
+             medlemsanrop: window.__PANEL_TEST__.calls.filter(c => c.cmd === 'set_member').length };
+  `);
+  lika(dold.boxar, ['delta-bar', 'inputs-trace'], 'en dold overlay ska ligga kvar i skärmvyn');
+  sant(dold.nedtonad, 'den dolda boxen ska ritas nedtonad');
+  lika(dold.grupper, ['lgrp-__view', 'lgrp-delta-bar', 'lgrp-inputs-trace'],
+       'gruppen ska ligga kvar i stacken');
+  lika(dold.anrop, { cmd: 'set_enabled', args: { id: 'inputs-trace', enabled: false } },
+       'att dölja ska gå via set_enabled');
+  lika(dold.medlemsanrop, 0, 'att dölja får ALDRIG röra medlemskapet');
+  await cdp.eval(`
+    document.querySelector('#lgrp-inputs-trace .ghide').click();
+    await new Promise(r => setTimeout(r, 220));
+  `);
+
   const borttagen = await cdp.eval(`
     document.querySelector('#lgrp-inputs-trace .gremove').click();
     await new Promise(r => setTimeout(r, 220));
     return { boxar: [...document.querySelectorAll('.st-ov')].map(e => e.dataset.id),
              grupper: [...document.querySelectorAll('#layStack .grp')].map(g => g.id),
-             anrop: window.__PANEL_TEST__.calls.filter(c => c.cmd === 'set_enabled').pop() };
+             anrop: window.__PANEL_TEST__.calls.filter(c => c.cmd === 'set_member').pop() };
   `);
   lika(borttagen.boxar, ['delta-bar'], 'boxen ska försvinna ur skärmvyn');
-  lika(borttagen.grupper, ['lgrp-delta-bar'], 'gruppen ska försvinna ur stacken');
-  lika(borttagen.anrop, { cmd: 'set_enabled', args: { id: 'inputs-trace', enabled: false } },
-       'borttagning ska gå via set_enabled');
+  lika(borttagen.grupper, ['lgrp-__view', 'lgrp-delta-bar'], 'gruppen ska försvinna ur stacken');
+  lika(borttagen.anrop, { cmd: 'set_member', args: { id: 'inputs-trace', member: false } },
+       'borttagning ska gå via set_member');
 
   const tillagd = await cdp.eval(`
     document.getElementById('btnLayAdd').click();
@@ -440,8 +542,66 @@ try {
        'menyn ska visa exakt de overlays som INTE ingår');
   lika(tillagd.boxar, ['delta-bar', 'inputs-trace'], 'den tillagda ska dyka upp i skärmvyn');
 
-  // 8. Layoutlistan: aktiv layout markerad, och att klicka en annan aktiverar den.
-  console.log('8  layoutlistan och aktiveringen');
+  /* 8. Att välja en box i vyn ska markera dess grupp i listan under. Utan det är
+        flikens trängsta ögonblick att dra en box och sedan leta rätt på just dess
+        rad bland flera likadana rubriker — och "ta bort" sitter i den raden. */
+  console.log('8  vald box markeras i inställningslistan');
+  const markerad = await cdp.eval(`
+    const box = document.querySelector('.st-ov[data-id="inputs-trace"]');
+    box.dispatchEvent(new PointerEvent('pointerdown',
+      { bubbles: true, pointerId: 3, button: 0, isPrimary: true, clientX: 0, clientY: 0 }));
+    box.dispatchEvent(new PointerEvent('pointerup',
+      { bubbles: true, pointerId: 3, button: 0, isPrimary: true, clientX: 0, clientY: 0 }));
+    await new Promise(r => setTimeout(r, 80));
+    return [...document.querySelectorAll('#layStack .lgrp')]
+      .filter(g => g.classList.contains('picked')).map(g => g.id);
+  `);
+  lika(markerad, ['lgrp-inputs-trace'], 'exakt den valda overlayns grupp ska vara markerad');
+
+  /* 9. Skärmvyns egna inställningar: en egen upplösning ändrar vyns FORM (annars
+        går den inte att ställa in för en annan skärm än den panelen står på), och
+        antalet skärmar ritar skarvarna — en overlay mitt i en skarv är delad i två
+        av ramarna, och det syns inte på en enda stor yta. */
+  console.log('9  egen upplösning och skärmskarvar');
+  const pickDD = async (index, label) => cdp.eval(
+    `const dd = [...document.querySelectorAll('#lgrp-__view .dd-btn')][${index}];\n` +
+    `dd.click();\n` +
+    `await new Promise(r => setTimeout(r, 80));\n` +
+    `const rad = [...document.querySelectorAll('.pop .popitem')]\n` +
+    `  .find(i => i.textContent.includes(${JSON.stringify(label)}));\n` +
+    `if (!rad) throw new Error('ingen menyrad som innehåller ' + ${JSON.stringify(label)});\n` +
+    `rad.click();\n` +
+    `await new Promise(r => setTimeout(r, 260));`);
+
+  await pickDD(0, '5760');
+  const bred = await cdp.eval(`
+    const el = document.getElementById('stScreen');
+    return { form: el.clientWidth / el.clientHeight,
+             text: document.getElementById('stRes').textContent };
+  `);
+  nara(bred.form, 5760 / 1080, 0.02, 'skärmvyn ska ta den egna upplösningens form');
+  sant(bred.text.includes('5760'), 'måttet i hörnet ska säga vilken upplösning som gäller');
+
+  await pickDD(1, '3');
+  const skarvar = await cdp.eval(`
+    const el = document.getElementById('stScreen');
+    const k = el.clientWidth / 5760;
+    return { antal: document.querySelectorAll('#stSeams i').length,
+             x: [...document.querySelectorAll('#stSeams i')].map(i => parseFloat(i.style.left) / k) };
+  `);
+  lika(skarvar.antal, 2, 'tre skärmar ska ge två skarvar');
+  nara(skarvar.x[0], 1920, 1.5, 'första skarven');
+  nara(skarvar.x[1], 3840, 1.5, 'andra skarven');
+
+  // Tillbaka till skärmen och en skärm, så resten av mätningen står på känd mark.
+  await pickDD(1, '1 (en skärm)');
+  await pickDD(0, 'Skärmen');
+  nara(await cdp.eval(`const el = document.getElementById('stScreen');
+                       return el.clientWidth / el.clientHeight;`),
+       1920 / 1080, 0.02, 'valet "Skärmen" ska ge skärmens form igen');
+
+  // 10. Layoutlistan: aktiv layout markerad, och att klicka en annan aktiverar den.
+  console.log('10 layoutlistan och aktiveringen');
   const lista = await cdp.eval(`
     return { rader: [...document.querySelectorAll('#layList .lrow')].map(r => ({
                namn: r.querySelector('.ltitle').textContent,
@@ -469,8 +629,8 @@ try {
   lika(skapad.aktiv, 'Natt', 'en ny layout blir aktiv');
   lika(skapad.skapaAnrop?.args, { name: 'Natt' }, 'create_layout ska ha fått namnet');
 
-  // 9. Inget fel kastades under hela mätningen.
-  console.log('9  inga fel kastades under körningen');
+  // 11. Inget fel kastades under hela mätningen.
+  console.log('11 inga fel kastades under körningen');
   lika(await cdp.eval(`return window.__PANEL_TEST__.errors;`), [], 'fel under körningen');
 
 } finally {

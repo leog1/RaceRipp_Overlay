@@ -15,7 +15,7 @@
 > X" i §7).
 ## 1. Vad projektet är
 Modulärt overlay-paket för **Assetto Corsa Competizione (ACC)**.
-Version 0.5.3.
+Version 0.5.4.
 - **Funktionellt** som **Race Element**: lätt, rensat, praktiskt, ingen FPS-förlust.
 - **Visuellt** som **RaceLab**: mörkt, polerat, animerat, premium.
 - Kvalitetsribban är hög och användaren är detaljpetig ner till pixelnivå.
@@ -91,10 +91,19 @@ Fyra saker som är avsiktliga och lätta att råka bryta:
 på EN overlay; en **layout** är hela skärmen: vilka overlays som är på, var de sitter,
 hur stora de är och hur de ser ut. Tre regler som hänger ihop och som var för sig är
 lätta att bryta:
-- **Medlemskap ÄR påslagen.** "Lägg till i layouten" och "ta bort" är `set_enabled` —
-  samma väg som ögonknappen i Overlays-fliken. Två sätt att slå på samma overlay hade
-  oundvikligen glidit isär. Följden: en layout kan aldrig innehålla en overlay den
-  samtidigt släcker, och `sanitize_layouts` rättar ett `enabled:false` som ändå dyker upp.
+- **MEDLEMSKAP OCH SYNLIGHET ÄR TVÅ SAKER.** `member` = ingår i layouten (`set_member`,
+  alltså Layout-flikens `+` och `×`); `enabled` = visas just nu (`set_enabled`, alltså
+  ögonknappen, som finns på båda flikarna). Fönstret visas när BÅDA är sanna —
+  `OverlayState::visible()` är enda stället som avgör det, så de två inte kan glida isär
+  på det ena ställe någon glömmer. De var samma fält t.o.m. 0.5.3, och följden var
+  omöjlig att komma runt: att dölja en overlay en stund kastade ut den ur layouten man
+  byggt, och att tända den igen la in den i den layout som råkade vara aktiv då.
+  `sync_active_layout` speglar därför MEDLEMMAR (inte påslagna), och en layout får
+  mycket väl innehålla en overlay som är dold — `sanitize_layouts` tvingar `member`,
+  aldrig `enabled`. Att VISA något som inte är medlem lägger till det i layouten och
+  säger det; motsatsen (dölja → ta bort) finns inte som väg.
+  Migreringen: `member` är `Option<bool>` och `is_member()` faller tillbaka på
+  `enabled`, vilket ger exakt det gamla beteendet på en fil skriven före 0.5.4.
 - **Exakt EN layout är aktiv, och den är LIVE-BUNDEN.** `save_settings` kör
   `sync_active_layout`, som speglar det gällande läget in i den aktiva layouten vid varje
   sparning. Det finns alltså inget spara-steg, och — viktigare — ingen andra sanning:
@@ -103,8 +112,8 @@ lätta att bryta:
 - **Att välja en layout är att aktivera den.** Panelens skärmvy visar alltid det gällande
   läget, alltså de riktiga fönstren. Att kunna redigera en INAKTIV layout hade krävt en
   andra redigeringsväg som inte syns någonstans medan man använder den.
-`activate_layout` skriver ut layouten: storlek, POSITION, always-on-top, av/på och
-samtliga `config`/`option`-event. Position är det tillägg mot `apply_preset` som är lätt
+`activate_layout` skriver ut layouten: storlek, POSITION, always-on-top, medlemskap +
+av/på och samtliga `config`/`option`-event. Position är det tillägg mot `apply_preset` som är lätt
 att glömma — utan den står overlayn kvar där förra layouten lade den, vilket är precis
 det man bytte layout för att slippa. Att ta bort en layout släcker ingenting: läget bor
 i `overlays` och står kvar.
@@ -171,10 +180,31 @@ till i tokens FÖRST. **Färg = betydelse, inte dekoration:**
 i tokens.css). Poängen är att de ska se ut som en uppsättning, inte som olika program.
 delta-bar och inputs-trace har nästan identiska proportioner (3,68:1 mot 3,72:1), så
 samma höjd ger nästan identiska rektanglar (736×200 och 744×200). En ny overlay ska
-räkna sin geometri ur det värdet, inte ur egna pixlar. `baseWidth`/`baseHeight` i
-registret ska sitta TAJT runt det ritade innehållet plus plats för slagskuggan —
-delta-baren låg en gång på 1300×460 för 927×252 innehåll, alltså 373×208 död yta som DWM
-komponerade i onödan (§3).
+räkna sin geometri ur det värdet, inte ur egna pixlar.
+
+**Fönstret är INNEHÅLL + SKUGGRUM, och registret säger vilket som är vilket.**
+Ett overlay-fönster är transparent och klipper allt utanför sig, så slagskuggan behöver
+riktig plats innanför kanten. Registret bär därför fyra tal per overlay:
+`contentWidth`/`contentHeight` (det man SER) och `padLeft`/`padTop` (var i fönstret det
+börjar); `baseWidth`/`baseHeight` är summan plus skuggrum åt höger och nedåt. Tre regler:
+- **Marginalen SKALAR.** `#ui` sätter sitt `top`/`left` med
+  `calc(var(--pad-t) * var(--ui-scale))` — talen kommer ur registret via
+  `__OVERLAY_INIT__` (§8.3). Stod de i fasta pixlar klipptes skuggan vid stora skalor
+  och innehållet flöt in i död yta vid små. Av samma skäl måste en overlays skugga
+  räknas ur overlayns egen skalenhet (inputs-trace ur `--H`) och inte ur tokens `--depth`,
+  som står i fasta pixlar.
+- **`--ui-scale` måste ha ett värde i CSS** (det står i `tokens.css`). En `calc()` med en
+  ODEFINIERAD variabel är ogiltig, hela deklarationen faller bort och innehållet hamnar i
+  fönstrets hörn med skuggan avklippt — i precis de lägen som saknar INIT: OBS, en vanlig
+  webbläsare, panelens förhandsvisning.
+- **Layout-flikens skärmvy ritar INNEHÅLLET**, aldrig fönstret, och lägger tillbaka
+  marginalen först när den skickar `set_position`. Ritade den fönstret hamnade det man
+  ser en bit in från den plats man siktade på — en osynlig marginal som inte gick att ta
+  bort. Ljuger `contentWidth` hamnar alltså varje overlay fel på skärmen utan att något
+  syns i panelen; `tests/overlay-window-fit.mjs` mäter både talen och skuggrummet.
+Dödytan är fortfarande dyr (DWM komponerar den): delta-baren låg en gång på 1300×460 för
+927×252 innehåll, alltså 373×208 i onödan (§3). Skillnaden är att den nu är RÄKNAD och
+namngiven i stället för inbakad i ett enda tal.
 
 **Färganpassning:** varje overlay exponerar sina färger som `col-<token>`-alternativ i
 `registry.json`. `bus.js` sätter automatiskt CSS-variabeln `--<token>`, så **en ny färg
@@ -373,25 +403,55 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
 - **Layout-flikens skärmvy är samma material som förhandsvisningen** — en yta ett steg
   UNDER panelen (`--ui-stage`) med hårfin ljus kant, samma marginal, samma verktygsblock
   i hörnet (`.sbtn`). Skillnaden är höjden: 46 % i stället för previewns 38,2 %, för här
-  BEDÖMER man inte, man arbetar. Fyra regler till:
+  BEDÖMER man inte, man arbetar. Reglerna:
   - **Boxarna är proportionella rutor, inte riktiga overlays.** En riktig overlay är ett
     eget dokument med egen renderloop och egen WebSocket, och fem sådana i panelen hade
     varit fem loopar som tickar medan man kör — previewn fick rivas ur av exakt det
-    skälet (§8.5f), och den är EN. Boxarna är i gengäld exakta: `base × skala` mot
-    skärmens logiska storlek, alltså samma tal som fönstret får.
+    skälet (§8.5f), och den är EN. Boxarna är i gengäld exakta: `content × skala` mot
+    skärmens logiska storlek — INNEHÅLLET, inte fönstret (§4). En dold medlem ritas
+    streckad och nedtonad: platsen är reserverad, rutan syns bara inte just nu.
+  - **Bakgrunden är en cockpitbild** (`src/shared/layout-stage-bg.webp`) med en mörk vask
+    på 62 % ÖVER sig i samma `background`-shorthand — inget extra lager som kan hamna
+    över rutnätet. Man placerar overlays i förhållande till det man SER (rattens
+    överkant, spegelraden, mitten av rutan), och en svart rektangel säger ingenting om
+    det. Blir vasken ljusare måste rutnätets opaciteter upp igen, och då tävlar de två
+    om samma uppmärksamhet.
   - **Rutnätets linjer är nästan osynliga; PUNKTERNA i korsningarna bär informationen.**
     Det är punkterna man snappar mot, och ett fullt synligt rutnät tävlar med det man
-    flyttar. Tätheten anges i KOLUMNER och raderna räknas ut så att cellerna blir
-    kvadratiska — ett fast radantal ger ett rutnät som betyder olika saker på 16:9 och
-    21:9.
+    flyttar. Mot en fotografisk bakgrund löses linjerna av en mörk skugga UNDER dem, inte
+    av mer ljusstyrka — en ljus linje mot en ljus yta behöver kontrast, inte ljus.
+    Tätheten anges i KOLUMNER och raderna räknas ut så att cellerna blir kvadratiska —
+    ett fast radantal ger ett rutnät som betyder olika saker på 16:9 och 21:9.
+  - **Kantmarginalen är ett SYNLIGT tal som går att sätta till noll.** Rutnätet, snappets
+    kanter och den streckade rutan utgår alla från den användbara ytan (skärmen minus
+    marginalen), aldrig från skärmen. Den fanns förut bara som fönstrens skuggrum, alltså
+    en osynlig marginal ingen kunde ändra. 8 px som standard.
+  - **Upplösning och antal skärmar går att skriva in.** Vyn är ett RITBORD för den skärm
+    man ställer in för — positionerna som skickas till Rust är oförändrat riktiga
+    skärmkoordinater. Flera skärmar ritar SKARVAR (och snappunkter vid dem och vid varje
+    skärms mitt): en overlay mitt i en skarv är delad i två av ramarna, och det syns inte
+    på en enda stor yta. Skärmarna antas lika breda — en blandning av upplösningar skulle
+    kräva att man matar in varje skärm för sig.
   - **Hjälplinjen vid snappning är amber**, samma signalfärg som fokusringen och den
     aktiva presetens markör. Grönt hade betytt "på", och en snappning är inget tillstånd.
+    Samma amber markerar den VALDA boxens grupp i listan under — att dra en box och sedan
+    leta rätt på just dess rad bland flera likadana rubriker var flikens trängsta
+    ögonblick, och "ta bort" sitter i den raden. Markeringen fäller inte ut gruppen: ett
+    val ska markera, inte flytta runt allt annat.
+  - **"Lägg till" bär text och amberfyllning**, till skillnad från vyns övriga
+    verktygsknappar. Det är flikens vanligaste handling och en tom layout går inte att
+    göra något med förrän man tryckt på den; som en av tre likadana ikoner i ett hörn
+    lästes den som ett verktyg bland andra.
   - **Kanten på skärmen är en `outline`, inte en `border`.** Se §8.4l — det är geometri,
     inte kosmetik.
   Inställningsraderna under vyn är samma `.grp`-mekanik som Overlays-flikens stack, men
   **stängda som standard**: fliken handlar om var något ligger, och fem öppna
   inställningslistor hade begravt skärmvyn. Därför `st[grp.id] === true` och inte
-  `!== false` när läget läses ur localStorage.
+  `!== false` när läget läses ur localStorage. Undantaget är gruppen **Skärmvy** (måtten,
+  skärmarna, kantmarginalen), som är öppen: den beskriver ytan allt annat ligger på, och
+  stängd hade den dolt att förutsättningarna går att ändra alls. Dess värden bor i
+  localStorage och inte i settings.json — panelens vy-state, samma regel som
+  hopfällningen.
 ## 5. Overlay-katalog & status
 | # | Overlay | Status | Not |
 |---|---------|--------|-----|
@@ -428,6 +488,8 @@ engine/ldparser.py         GPL, gitignorerad, hämtas lokalt
 src-tauri/src/lib.rs       fönstermanager, kommandon, sidecar+Job Object, hotkey, settings
 src-tauri/tauri.conf.json  control-fönster, updater, externalBin, bundle.resources
 tests/panel-layout.mjs     layout-flikens geometri, mätt i headless Chrome över CDP
+tests/overlay-window-fit.mjs  ryms overlayn + sin skugga i fönstret? (Chrome, HTTP)
+src/shared/layout-stage-bg.webp  bakgrund bakom layout-flikens skärmvy
 tests/                     regressionstester — läs tests/README.md FÖRST, den
                            förklarar vad varje test bevakar och hur man visar att
                            ett test biter
@@ -488,13 +550,22 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
 
 - **Layout-flikens geometri mätt i Chrome** (`tests/panel-layout.mjs`, 1440×900 mot en
   Tauri-stubb): skärmvyn har skärmens proportioner och fyller rutan, varje box ligger och
-  mäter exakt som overlayns riktiga fönster (olika mått, skala och position per overlay i
-  fixturen), snappningen väljer NÄRMASTE kandidat och skickar det snappade värdet vidare
-  som `set_position`, med snappningen av ligger boxen kvar där pekaren släppte,
-  inställningsgrupperna är hopfällda med rätt `aria-expanded` och radantal, skärmvyn och
-  stacken ligger på samma x och bredd utan vågrät skroll, lägg till/ta bort går genom
-  `set_enabled`, och layoutlistan markerar den aktiva. Panelen kastade inget fel.
-  Fem medvetet trasiga varianter är körda och samtliga föll (se filens huvud).
+  mäter exakt som overlayns INNEHÅLL gör (olika mått, skala, padding och position per
+  overlay i fixturen), snappningen väljer NÄRMASTE kandidat, snappar mot ytan innanför
+  kantmarginalen och skickar FÖNSTRETS position vidare som `set_position`, med
+  snappningen av ligger boxen kvar där pekaren släppte, en egen upplösning ändrar vyns
+  form och tre skärmar ritar två skarvar på rätt x, en vald box markerar sin grupp,
+  inställningsgrupperna är hopfällda (utom Skärmvy) med rätt `aria-expanded` och radantal,
+  skärmvyn och stacken ligger på samma x och bredd utan vågrät skroll, att DÖLJA lämnar
+  boxen kvar nedtonad och rör aldrig medlemskapet medan × går genom `set_member`, och
+  layoutlistan markerar den aktiva. Panelen kastade inget fel.
+  Åtta medvetet trasiga varianter är körda och samtliga föll (se filens huvud).
+- **Att varje overlay ryms i sitt fönster MED sin slagskugga**
+  (`tests/overlay-window-fit.mjs`, Chrome över HTTP, skala 0,6/1,0/1,6 plus ett pass helt
+  utan `__OVERLAY_INIT__`): innehållet mäter det `contentWidth`/`contentHeight` säger, och
+  det finns kvar minst så mycket plats åt varje håll som skuggan når. Tre trasiga
+  varianter körda, alla föll. Uppmätt vid skala 1: delta-baren 736×200 i ett fönster på
+  800×274, inputs-trace 744×200 i 808×264.
 - **Layoutkommandonas kärnlogik** (fyra Rust-tester): speglingen tar bara PÅSLAGNA
   overlays och rör aldrig en inaktiv layout, en tom `active_layout` skriver ingenstans,
   inläsningen städar dubbletter/tomma namn/borttagna overlays/orimliga tal och nollställer
@@ -503,8 +574,7 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
 
 ### Kvar att verifiera — läs detta först om du tar över
 - **HELA layout-fliken i den riktiga appen.** Ingenting av den är sett utanför Chrome.
-  Fyra saker stubben per definition inte kan bevisa, och alla fyra är av den sorten som
-  bara syns i drift:
+  Sakerna nedan är av den sorten stubben per definition inte kan bevisa:
   - **Att dra en box FLYTTAR det riktiga fönstret.** Panelen skickar `set_position`
     strypt (120 ms) medan man drar; att fönstret följer med mjukt och hamnar rätt är
     otestat. Testa med ACC igång i bakgrunden och håll ögonen på FPS — en position är
@@ -520,6 +590,18 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   - **Att den aktiva layouten följer med utan spara-steg.** Dra en overlay i edit-läge
     över spelet, gå tillbaka till panelen, byt till en annan layout och tillbaka — den
     dragna positionen ska vara kvar.
+  - **Att hörnet i vyn ÄR hörnet på skärmen.** Det var utgångspunkten för hela
+    innehållsrektangeln (§4): dra en overlay till övre högra hörnet med kantmarginalen på
+    0 och kontrollera i spelet att den ligger kant i kant. Skuggan ska samtidigt vara hel
+    — det var samma fel sett från andra hållet.
+  - **Att medlemskap och synlighet verkligen är skilda i drift.** Dölj en overlay med
+    ögonknappen, byt flik, starta om appen: den ska fortfarande ligga kvar i layouten
+    (streckad box, streckad rektangel i miniatyren) och komma tillbaka på sin plats när
+    man visar den igen. Kontrollera samtidigt att `member` dyker upp i settings.json och
+    att en fil från 0.5.3 läses utan att något tappas (`member` ärver då `enabled`).
+  - **Att en egen upplösning och flera skärmar gör nytta.** Vyn ritar då en skärm som
+    inte är den panelen står på — positionerna är fortfarande riktiga koordinater, men
+    ingen har provat att ställa in en triple-rigg och sedan köra på den.
 - **Att ACC känns igen som förgrundsprocess** (§8.5c). Detektionen fungerar åt båda
   hållen mot andra program och mot vårt eget fönster, men är **aldrig körd mot ACC** —
   spelet har inte funnits på maskinen. Slår igenkänningen fel göms overlays under HELA
@@ -1020,6 +1102,24 @@ Samma mätning avslöjade en andra sak värd att spara: `popMenu()` letade sin
 Bakgrundsväljaren och enum-raderna skickar en behållare, men skärmvyns verktygsknappar är
 sina egna ankare — de fick därför aldrig `aria-expanded` satt och fokus kom inte tillbaka
 när menyn stängdes. `popTrigger()` kollar nu ankaret självt först.
+
+### 8.4m En `calc()` med en odefinierad variabel är OGILTIG — hela raden faller bort
+Overlayernas marginal mot fönsterkanten står som
+`top: calc(var(--pad-t,22px) * var(--ui-scale))`. Fallbacken i `var()` täcker `--pad-t`,
+men `--ui-scale` hade ingen — och en `calc()` där någon variabel saknar värde är inte
+"delvis giltig", den är ogiltig vid beräkningstillfället. Deklarationen slutar då gälla
+helt och `top`/`left` faller tillbaka på `0`, alltså innehållet kant i kant med
+fönstrets hörn och slagskuggan avklippt på två sidor.
+
+Det syns inte i appen, för där sätter `bus.js` alltid variabeln ur `__OVERLAY_INIT__`.
+Det syns bara i de tre lägen som saknar INIT: **OBS, en vanlig webbläsare och
+kontrollpanelens förhandsvisning** — alltså precis de lägen ingen tittar på när man
+felsöker en overlay i spelet. `--ui-scale: 1` står därför i `tokens.css` (och i de
+overlays som redan hade den lokalt).
+
+Regeln: **varje variabel som används i en `calc()` måste ha ett värde i CSS**, inte bara
+den man råkar tänka på. En `var(--x, fallback)` skyddar bara `--x`.
+`tests/overlay-window-fit.mjs` kör därför ett pass helt utan INIT.
 
 ### 8.5 Flicker-mönster att aldrig upprepa
 Alla dessa fanns i delta-baren och gav synligt flimmer:
@@ -1663,8 +1763,8 @@ Handlern tar **ett** argument (`ws`), inte `(ws, path)`.
 Testerna ligger i `tests/` — **`tests/README.md` är sanningskällan** för vad varje test
 bevakar och hur man visar att det biter. `pnpm test` kör de sex
 overlay-testerna; de sex Python-testerna körs var för sig från repo-roten.
-`pnpm test:panel` kör panelens layouttest, som är det enda med ett yttre beroende
-(Chrome). Det bor i ett eget CI-JOBB som inte gatar releasen — bygget behöver ingen
+`pnpm test:panel` kör de två testerna med ett yttre beroende (Chrome): panelens
+layouttest och `overlay-window-fit`. De bor i ett eget CI-JOBB som inte gatar releasen — bygget behöver ingen
 webbläsare, och en releasepipeline som faller på att en runner saknar en är fel sorts
 koppling. Det går ändå rött när testet faller, alltså inget tyst hopp över (§9).
 **CI kör alla utom `motec_reference.py`**, som kräver en `.ld` och därför alltid

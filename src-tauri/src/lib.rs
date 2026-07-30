@@ -68,6 +68,28 @@ fn default_kind() -> String {
     "bool".into()
 }
 
+impl OverlayDef {
+    // Innehållets mått och plats i fönstret. Klampade mot fönstret så ett
+    // handredigerat registervärde inte kan ge en box som sticker ut ur sin egen
+    // overlay i skärmvyn.
+    fn pad_l(&self) -> f64 {
+        self.pad_left.unwrap_or(0.0).clamp(0.0, self.base_width)
+    }
+    fn pad_t(&self) -> f64 {
+        self.pad_top.unwrap_or(0.0).clamp(0.0, self.base_height)
+    }
+    fn content_w(&self) -> f64 {
+        self.content_width
+            .unwrap_or(self.base_width)
+            .clamp(1.0, self.base_width - self.pad_l())
+    }
+    fn content_h(&self) -> f64 {
+        self.content_height
+            .unwrap_or(self.base_height)
+            .clamp(1.0, self.base_height - self.pad_t())
+    }
+}
+
 #[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct OverlayDef {
@@ -78,6 +100,29 @@ struct OverlayDef {
     url: String,
     base_width: f64,
     base_height: f64,
+    // ── Innehållets rektangel inne i fönstret ────────────────────────────────
+    // Fönstret är INTE tajt runt det man ser: overlayn har en slagskugga, och den
+    // behöver plats innanför fönsterkanten (ett transparent fönster klipper allt
+    // utanför sig). base_width/base_height är alltså innehåll + skuggrum, medan
+    // content_* är den yta användaren faktiskt SER och pad_left/pad_top var i
+    // fönstret den börjar.
+    //
+    // Skillnaden var osynlig i koden och fullt synlig på skärmen: layout-flikens
+    // skärmvy ritade FÖNSTREN, så en box i skärmens övre högra hörn lade
+    // innehållet en bit in från hörnet — en "osynlig marginal" ingen kunde ta bort.
+    // Vyn ritar nu innehållet och lägger till marginalen när den skickar
+    // set_position, så det man placerar är det man ser.
+    //
+    // Utelämnade fält betyder "innehållet fyller hela fönstret", vilket är rätt
+    // svar för en overlay utan skugga och gör fälten bakåtkompatibla.
+    #[serde(default)]
+    content_width: Option<f64>,
+    #[serde(default)]
+    content_height: Option<f64>,
+    #[serde(default)]
+    pad_left: Option<f64>,
+    #[serde(default)]
+    pad_top: Option<f64>,
     default_x: i32,
     default_y: i32,
     default_scale: f64,
@@ -149,6 +194,10 @@ fn clamp_opt(v: Option<f64>, lo: f64, hi: f64) -> Option<f64> {
 const POS_LIMIT: i32 = 32_000;
 
 fn sanitize_state(d: &OverlayDef, st: &mut OverlayState) {
+    // Skriv ut medlemskapet uttryckligen. En fil från före 0.5.4 saknar fältet och
+    // ärver då `enabled`; efter en sparning står det för sig självt, och de två
+    // begreppen kan gå isär utan att gamla filer tolkas fel.
+    st.member = Some(st.is_member());
     st.scale = if st.scale.is_finite() { st.scale.clamp(SCALE_MIN, SCALE_MAX) } else { d.default_scale };
     st.opacity = if st.opacity.is_finite() { st.opacity.clamp(OPACITY_MIN, OPACITY_MAX) } else { 1.0 };
     st.x = st.x.clamp(-POS_LIMIT, POS_LIMIT);
@@ -172,10 +221,12 @@ fn sanitize_preset(d: &OverlayDef, p: &mut Preset) {
 // som är på, var de sitter, hur stora de är och hur de ser ut. En preset är
 // utseendet på EN overlay; en layout är arbetsläget för skärmen.
 //
-// Bara overlays som INGÅR ligger i kartan — medlemskap är alltså detsamma som
-// "påslagen", och panelens "lägg till / ta bort ur layouten" är samma väg som
-// av/på-knappen i Overlays-fliken. Två sätt att slå på samma overlay hade
-// oundvikligen glidit isär.
+// Bara overlays som INGÅR ligger i kartan (`member`). MEDLEMSKAP OCH SYNLIGHET ÄR
+// TVÅ SAKER: `member` säger att overlayn hör till layouten, `enabled` att den visas
+// just nu. Ögonknappen i Overlays-fliken rör bara `enabled` — annars kunde man inte
+// dölja en overlay en stund utan att samtidigt kasta ut den ur layouten man byggt,
+// och att tända den igen hade lagt in den i den layout som råkade vara aktiv då.
+// Layout-flikens + och × rör bara `member`. Fönstret visas när BÅDA är sanna.
 //
 // EXAKT EN layout kan vara aktiv (`active_layout`). Den aktiva är LIVE-BUNDEN:
 // `sync_active_layout` kopierar in det gällande läget vid varje sparning, så
@@ -329,7 +380,18 @@ fn default_true() -> bool {
 
 #[derive(Serialize, Deserialize, Clone)]
 struct OverlayState {
+    // Visas overlayn? (ögonknappen i Overlays-fliken)
     enabled: bool,
+    // Ingår overlayn i layouten? (+ och × i Layout-fliken)
+    //
+    // Option med flit, och det är MIGRERINGSVÄGEN: en settings.json skriven före
+    // 0.5.4 saknar fältet, och där betydde `enabled` båda sakerna. `is_member()`
+    // faller därför tillbaka på `enabled`, vilket ger exakt det gamla beteendet på
+    // en gammal fil. sanitize_state skriver sedan ut ett uttryckligt värde, så
+    // fältet är Some efter första sparningen.
+    // Nedgraderingsvägen (§8.3b): en äldre build ignorerar fältet som okänt.
+    #[serde(default)]
+    member: Option<bool>,
     x: i32,
     y: i32,
     scale: f64,
@@ -340,6 +402,18 @@ struct OverlayState {
     options: HashMap<String, serde_json::Value>,
 }
 
+impl OverlayState {
+    fn is_member(&self) -> bool {
+        self.member.unwrap_or(self.enabled)
+    }
+    // Ett fönster ska finnas när overlayn både ingår i layouten och är påslagen.
+    // Den här funktionen är enda stället som avgör det — annars glider de två
+    // begreppen isär på det ena stället någon glömmer.
+    fn visible(&self) -> bool {
+        self.enabled && self.is_member()
+    }
+}
+
 // Färskt standardläge för en overlay (position/skala/alternativ ur registret).
 fn default_state_for(d: &OverlayDef) -> OverlayState {
     let mut options = HashMap::new();
@@ -348,6 +422,7 @@ fn default_state_for(d: &OverlayDef) -> OverlayState {
     }
     OverlayState {
         enabled: true,
+        member: Some(true),
         x: d.default_x,
         y: d.default_y,
         scale: d.default_scale,
@@ -495,9 +570,11 @@ fn sanitize_layouts(s: &mut Settings) {
             if let Some(d) = def_of(id) {
                 sanitize_state(d, st);
             }
-            // Medlemskap ÄR "påslagen". Ett false här hade gett en layout som
-            // innehåller en overlay den samtidigt släcker.
-            st.enabled = true;
+            // Att ligga i kartan ÄR medlemskapet — ett `false` här hade beskrivit
+            // en overlay som både ingår och inte ingår. `enabled` städas däremot
+            // inte: en layout får mycket väl innehålla en overlay som är dold just
+            // nu, och att tvinga den synlig hade tänt den vid nästa aktivering.
+            st.member = Some(true);
         }
     }
     // En aktiv layout som inte finns är samma sak som ingen aktiv: annars hade
@@ -512,9 +589,9 @@ fn sanitize_layouts(s: &mut Settings) {
 // utan ett spara-steg, och det som gör att det bara finns EN sanning: layouten är en
 // kopia av `overlays`, aldrig en konkurrerande uppsättning värden.
 //
-// Bara påslagna overlays följer med (medlemskap = påslagen). En avslagen overlay
-// behåller sitt läge i `overlays` och kommer tillbaka som den var om man lägger in
-// den i layouten igen.
+// Bara MEDLEMMAR följer med, oavsett om de är dolda just nu: att dölja en overlay en
+// stund ska inte kasta ut den ur layouten. En overlay som inte är medlem behåller sitt
+// läge i `overlays` och kommer tillbaka som den var om man lägger in den igen.
 fn sync_active_layout(s: &mut Settings) {
     if s.active_layout.is_empty() {
         return;
@@ -522,7 +599,7 @@ fn sync_active_layout(s: &mut Settings) {
     let snapshot: HashMap<String, OverlayState> = s
         .overlays
         .iter()
-        .filter(|(id, st)| st.enabled && def_of(id).is_some())
+        .filter(|(id, st)| st.is_member() && def_of(id).is_some())
         .map(|(id, st)| (id.clone(), st.clone()))
         .collect();
     let want = s.active_layout.clone();
@@ -568,15 +645,21 @@ fn create_overlay(
             "id": def.id,
             "scale": st.scale,
             "opacity": st.opacity,
+            // Marginalen mellan fönsterkanten och innehållet, i logiska pixlar vid
+            // skala 1. Overlayn multiplicerar med skalan i CSS (--pad-l/--pad-t), så
+            // fönstret sitter lika tajt runt innehåll + skugga vid varje skala.
+            // Hör hit och inte i ett async-anrop av samma skäl som skalan: det är
+            // GEOMETRI och måste gälla vid första paint.
+            "pad": { "l": def.pad_l(), "t": def.pad_t() },
             "gate": hide_until_connected,
             // Grinden måste veta om overlayn är AVSTÄNGD, annars "återställer" den
             // fönstret vid varje återanslutning och en avstängd overlay tänds igen
             // så fort man tabbar in i ACC (§8.5c).
-            "enabled": st.enabled,
+            "enabled": st.visible(),
             // Skalet har redan dolt fönstret om grinden är på. bus.js måste veta det,
             // annars vägrar den visa fönstret igen när ACC ansluter — den visar med
             // flit bara fönster den själv dolt (§8.5b).
-            "osHidden": hide_until_connected && st.enabled,
+            "osHidden": hide_until_connected && st.visible(),
             "hz": def.hz,
             "options": st.options,
         })
@@ -597,7 +680,7 @@ fn create_overlay(
         // innan hide() hinner köras. Samma sak när synk-grinden är på: overlayn ska
         // ändå döljas så fort sidan laddat, och att skapa den synlig gav ett tydligt
         // blink på cirka en sekund vid varje appstart.
-        .visible(st.enabled && !hide_until_connected)
+        .visible(st.visible() && !hide_until_connected)
         .build()?;
     win.set_ignore_cursor_events(CLICK_THROUGH.load(Ordering::Relaxed))?;
     Ok(())
@@ -702,12 +785,22 @@ struct OverlayInfo {
     url: String,
     base_width: f64,
     base_height: f64,
+    // Innehållets rektangel inne i fönstret (se OverlayDef). Skärmvyn ritar DEN och
+    // inte fönstret: annars ligger det man ser en bit in från den plats man siktade
+    // på, och marginalen går inte att ta bort eftersom den är fönstrets skuggrum.
+    content_width: f64,
+    content_height: f64,
+    pad_left: f64,
+    pad_top: f64,
     // Positionen i LOGISKA pixlar — samma enhet som set_position tar (§8.2).
     // Layout-flikens skärmvy ritar overlays ur den här och skickar tillbaka nya
     // värden när man drar; utan den hade panelen inte vetat var något ligger.
     x: i32,
     y: i32,
+    // Visas (ögonknappen) respektive ingår i layouten (+/× i Layout-fliken). Två
+    // fält, för de är två saker — se OverlayState.
     enabled: bool,
+    member: bool,
     scale: f64,
     opacity: f64,
     always_on_top: bool,
@@ -731,9 +824,14 @@ fn get_overlays(state: State<Mutex<Settings>>) -> Vec<OverlayInfo> {
                 url: d.url.clone(),
                 base_width: d.base_width,
                 base_height: d.base_height,
+                content_width: d.content_w(),
+                content_height: d.content_h(),
+                pad_left: d.pad_l(),
+                pad_top: d.pad_t(),
                 x: st.x,
                 y: st.y,
                 enabled: st.enabled,
+                member: st.is_member(),
                 scale: st.scale,
                 opacity: st.opacity,
                 always_on_top: st.always_on_top,
@@ -791,25 +889,49 @@ fn get_config(id: String, state: State<Mutex<Settings>>) -> ConfigInit {
     ConfigInit { scale, opacity, options }
 }
 
+// Visa/dölj (ögonknappen). Rör INTE medlemskapet: att dölja en overlay under ett lopp
+// ska inte kasta ut den ur layouten man byggt, och att visa den igen ska inte lägga in
+// den i den layout som råkar vara aktiv just då.
 #[tauri::command]
 fn set_enabled(app: AppHandle, state: State<Mutex<Settings>>, id: String, enabled: bool) {
-    {
+    let show = {
         let mut s = state.lock().unwrap();
         if let Some(st) = s.overlays.get_mut(&id) { st.enabled = enabled; }
+        let show = s.overlays.get(&id).map(|st| st.visible()).unwrap_or(false);
         save_settings(&app, &mut s);
-    }
-    // Skicka FÖRE show/hide: bus.js ska ha släppt sitt anspråk på fönstret innan
-    // skalet rör det, annars kan grinden hinna dölja det vi just visat.
-    let _ = app.emit("enabled", EnabledPayload { id: id.clone(), enabled });
-    if let Some(win) = app.get_webview_window(&id) {
-        if enabled { let _ = win.show(); } else { let _ = win.hide(); }
-    } else if enabled {
+        show
+    };
+    apply_visibility(&app, &state, &id, show);
+}
+
+// Lägg till / ta bort ur layouten (+ och × i Layout-fliken). Speglas in i den aktiva
+// layouten av save_settings, precis som allt annat — det finns fortfarande ingen väg
+// som skriver till en layout direkt.
+#[tauri::command]
+fn set_member(app: AppHandle, state: State<Mutex<Settings>>, id: String, member: bool) {
+    let show = {
+        let mut s = state.lock().unwrap();
+        if let Some(st) = s.overlays.get_mut(&id) { st.member = Some(member); }
+        let show = s.overlays.get(&id).map(|st| st.visible()).unwrap_or(false);
+        save_settings(&app, &mut s);
+        show
+    };
+    apply_visibility(&app, &state, &id, show);
+}
+
+// Eventet skickas FÖRE show/hide: bus.js ska ha släppt sitt anspråk på fönstret innan
+// skalet rör det, annars kan grinden hinna dölja det vi just visat (§8.5c).
+fn apply_visibility(app: &AppHandle, state: &State<Mutex<Settings>>, id: &str, show: bool) {
+    let _ = app.emit("enabled", EnabledPayload { id: id.to_string(), enabled: show });
+    if let Some(win) = app.get_webview_window(id) {
+        if show { let _ = win.show(); } else { let _ = win.hide(); }
+    } else if show {
         let (st, gate) = {
             let s = state.lock().unwrap();
-            (s.overlays.get(&id).cloned(), s.hide_until_connected)
+            (s.overlays.get(id).cloned(), s.hide_until_connected)
         };
-        if let (Some(def), Some(st)) = (def_of(&id), st) {
-            let _ = create_overlay(&app, def, &st, gate);
+        if let (Some(def), Some(st)) = (def_of(id), st) {
+            let _ = create_overlay(app, def, &st, gate);
         }
     }
 }
@@ -888,8 +1010,10 @@ fn reset_overlay(app: AppHandle, state: State<Mutex<Settings>>, id: String) {
     let (scale, opacity, options) = {
         let mut s = state.lock().unwrap();
         if let Some(cur) = s.overlays.get_mut(&id) {
-            let enabled = cur.enabled;
-            *cur = OverlayState { enabled, ..default_state_for(def) };
+            // Av/på och medlemskap är inte "utseende" och nollställs därför inte —
+            // "nollställ" ska inte kunna lägga in en overlay i layouten igen.
+            let (enabled, member) = (cur.enabled, cur.member);
+            *cur = OverlayState { enabled, member, ..default_state_for(def) };
         }
         save_settings(&app, &mut s);
         let st = s.overlays.get(&id).cloned().unwrap_or_else(|| default_state_for(def));
@@ -965,12 +1089,16 @@ fn get_screen(app: AppHandle) -> ScreenInfo {
 struct LayoutSlotInfo {
     id: String,
     title: String,
-    x: i32,
-    y: i32,
-    // Färdigräknad fönsterstorlek (base × skala) så panelen slipper slå upp defen
-    // för varje slot i varje miniatyr.
+    // INNEHÅLLETS rektangel, inte fönstrets: miniatyren ska visa det man ser på
+    // skärmen, och fönstret bär dessutom ett skuggrum som skulle gjort varje
+    // rektangel i miniatyren några procent för stor och en aning förskjuten.
+    x: f64,
+    y: f64,
     w: f64,
     h: f64,
+    // Dold just nu? En layout får innehålla en overlay man tillfälligt släckt, och
+    // miniatyren ritar den streckad i stället för att låtsas att den inte finns.
+    enabled: bool,
 }
 
 #[derive(Serialize)]
@@ -991,10 +1119,11 @@ fn layout_info(l: &Layout, active: &str) -> LayoutInfo {
             Some(LayoutSlotInfo {
                 id: d.id.clone(),
                 title: d.title.clone(),
-                x: st.x,
-                y: st.y,
-                w: d.base_width * st.scale,
-                h: d.base_height * st.scale,
+                x: st.x as f64 + d.pad_l() * st.scale,
+                y: st.y as f64 + d.pad_t() * st.scale,
+                w: d.content_w() * st.scale,
+                h: d.content_h() * st.scale,
+                enabled: st.enabled,
             })
         })
         .collect();
@@ -1043,7 +1172,7 @@ fn create_layout(app: AppHandle, state: State<Mutex<Settings>>, name: String) ->
     let overlays = s
         .overlays
         .iter()
-        .filter(|(oid, st)| st.enabled && def_of(oid).is_some())
+        .filter(|(oid, st)| st.is_member() && def_of(oid).is_some())
         .map(|(oid, st)| (oid.clone(), st.clone()))
         .collect();
     s.layouts.push(Layout { id: id.clone(), name: label, overlays });
@@ -1129,15 +1258,15 @@ fn activate_layout(app: AppHandle, state: State<Mutex<Settings>>, id: String) ->
             match l.overlays.get(&d.id) {
                 Some(want) => {
                     let mut st = want.clone();
-                    st.enabled = true;
+                    st.member = Some(true);
                     sanitize_state(d, &mut st);
                     s.overlays.insert(d.id.clone(), st);
                 }
-                // Bara av/på ändras för den som inte ingår: dess läge ska finnas kvar
-                // om man lägger tillbaka den senare.
+                // Bara medlemskapet ändras för den som inte ingår: dess läge — och
+                // dess av/på — ska finnas kvar om man lägger tillbaka den senare.
                 None => {
                     if let Some(st) = s.overlays.get_mut(&d.id) {
-                        st.enabled = false;
+                        st.member = Some(false);
                     }
                 }
             }
@@ -1157,10 +1286,11 @@ fn activate_layout(app: AppHandle, state: State<Mutex<Settings>>, id: String) ->
     for (def, st) in plan {
         // Eventet FÖRE show/hide, av samma skäl som i set_enabled: bus.js måste ha
         // släppt sitt anspråk på fönstret innan skalet rör det (§8.5c).
-        let _ = app.emit("enabled", EnabledPayload { id: def.id.clone(), enabled: st.enabled });
+        let show = st.visible();
+        let _ = app.emit("enabled", EnabledPayload { id: def.id.clone(), enabled: show });
         match app.get_webview_window(&def.id) {
             Some(win) => {
-                if st.enabled {
+                if show {
                     let _ = win.set_size(tauri::LogicalSize::new(
                         def.base_width * st.scale,
                         def.base_height * st.scale,
@@ -1172,14 +1302,14 @@ fn activate_layout(app: AppHandle, state: State<Mutex<Settings>>, id: String) ->
                     let _ = win.hide();
                 }
             }
-            None if st.enabled => {
+            None if show => {
                 if let Err(e) = create_overlay(&app, def, &st, gate) {
                     eprintln!("[shell] kunde ej skapa overlay {}: {e}", def.id);
                 }
             }
             None => {}
         }
-        if st.enabled {
+        if show {
             let _ = app.emit(
                 "config",
                 ConfigPayload { id: def.id.clone(), scale: st.scale, opacity: st.opacity },
@@ -1739,6 +1869,7 @@ pub fn run() {
             get_overlays,
             get_config,
             set_enabled,
+            set_member,
             set_scale,
             set_opacity,
             set_always_on_top,
@@ -2261,6 +2392,10 @@ mod tests {
             url: "t.html".into(),
             base_width: 100.0,
             base_height: 50.0,
+            content_width: None,
+            content_height: None,
+            pad_left: None,
+            pad_top: None,
             default_x: 0,
             default_y: 0,
             default_scale: 1.0,
@@ -2355,9 +2490,17 @@ mod tests {
         registry()[0].id.clone()
     }
 
+    // `member: None` med flit: det är formen en settings.json från före 0.5.4 har, och
+    // den vägen (medlemskap ärver `enabled`) är den som måste fortsätta hålla.
     fn stat(x: i32, enabled: bool) -> OverlayState {
-        OverlayState { enabled, x, y: 0, scale: 1.0, opacity: 1.0, always_on_top: true,
-                       options: HashMap::new() }
+        OverlayState { enabled, member: None, x, y: 0, scale: 1.0, opacity: 1.0,
+                       always_on_top: true, options: HashMap::new() }
+    }
+
+    // Samma överlay, men uttryckligt medlemskap — för fallet "ingår i layouten men är
+    // dold just nu", som inte gick att uttrycka alls före 0.5.4.
+    fn stat_m(x: i32, enabled: bool, member: bool) -> OverlayState {
+        OverlayState { member: Some(member), ..stat(x, enabled) }
     }
 
     fn med_layout(active: &str) -> Settings {
@@ -2369,10 +2512,10 @@ mod tests {
     }
 
     // Den aktiva layouten är LIVE-BUNDEN: läget speglas in vid varje sparning, och
-    // bara PÅSLAGNA overlays ingår (medlemskap = påslagen). Speglade den även
-    // avslagna hade "ta bort ur layouten" inte gjort något alls.
+    // bara MEDLEMMAR ingår. Speglade den alla hade "ta bort ur layouten" inte gjort
+    // något alls.
     #[test]
-    fn synk_speglar_bara_paslagna_till_den_aktiva() {
+    fn synk_speglar_bara_medlemmar_till_den_aktiva() {
         let id = nagot_id();
         let mut s = med_layout("a");
         s.overlays.insert(id.clone(), stat(120, true));
@@ -2385,9 +2528,16 @@ mod tests {
         assert!(s.layouts.iter().find(|l| l.id == "b").unwrap().overlays.is_empty(),
                 "en INAKTIV layout får aldrig skrivas över");
 
-        // Slås overlayn av försvinner den ur layouten vid nästa spegling — det är
-        // exakt vad "ta bort ur layouten" är.
-        s.overlays.get_mut(&id).unwrap().enabled = false;
+        // ATT DÖLJA ÄR INTE ATT TA BORT. En overlay man släcker med ögonknappen ska
+        // ligga kvar i layouten — annars kastar ett klick i Overlays-fliken ut den ur
+        // den layout man byggt, och nästa spegling skriver bort den för gott.
+        s.overlays.insert(id.clone(), stat_m(120, false, true));
+        sync_active_layout(&mut s);
+        assert_eq!(s.layouts[0].overlays.len(), 1, "en dold medlem ska ligga kvar i layouten");
+        assert!(!s.layouts[0].overlays[&id].enabled, "…och minnas att den är dold");
+
+        // Att ta bort ur layouten (medlemskapet) är det som tömmer den.
+        s.overlays.insert(id.clone(), stat_m(120, true, false));
         sync_active_layout(&mut s);
         assert!(s.layouts[0].overlays.is_empty());
     }
@@ -2405,14 +2555,15 @@ mod tests {
 
     // Samma skydd som §8.3b ger options och presets. Två fall som är lätta att missa:
     // ett `active_layout` som pekar på en borttagen layout (då hade speglingen skrivit
-    // ut i tomma intet vid varje sparning) och en medlem med enabled:false (en layout
-    // som innehåller en overlay den samtidigt släcker).
+    // ut i tomma intet vid varje sparning) och en slot vars `member` säger false (en
+    // overlay som både ingår och inte ingår i samma layout).
     #[test]
     fn layouter_stadas_vid_inlasning() {
         let id = nagot_id();
         let mut s = Settings::default();
         let mut ov = HashMap::new();
-        ov.insert(id.clone(), OverlayState { scale: 99.0, opacity: -5.0, ..stat(9_000_000, false) });
+        ov.insert(id.clone(), OverlayState { scale: 99.0, opacity: -5.0,
+                                            ..stat_m(9_000_000, false, false) });
         ov.insert("borttagen-overlay".into(), stat(0, true));
         s.layouts.push(Layout { id: "a".into(), name: "   ".into(), overlays: ov });
         s.layouts.push(Layout { id: "a".into(), name: "dubblett".into(), overlays: HashMap::new() });
@@ -2424,7 +2575,8 @@ mod tests {
         assert_eq!(l.name, "Layout", "tomt namn ska få en fallback");
         assert!(!l.overlays.contains_key("borttagen-overlay"));
         let st = &l.overlays[&id];
-        assert!(st.enabled, "medlemskap ÄR påslagen");
+        assert!(st.is_member(), "att ligga i kartan ÄR medlemskapet");
+        assert!(!st.enabled, "…men en dold medlem ska INTE tvingas synlig av städningen");
         assert_eq!(st.scale, SCALE_MAX);
         assert_eq!(st.opacity, OPACITY_MIN);
         assert_eq!(st.x, POS_LIMIT);
@@ -2442,6 +2594,24 @@ mod tests {
         }
         let ids: Vec<&str> = s.layouts.iter().map(|l| l.id.as_str()).collect();
         assert_eq!(ids, vec!["natt", "natt-2", "natt-3"]);
+    }
+
+    // Innehållsrektangeln är det skärmvyn ritar och det man siktar med. Ljuger den om
+    // fönstret hamnar varje overlay fel på skärmen, och felet är osynligt i koden.
+    // Kontrollen läser RÅVÄRDENA ur registret och inte content_w()/pad_l(), som
+    // klampar: en klampad kontroll stämmer alltid mot sig själv och kan inte falla.
+    #[test]
+    fn innehallsrektangeln_ryms_i_fonstret() {
+        for d in registry() {
+            let (pl, pt) = (d.pad_left.unwrap_or(0.0), d.pad_top.unwrap_or(0.0));
+            let cw = d.content_width.unwrap_or(d.base_width);
+            let ch = d.content_height.unwrap_or(d.base_height);
+            assert!(pl >= 0.0 && pt >= 0.0 && cw > 0.0 && ch > 0.0, "{}: orimliga mått", d.id);
+            assert!(pl + cw <= d.base_width,
+                    "{}: innehållet ({pl} + {cw}) ryms inte i baseWidth {}", d.id, d.base_width);
+            assert!(pt + ch <= d.base_height,
+                    "{}: innehållet ({pt} + {ch}) ryms inte i baseHeight {}", d.id, d.base_height);
+        }
     }
 
     // Base64 är handskriven (§ i lib.rs) — den ska ge exakt samma sträng som en

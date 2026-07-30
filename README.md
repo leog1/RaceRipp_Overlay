@@ -69,11 +69,22 @@ overlay i panelen.
 
 ## Layouter
 Fliken **Layout** visar hela skärmen som en yta med dina overlays som proportionella
-rutor. Dra dem på plats — de snappar mot ett rutnät (täthet 8/12/16/24 kolumner, går att
-stänga av), mot skärmens kanter och mitt, och mot varandras kanter och mitt. Piltangenter
-finjusterar 1 px, Shift+piltangent 10 px. Vill man ha exakta tal finns X/Y-fält i varje
+rutor. Rutan visar det overlayn RITAR, inte fönstret den bor i — hörnet i vyn är alltså
+hörnet på skärmen. Dra dem på plats: de snappar mot ett rutnät (täthet 8/12/16/24
+kolumner, går att stänga av), mot den användbara ytans kanter och mitt, och mot varandras
+kanter och mitt. Piltangenter finjusterar 1 px, Shift+piltangent 10 px. Högerklick på en
+ruta ger centrering, visa/dölj och ta bort. Vill man ha exakta tal finns X/Y-fält i varje
 overlays rad. Skala, opacitet och overlayns egna alternativ sitter i samma rad, hopfälld
 tills man öppnar den.
+
+Överst i inställningarna sitter **Skärmvy**:
+- **Kantmarginal** — hur nära skärmkanten något får hamna. 8 px från början, kan sättas
+  till 0 om du vill kunna lägga en overlay kant i kant.
+- **Upplösning** — normalt skärmen appen ligger på, men du kan välja en annan eller
+  skriva in egna mått. Positionerna är riktiga skärmkoordinater hela tiden, så du kan
+  bygga en layout för en rigg du inte sitter vid.
+- **Skärmar** — 1, 2 eller 3. Skarvarna ritas ut och går att snappa mot, så ingen overlay
+  hamnar delad mitt i en ram.
 
 En **layout** är hela skärmen sparad under ett namn: vilka overlays som är på, var de
 sitter, hur stora de är och hur de ser ut. Exakt en är aktiv i taget, och den aktiva
@@ -82,8 +93,10 @@ följer med automatiskt — allt du ändrar hamnar i den utan ett spara-steg, oa
 så flyttar, storleksändrar, tänder och släcker appen fönstren i ett svep. Att ta bort en
 layout släcker inga overlays; du tappar bara vägen tillbaka till det utseendet.
 
-Lägg till eller ta bort en overlay ur layouten med **+** i skärmvyn respektive **×** på
-raden — det är samma av/på som ögonknappen i Overlays-fliken.
+Lägg till eller ta bort en overlay ur layouten med **Lägg till** i skärmvyn respektive
+**×** på raden. **Att dölja är något annat än att ta bort:** ögonknappen (i båda
+flikarna, eller på raden här) släcker overlayn men behåller dess plats i layouten — rutan
+ligger kvar streckad och kommer tillbaka precis där den låg när du visar den igen.
 
 ## OBS
 Motorns HTTP-server serverar overlays direkt. Lägg en **Browser Source** mot t.ex.

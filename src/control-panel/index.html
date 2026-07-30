@@ -652,20 +652,52 @@ body.maximized .tb-btn .ico-max{display:none;}
    legat några tiondels procent fel, växande mot höger/nedåt, och felet hade varit
    omöjligt att se men fullt mätbart. En outline tar ingen plats alls, så
    `clientWidth` är exakt den skärmbredd vi räknade fram. */
-.st-screen{position:relative;flex:0 0 auto;background:#040505;box-sizing:content-box;
+/* Bakgrunden är en riktig cockpitbild, inte en tom yta: man placerar overlays i
+   förhållande till det man SER — rattens överkant, spegelraden, mitten av rutan —
+   och en svart rektangel säger ingenting om det. Bilden ligger i backgrund-
+   shorthanden med en mörk vask ÖVER sig i samma deklaration, så det inte behövs
+   något extra lager som kan hamna över rutnätet.
+   Vasken är stark med flit (0,62): rutnätet, boxarna och hjälplinjerna är det man
+   arbetar med, och bilden ska bara ge dem ett sammanhang. Blir den ljusare måste
+   rutnätets opaciteter upp igen, och då tävlar de två om samma uppmärksamhet. */
+.st-screen{position:relative;flex:0 0 auto;box-sizing:content-box;
+  background:linear-gradient(rgba(4,6,6,0.62),rgba(4,6,6,0.62)),
+             url(../shared/layout-stage-bg.webp) center/cover no-repeat, #040505;
   outline:1px solid var(--ui-edge);box-shadow:var(--ui-recess);}
 
 /* Rutnätet. Linjerna är nästan osynliga och PUNKTERNA i korsningarna bär
    informationen: det är punkterna man snappar mot, och ett fullt synligt rutnät
-   hade tävlat med boxarna man flyttar. --gx/--gy sätts av JS ur celltätheten. */
-.st-grid{position:absolute;inset:0;pointer-events:none;
+   hade tävlat med boxarna man flyttar. --gx/--gy sätts av JS ur celltätheten.
+   Mot en fotografisk bakgrund räcker inte de gamla värdena (0,045 / 0,22) — de
+   försvann i asfalten och syntes bara mot himlen. Linjerna har därför en mörk
+   skugga under sig i stället för högre ljusstyrka: en ljus linje mot en ljus yta
+   löses av kontrasten under, inte av mer ljus.
+   Rutnätet ligger INOM kantmarginalen (--mx/--my), för det är den yta man
+   faktiskt placerar i. */
+.st-grid{position:absolute;left:var(--mx);top:var(--my);right:var(--mx);bottom:var(--my);
+  pointer-events:none;
   background-image:
-    radial-gradient(circle at 0 0, rgba(255,255,255,0.22) 1.1px, transparent 1.4px),
-    repeating-linear-gradient(90deg, rgba(255,255,255,0.045) 0 1px, transparent 1px var(--gx)),
-    repeating-linear-gradient(180deg, rgba(255,255,255,0.045) 0 1px, transparent 1px var(--gy));
-  background-size:var(--gx) var(--gy), auto, auto;
+    radial-gradient(circle at 0 0, rgba(0,0,0,0.55) 2.2px, transparent 2.6px),
+    radial-gradient(circle at 0 0, rgba(255,255,255,0.40) 1.2px, transparent 1.6px),
+    repeating-linear-gradient(90deg, rgba(0,0,0,0.30) 0 1.6px, transparent 1.6px var(--gx)),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.085) 0 1px, transparent 1px var(--gx)),
+    repeating-linear-gradient(180deg, rgba(0,0,0,0.30) 0 1.6px, transparent 1.6px var(--gy)),
+    repeating-linear-gradient(180deg, rgba(255,255,255,0.085) 0 1px, transparent 1px var(--gy));
+  background-size:var(--gx) var(--gy), var(--gx) var(--gy), auto, auto, auto, auto;
   opacity:0;transition:opacity .16s ease;}
 .st-grid.on{opacity:1;}
+/* Kantmarginalen — den yta overlays inte ska hamna i. Streckad och dämpad: den är
+   en REGEL man ställt in, inte något man siktar på. Ritas bara när den är > 0. */
+.st-safe{position:absolute;left:var(--mx);top:var(--my);right:var(--mx);bottom:var(--my);
+  pointer-events:none;border:1px dashed rgba(255,255,255,0.16);}
+.st-safe[hidden]{display:none;}
+/* Skarvarna i en flerskärmsuppsättning. En overlay som hamnar mitt i en skarv är
+   delad i två på riktigt, och det syns inte på en enda stor rektangel. Linjen är
+   ljusare än rutnätet och har en mörk kärna: den ska läsas som en fysisk kant. */
+.st-seams{position:absolute;inset:0;pointer-events:none;}
+.st-seams i{position:absolute;top:0;bottom:0;width:3px;margin-left:-1.5px;
+  background:linear-gradient(90deg,rgba(255,255,255,0.10),rgba(0,0,0,0.75) 40%,
+             rgba(0,0,0,0.75) 60%,rgba(255,255,255,0.10));}
 /* Skärmens mittlinjer. Egen regel och inte en cell i rutnätet: mitten finns
    oavsett täthet, och den är den punkt man oftast siktar mot. */
 .st-mid{position:absolute;inset:0;pointer-events:none;}
@@ -697,6 +729,10 @@ body.maximized .tb-btn .ico-max{display:none;}
 .st-ov.sel{border-color:rgba(251,191,36,0.65);color:var(--amber);}
 .st-ov.drag{cursor:grabbing;border-color:var(--amber);color:var(--amber);}
 .st-ov .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;}
+/* Medlem i layouten men DÖLJD just nu (ögonknappen i Overlays-fliken). Streckad
+   kant och nedtonad: platsen är fortfarande reserverad — det är hela poängen med
+   att dölja i stället för att ta bort — men rutan visar inget på skärmen. */
+.st-ov.off{border-style:dashed;opacity:.5;}
 /* Under en viss storlek får namnet inte plats och blir en grå gröt. Då ritas boxen
    tom — formen och läget är ändå det den finns för att visa. */
 .st-ov.tiny .nm{display:none;}
@@ -712,12 +748,29 @@ body.maximized .tb-btn .ico-max{display:none;}
 .st-tools .sbtn.active{background:linear-gradient(180deg,rgba(251,191,36,0.22),rgba(251,191,36,0.10));
   border-color:rgba(251,191,36,0.40);}
 .st-tools .sep{width:1px;align-self:stretch;margin:4px 2px;background:var(--ui-hair);}
+/* "Lägg till" är flikens vanligaste och viktigaste handling — en tom layout går
+   inte att göra något med förrän man tryckt på den. Som en av tre likadana
+   ikonknappar i ett hörn läste den som ett verktyg bland andra, så den bär både
+   text och amberfyllning. Amber och inte grönt: grönt betyder "på" i panelen, och
+   det här är en handling, inte ett tillstånd. */
+.st-tools .sbtn.primary{width:auto;padding:0 11px 0 9px;gap:6px;
+  background:linear-gradient(180deg,rgba(251,191,36,0.26),rgba(251,191,36,0.12));
+  border-color:rgba(251,191,36,0.48);color:var(--amber);
+  font-size:var(--ui-fs-xs);font-weight:700;letter-spacing:.9px;text-transform:uppercase;}
+.st-tools .sbtn.primary:hover{background:linear-gradient(180deg,rgba(251,191,36,0.36),rgba(251,191,36,0.18));
+  border-color:rgba(251,191,36,0.62);}
+.st-tools .sbtn.primary svg{width:15px;height:15px;stroke-width:2.4;}
 /* Skärmens mått uppe till vänster. Det är den enda platsen som säger vilken skärm
    koordinaterna gäller — utan den är "x 460" ett tal utan enhet. */
 .st-cap{position:absolute;left:12px;top:12px;z-index:4;display:flex;align-items:center;gap:8px;
   font-size:var(--ui-fs-xs);font-weight:700;letter-spacing:1px;color:var(--faint);
   font-variant-numeric:tabular-nums;pointer-events:none;}
 .st-cap b{color:var(--dim);font-weight:700;}
+/* Koordinaterna medan man drar. De ligger i captionraden och inte på boxen: en
+   etikett som följer med boxen täcker just den kant man siktar med, och vid små
+   boxar är den bredare än rutan den beskriver. */
+.st-cap .pos{color:var(--amber);}
+.st-cap .pos[hidden]{display:none;}
 /* Tom skärmvy: layouten innehåller ingen overlay.
    `[hidden]`-regeln står här av ett konkret skäl (§8.4f): en display-deklaration
    slår ut webbläsarens inbyggda `[hidden]{display:none}`, och `el.hidden = true`
@@ -752,6 +805,7 @@ body.maximized .tb-btn .ico-max{display:none;}
   border:1px solid var(--ui-edge-dk);background:#050606;}
 .lthumb rect{fill:rgba(251,191,36,0.30);stroke:rgba(251,191,36,0.55);stroke-width:1;
   vector-effect:non-scaling-stroke;}
+.lthumb rect.off{fill:none;stroke-dasharray:2 2;stroke:rgba(251,191,36,0.40);}
 .lrow.on .lstate{color:var(--amber);border-color:rgba(251,191,36,0.35);
   background:rgba(251,191,36,0.10);}
 /* Fotens knapp i layoutlistan: hela bredden, samma höjd som växlaren i overlay-
@@ -764,14 +818,35 @@ body.maximized .tb-btn .ico-max{display:none;}
    Grupperna är STÄNGDA som standard här: layout-fliken handlar om var något ligger,
    och fem öppna inställningslistor hade begravt skärmvyn. */
 .lgrp{position:relative;}
-.lgrp .ghead{padding-right:48px;}
-.gremove{position:absolute;right:14px;top:6px;width:28px;height:28px;
+.lgrp .ghead{padding-right:84px;}
+/* VALD I SKÄRMVYN. Fem grupper med samma rubrikrad går inte att skilja åt, och att
+   dra en box och sedan leta rätt på dess inställningar i listan under var flikens
+   trängsta ögonblick. Markören är amber, samma som boxens kant i vyn och samma som
+   den aktiva presetens: det är inget TILLSTÅND (då hade det varit grönt), det är
+   var pekaren står. Den sitter på rubrikraden och inte på gruppen, så den syns lika
+   tydligt hopfälld som öppen. */
+.lgrp.picked > .ghead{background:linear-gradient(90deg,rgba(251,191,36,0.13),rgba(251,191,36,0.03));
+  color:var(--ink);}
+.lgrp.picked > .ghead .gname{color:var(--amber);}
+.lgrp.picked > .ghead .gbar{height:20px;}
+.gremove,.ghide{position:absolute;top:6px;width:28px;height:28px;
   display:flex;align-items:center;justify-content:center;
   appearance:none;background:none;border:1px solid transparent;border-radius:var(--ui-r-sm);
   color:var(--faint);cursor:pointer;transition:color .14s ease,background .14s ease,border-color .14s ease;}
+.gremove{right:14px;}
+.ghide{right:46px;}
 .gremove:hover{color:var(--red);border-color:rgba(255,59,59,0.45);background:var(--ctrl-hi);}
-.gremove:focus-visible{outline:2px solid var(--ui-focus);outline-offset:1px;}
-.gremove svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;}
+.gremove:focus-visible,.ghide:focus-visible{outline:2px solid var(--ui-focus);outline-offset:1px;}
+.gremove svg,.ghide svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;
+  stroke-linejoin:round;}
+.ghide svg{width:15px;height:15px;}
+/* Visa/dölj är ett TILLSTÅND och inte en handling, alltså grönt när det är på —
+   samma regel som PÅ-brickan och växlarna. Ta INTE bort skillnaden mot × bredvid:
+   det är just för att de två knapparna gör olika saker (dölja respektive ta bort ur
+   layouten) som de behöver läsa olika. */
+.ghide:hover{color:var(--ink);background:var(--ctrl-hi);}
+.ghide.on{color:var(--green);}
+.ghide.on:hover{color:var(--green);border-color:rgba(13,230,34,0.35);}
 /* Positionsraden: två talfält som tillsammans mäter exakt 376 px (180 + 16 + 180),
    alltså samma kontrollkolumn som reglage, väljare och färgrader (§4b). */
 .posf{flex:0 0 376px;width:376px;display:flex;align-items:center;gap:16px;}
@@ -1422,13 +1497,15 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
           <div class="st-clip" id="stClip">
             <div class="st-screen" id="stScreen">
               <div class="st-grid" id="stGrid"></div>
+              <div class="st-safe" id="stSafe" hidden></div>
+              <div class="st-seams" id="stSeams"></div>
               <div class="st-mid"><i></i><i></i></div>
               <div class="st-guide v" id="stGuideV"></div>
               <div class="st-guide h" id="stGuideH"></div>
             </div>
-            <div class="st-empty" id="stEmpty" hidden>Layouten är tom.<br>Lägg till en overlay med <b>+</b> nere till höger.</div>
+            <div class="st-empty" id="stEmpty" hidden>Layouten är tom.<br>Lägg till en overlay med <b>Lägg till</b> nere till höger.</div>
           </div>
-          <div class="st-cap"><b id="stRes">—</b><span id="stGridCap"></span></div>
+          <div class="st-cap"><b id="stRes">—</b><span id="stGridCap"></span><span class="pos" id="stPos" hidden></span></div>
           <div class="st-tools">
             <button class="sbtn" id="btnSnap" title="Snappa mot rutnätet" aria-pressed="true">
               <svg viewBox="0 0 24 24"><path d="M7 3v8a5 5 0 0 0 10 0V3"/><path d="M4 3h6M14 3h6M4 21h16"/></svg>
@@ -1437,8 +1514,9 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
               <svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="1"/><path d="M9.5 3.5v17M15 3.5v17M3.5 9.5h17M3.5 15h17"/></svg>
             </button>
             <span class="sep"></span>
-            <button class="sbtn" id="btnLayAdd" title="Lägg till en overlay i layouten" aria-haspopup="true" aria-expanded="false">
+            <button class="sbtn primary" id="btnLayAdd" title="Lägg till en overlay i layouten" aria-haspopup="true" aria-expanded="false">
               <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+              <span>Lägg till</span>
             </button>
           </div>
         </div>
@@ -1934,8 +2012,14 @@ function renderList(){
   for (const o of overlays){
     const row = document.createElement('button');
     row.className = 'lrow' + (o.enabled ? ' on' : '') + (o.id === selectedId ? ' sel' : '');
-    row.innerHTML = `<span class="ltitle"></span><span class="lstate">${o.enabled ? 'på' : 'av'}</span>`;
+    // Brickan säger SYNLIGHET. En overlay som inte ingår i layouten alls är ett
+    // tredje läge och skrivs ut som sådant — annars ser den likadan ut som en man
+    // bara dolt, och ögonknappen här skulle "inte göra något" (den visar en overlay
+    // som ändå inte har någon plats i layouten).
+    row.innerHTML = `<span class="ltitle"></span><span class="lstate">` +
+      `${o.member === false ? 'utanför' : (o.enabled ? 'på' : 'av')}</span>`;
     row.querySelector('.ltitle').textContent = o.title;
+    if (o.member === false) row.title = o.title + ' — ingår inte i den aktiva layouten (lägg till under Layout)';
     row.addEventListener('click', () => select(o.id));
     list.appendChild(row);
   }
@@ -2598,12 +2682,12 @@ $('btnMove').addEventListener('click', async () => {
   try { await invoke('set_edit_mode', { edit: editMode }); }
   catch(e){ toast('Kunde inte växla edit-läge: ' + errMsg(e), true); }
 });
-$('btnEye').addEventListener('click', async () => {
+// Visa/dölj går genom SAMMA funktion som Layout-flikens ögonknapp. Två vägar till
+// samma tillstånd glider isär — och den ena skulle ha glömt att tona ner boxen i
+// skärmvyn, vilket är enda stället man ser att overlayn är dold men kvar i layouten.
+$('btnEye').addEventListener('click', () => {
   const o = ov(selectedId); if (!o) return;
-  const on = !o.enabled; o.enabled = on;
-  $('btnEye').classList.toggle('active', on); renderList();
-  try { await invoke('set_enabled', { id: o.id, enabled: on }); }
-  catch(e){ toast('Kunde inte visa/dölja: ' + errMsg(e), true); }
+  setVisible(o.id, !o.enabled);
 });
 $('btnReset').addEventListener('click', async () => {
   if (!selectedId) return;
@@ -2972,16 +3056,43 @@ let stagePicked = null;                    // id på den box man senast rörde
    settings.json ogiltig (samma regel som de hopfällbara gruppernas läge). */
 const LAY_KEY = 'simmatrix.layout';
 const GRID_COLS = [8, 12, 16, 24];
-let snapOn = true, gridCols = 12;
+/* Kantmarginalen är den yta längs skärmens kanter som overlays ska hålla sig
+   utanför. Den var tidigare varken ställbar eller synlig — den fanns bara som
+   fönstrens skuggrum, alltså en osynlig marginal ingen kunde ändra: en box i
+   vyns övre högra hörn lade innehållet ett femtiotal pixlar in från skärmens.
+   Skuggrummet är borträknat sedan 0.5.4 (vyn ritar INNEHÅLLET), och det som är
+   kvar är ett medvetet val med ett tal man ser och kan sätta till noll.
+   8 px som standard: tillräckligt för att inget ska ligga kant i kant med
+   skärmkanten, litet nog att inte kännas som en ram. */
+const MARGIN_MAX = 120;
+const MONITOR_MAX = 3;
+const RES_MIN = { w: 640, h: 480 }, RES_MAX = { w: 15360, h: 8640 };
+let snapOn = true, gridCols = 12, edgeMargin = 8, monitors = 1;
+// Egen upplösning: null = använd skärmen appen ligger på. En egen är till för den
+// som ställer in för en ANNAN skärm än den panelen står på (triple, TV:n i vardags-
+// rummet, en rigg man bygger layouten till innan man sitter i den).
+let customRes = null;
 (function readLayoutPrefs(){
   try {
     const v = JSON.parse(localStorage.getItem(LAY_KEY)) || {};
     if (typeof v.snap === 'boolean') snapOn = v.snap;
     if (GRID_COLS.includes(v.cols)) gridCols = v.cols;
+    if (Number.isFinite(v.margin)) edgeMargin = Math.min(MARGIN_MAX, Math.max(0, Math.round(v.margin)));
+    if (Number.isFinite(v.monitors)) monitors = Math.min(MONITOR_MAX, Math.max(1, Math.round(v.monitors)));
+    if (v.res && Number.isFinite(v.res.width) && Number.isFinite(v.res.height))
+      customRes = { width: clampRes(v.res.width, 'w'), height: clampRes(v.res.height, 'h') };
   } catch {}
 })();
+function clampRes(v, axis){
+  const lim = axis === 'w' ? [RES_MIN.w, RES_MAX.w] : [RES_MIN.h, RES_MAX.h];
+  return Math.min(lim[1], Math.max(lim[0], Math.round(v)));
+}
 function writeLayoutPrefs(){
-  try { localStorage.setItem(LAY_KEY, JSON.stringify({ snap: snapOn, cols: gridCols })); } catch {}
+  try {
+    localStorage.setItem(LAY_KEY, JSON.stringify({
+      snap: snapOn, cols: gridCols, margin: edgeMargin, monitors, res: customRes,
+    }));
+  } catch {}
 }
 
 /* Skärmens LOGISKA storlek. Overlay-positioner är logiska pixlar (§8.2), så vyn
@@ -2989,21 +3100,60 @@ function writeLayoutPrefs(){
    kör 100 % skalning. Svarar Rust 0 (ingen skärm att fråga) faller vi tillbaka på
    1920×1080: en vy med rätt proportioner och fel absolutmått är fortfarande
    användbar, en vy som dividerar med noll är det inte. */
+let autoScreen = { width: 1920, height: 1080 };
 async function loadScreen(){
-  try { screenSize = await invoke('get_screen'); } catch { screenSize = { width: 0, height: 0 }; }
-  if (!(screenSize.width > 0 && screenSize.height > 0)) screenSize = { width: 1920, height: 1080 };
-  $('stRes').textContent = Math.round(screenSize.width) + '×' + Math.round(screenSize.height);
+  let s = null;
+  try { s = await invoke('get_screen'); } catch {}
+  autoScreen = (s && s.width > 0 && s.height > 0) ? s : { width: 1920, height: 1080 };
+  applyRes();
+}
+// En egen upplösning vinner över den upptäckta. Positionerna som skickas till Rust
+// är oförändrat riktiga skärmkoordinater — vyn är alltså ett RITBORD för den skärm
+// man ställer in för, och att det inte är den man tittar på just nu är hela poängen
+// med att kunna skriva in måtten.
+function applyRes(){
+  screenSize = customRes ? { ...customRes } : { ...autoScreen };
+  $('stRes').textContent = Math.round(screenSize.width) + '×' + Math.round(screenSize.height) +
+    (customRes ? ' (egen)' : '');
 }
 
-const layMembers = () => overlays.filter(o => o.enabled);
-const ovW = o => o.base_width * o.scale;
-const ovH = o => o.base_height * o.scale;
+/* MEDLEM i layouten ≠ SYNLIG. `member` är "ingår i layouten" (+ och × här),
+   `enabled` är "visas just nu" (ögonknappen i Overlays-fliken). Skärmvyn ritar
+   alla medlemmar och tonar ner de dolda: platsen är reserverad även när rutan
+   inte syns på skärmen, och det är precis därför de två är skilda åt. */
+const layMembers = () => overlays.filter(o => o.member);
+
+/* INNEHÅLLETS rektangel, inte fönstrets. Fönstret är större än det man ser — det
+   bär overlayns slagskugga, som ett transparent fönster klipper bort om den inte
+   får plats. Ritade vyn fönstren låg det man SER en bit in från den plats man
+   siktade på, och den marginalen gick inte att ta bort eftersom den var
+   nödvändig. Vyn arbetar därför i innehållskoordinater hela vägen och lägger
+   tillbaka fönstrets marginal först när positionen skickas till Rust. */
+const ovW = o => (o.content_width ?? o.base_width) * o.scale;
+const ovH = o => (o.content_height ?? o.base_height) * o.scale;
+const padX = o => (o.pad_left || 0) * o.scale;
+const padY = o => (o.pad_top || 0) * o.scale;
+const ovX = o => o.x + padX(o);            // innehållets vänsterkant på skärmen
+const ovY = o => o.y + padY(o);
 
 /* ── skärmvyn ──────────────────────────────────────────────────────────────── */
 let stageK = 1;                            // skärmpixlar → vypixlar
 
+// Den yta overlays får ligga i: skärmen minus kantmarginalen. Marginalen klampas
+// mot skärmen så en absurd inmatning inte kan ge en negativ yta att dividera med.
+function safeArea(){
+  const m = Math.min(edgeMargin, screenSize.width / 4, screenSize.height / 4);
+  return { x: m, y: m, w: screenSize.width - m * 2, h: screenSize.height - m * 2, m };
+}
+
+/* Raderna räknas ur cellernas BREDD så de blir kvadratiska — ett fast radantal ger
+   ett rutnät som betyder olika saker på 16:9 och 21:9. Sedan kantmarginalen finns
+   räknas de mot den ANVÄNDBARA ytan och inte mot hela skärmen: rutnätet ligger
+   inuti marginalen, och en cell som räknats mot skärmen hade lämnat en avhuggen
+   rad längst ner. */
 function gridRows(){
-  return Math.max(2, Math.round(gridCols * screenSize.height / screenSize.width));
+  const a = safeArea();
+  return Math.max(2, Math.round(gridCols * a.h / a.w));
 }
 
 function fitStage(){
@@ -3015,12 +3165,35 @@ function fitStage(){
   stageK = Math.min(availW / screenSize.width, availH / screenSize.height);
   sc.style.width  = Math.round(screenSize.width  * stageK) + 'px';
   sc.style.height = Math.round(screenSize.height * stageK) + 'px';
+  const a = safeArea();
   const g = $('stGrid');
-  g.style.setProperty('--gx', (screenSize.width  * stageK / gridCols)  + 'px');
-  g.style.setProperty('--gy', (screenSize.height * stageK / gridRows()) + 'px');
+  g.style.setProperty('--gx', (a.w * stageK / gridCols)  + 'px');
+  g.style.setProperty('--gy', (a.h * stageK / gridRows()) + 'px');
   g.classList.toggle('on', snapOn);
-  $('stGridCap').textContent = snapOn ? `· ${gridCols}×${gridRows()}` : '· fritt';
+  // Marginalen sätts på SKÄRMEN och ärvs av rutnätet och den streckade rutan, så de
+  // två aldrig kan råka stå på olika värden.
+  sc.style.setProperty('--mx', (a.m * stageK) + 'px');
+  sc.style.setProperty('--my', (a.m * stageK) + 'px');
+  $('stSafe').hidden = a.m <= 0;
+  paintSeams();
+  $('stGridCap').textContent = (snapOn ? `· ${gridCols}×${gridRows()}` : '· fritt') +
+                               (a.m > 0 ? ` · ${Math.round(a.m)} px kant` : '');
   for (const el of sc.querySelectorAll('.st-ov')) placeBox(el);
+}
+
+/* Skarvarna mellan skärmarna i en flerskärmsuppsättning. Vyn är EN yta — det är så
+   Windows ser ett triple-set också — men en overlay som hamnar mitt i en skarv är
+   delad i två av ramarna, och det finns inget annat sätt att se det i förväg.
+   Skärmarna antas lika breda: en blandning av upplösningar är ovanlig i en
+   simrigg och skulle kräva att man matar in varje skärm för sig. */
+function paintSeams(){
+  const box = $('stSeams');
+  box.innerHTML = '';
+  for (let i = 1; i < monitors; i++){
+    const el = document.createElement('i');
+    el.style.left = (screenSize.width * i / monitors * stageK) + 'px';
+    box.appendChild(el);
+  }
 }
 
 // Boxens plats räknas alltid ur overlayns EGNA värden, aldrig ur elementets
@@ -3029,8 +3202,8 @@ function fitStage(){
 function placeBox(el){
   const o = ov(el.dataset.id); if (!o) return;
   const w = ovW(o) * stageK, h = ovH(o) * stageK;
-  el.style.left = (o.x * stageK) + 'px';
-  el.style.top  = (o.y * stageK) + 'px';
+  el.style.left = (ovX(o) * stageK) + 'px';
+  el.style.top  = (ovY(o) * stageK) + 'px';
   el.style.width = w + 'px';
   el.style.height = h + 'px';
   el.classList.toggle('tiny', w < 74 || h < 18);
@@ -3045,9 +3218,10 @@ function renderStage(){
   for (const o of members){
     const el = document.createElement('button');
     el.type = 'button';
-    el.className = 'st-ov' + (o.id === stagePicked ? ' sel' : '');
+    el.className = 'st-ov' + (o.id === stagePicked ? ' sel' : '') + (o.enabled ? '' : ' off');
     el.dataset.id = o.id;
-    el.title = o.title + ' — dra för att flytta, piltangenter för att finjustera';
+    el.title = o.title + (o.enabled ? '' : ' (dold)') +
+               ' — dra för att flytta, piltangenter för att finjustera, högerklick för fler val';
     el.innerHTML = '<span class="nm"></span>';
     el.querySelector('.nm').textContent = o.title;
     wireBoxDrag(el);
@@ -3073,13 +3247,26 @@ function stageSoon(){ requestAnimationFrame(() => requestAnimationFrame(fitStage
 const SNAP_VIEW_PX = 7;
 
 function snapTargets(axis, selfId){
-  const span = axis === 'x' ? screenSize.width : screenSize.height;
-  const out = [0, span / 2, span];
+  const a = safeArea();
+  const start = axis === 'x' ? a.x : a.y;
+  const span  = axis === 'x' ? a.w : a.h;
+  // Kanterna är den ANVÄNDBARA ytans, inte skärmens: hela poängen med kantmarginalen
+  // är att kunna dra något "ända ut" och ändå få den luft man bestämt. Med marginal 0
+  // är det samma sak som skärmens kanter.
+  const out = [start, start + span / 2, start + span];
   const n = axis === 'x' ? gridCols : gridRows();
-  for (let i = 1; i < n; i++) out.push(span * i / n);
+  for (let i = 1; i < n; i++) out.push(start + span * i / n);
+  // Skarvarna i en flerskärmsuppsättning är måltavlor i sig: det vanligaste man vill
+  // göra med en overlay på ett triple-set är att centrera den på mittskärmen eller
+  // lägga den kant i kant med en skarv.
+  if (axis === 'x' && monitors > 1){
+    for (let i = 1; i < monitors; i++) out.push(screenSize.width * i / monitors);
+    for (let i = 0; i < monitors; i++)
+      out.push(screenSize.width * (i + 0.5) / monitors);   // varje skärms mitt
+  }
   for (const o of layMembers()){
     if (o.id === selfId) continue;
-    const p = axis === 'x' ? o.x : o.y;
+    const p = axis === 'x' ? ovX(o) : ovY(o);
     const s = axis === 'x' ? ovW(o) : ovH(o);
     out.push(p, p + s / 2, p + s);
   }
@@ -3129,20 +3316,49 @@ function sendPos(id){
   return posSenders.get(id);
 }
 
+/* x/y är INNEHÅLLETS position på skärmen — det är den man siktar med och den som
+   står i talfälten. Fönstret läggs ut runt innehållet med sitt skuggrum, och det är
+   först där (i set_position) fönsterkoordinaten finns. Räkna aldrig tillbaka åt
+   andra hållet någon annanstans: två ställen som konverterar glider isär. */
 function moveTo(o, x, y, hx, hy){
-  o.x = Math.round(x); o.y = Math.round(y);
+  const cx = Math.round(x), cy = Math.round(y);
+  o.x = Math.round(cx - padX(o));
+  o.y = Math.round(cy - padY(o));
   const el = $('stScreen').querySelector(`.st-ov[data-id="${CSS.escape(o.id)}"]`);
   if (el) placeBox(el);
   showGuides(hx, hy);
   const f = layPos.get(o.id);
-  if (f){ f.x.value = o.x; f.y.value = o.y; }
+  if (f){ f.x.value = cx; f.y.value = cy; }
+  showPos(cx, cy);
   sendPos(o.id)(o.x, o.y);
 }
 
+// Koordinaterna medan man drar. De försvinner när dragningen tar slut: en siffra
+// som står kvar beskriver något man inte längre håller i.
+function showPos(x, y){
+  const el = $('stPos');
+  if (x == null){ el.hidden = true; return; }
+  el.hidden = false;
+  el.textContent = `· x ${Math.round(x)}  y ${Math.round(y)}`;
+}
+
+/* Att välja en box markerar också dess grupp i listan under. Utan det var flikens
+   trängsta ögonblick att dra en box och sedan leta rätt på just dess inställningar
+   bland fem likadana rubrikrader — och "ta bort" satt i den raden. Gruppen fälls
+   INTE ut av sig själv: ett val ska markera, inte flytta runt allt annat. */
 function pickBox(id){
   stagePicked = id;
   for (const el of $('stScreen').querySelectorAll('.st-ov'))
     el.classList.toggle('sel', el.dataset.id === id);
+  for (const grp of $('layStack').querySelectorAll('.lgrp'))
+    grp.classList.toggle('picked', grp.id === 'lgrp-' + id);
+  const grp = document.getElementById('lgrp-' + id);
+  // Bara när den ligger utanför synfältet: en skroll vid varje klick gör listan
+  // rastlös. `nearest` gör ingenting när gruppen redan syns.
+  if (grp) grp.scrollIntoView({ block: 'nearest', behavior: reduceMotion() ? 'auto' : 'smooth' });
+}
+function reduceMotion(){
+  try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
 }
 
 function wireBoxDrag(el){
@@ -3151,7 +3367,7 @@ function wireBoxDrag(el){
     if (e.button !== 0) return;
     const o = ov(el.dataset.id); if (!o) return;
     pickBox(o.id);
-    from = { px: e.clientX, py: e.clientY, x: o.x, y: o.y };
+    from = { px: e.clientX, py: e.clientY, x: ovX(o), y: ovY(o) };
     el.classList.add('drag');
     // Pekarfångst är en optimering (dragningen följer med utanför boxen), inte ett
     // krav: en syntetisk PointerEvent har inget id att fånga och kastar.
@@ -3178,6 +3394,7 @@ function wireBoxDrag(el){
     from = null;
     el.classList.remove('drag');
     showGuides(null, null);
+    showPos(null);
     try { el.releasePointerCapture(e.pointerId); } catch {}
     const o = ov(el.dataset.id);
     if (o) sendPos(o.id).flush();
@@ -3196,11 +3413,47 @@ function wireBoxDrag(el){
     e.preventDefault();
     const step = e.shiftKey ? 10 : 1;
     pickBox(o.id);
-    moveTo(o, o.x + d[0] * step, o.y + d[1] * step, null, null);
+    moveTo(o, ovX(o) + d[0] * step, ovY(o) + d[1] * step, null, null);
+    showPos(null);
     sendPos(o.id).flush();
   });
   el.addEventListener('focus', () => pickBox(el.dataset.id));
+  // Högerklick: de handlingar man vill åt med en overlay i handen. Centreringen
+  // finns för att den är omöjlig på ögonmått i en vy som är nedskalad tio gånger
+  // och samtidigt det man oftast vill (en delta-bar mitt överst).
+  el.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const o = ov(el.dataset.id); if (!o) return;
+    pickBox(o.id);
+    boxMenu(el, o);
+  });
 }
+
+function boxMenu(anchor, o){
+  const a = safeArea();
+  const mid = (span, start, size) => start + (span - size) / 2;
+  popMenu(anchor, {
+    minWidth: 220,
+    items: [
+      { label: 'Centrera i sidled',
+        onPick: () => { moveTo(o, mid(a.w, a.x, ovW(o)), ovY(o), null, null); showPos(null); sendPos(o.id).flush(); } },
+      { label: 'Centrera i höjdled',
+        onPick: () => { moveTo(o, ovX(o), mid(a.h, a.y, ovH(o)), null, null); showPos(null); sendPos(o.id).flush(); } },
+      { sep: true },
+      { label: o.enabled ? 'Dölj (behåll i layouten)' : 'Visa',
+        onPick: () => setVisible(o.id, !o.enabled) },
+      { label: 'Ta bort ur layouten', onPick: () => layRemove(o.id) },
+    ],
+  });
+}
+
+// Esc släpper valet. Utan den finns ingen väg tillbaka till "ingen box vald", och
+// den markerade gruppen i listan under står kvar och pekar på något man lämnat.
+addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || $('app').dataset.section !== 'layout') return;
+  if (document.querySelector('.pop')) return;      // menyn äger Esc när den är öppen
+  pickBox(null);
+});
 
 /* ── layoutlistan ──────────────────────────────────────────────────────────── */
 // Miniatyren ritas ur layoutens slots mot skärmens proportioner. Ren SVG: den blir
@@ -3208,8 +3461,12 @@ function wireBoxDrag(el){
 // previewns halftone-raster, §8.5d).
 function layThumb(l){
   const W = screenSize.width || 1920, H = screenSize.height || 1080;
+  // Slotens x/y/w/h är INNEHÅLLETS rektangel (Rust räknar bort fönstrets skuggrum),
+  // alltså samma sak som boxarna i skärmvyn visar. En dold medlem ritas streckad:
+  // den hör till layouten men syns inte på skärmen just nu.
   const rects = (l.slots || []).map(s =>
-    `<rect x="${(s.x / W * 100).toFixed(2)}" y="${(s.y / H * 100).toFixed(2)}" ` +
+    `<rect class="${s.enabled === false ? 'off' : ''}" ` +
+    `x="${(s.x / W * 100).toFixed(2)}" y="${(s.y / H * 100).toFixed(2)}" ` +
     `width="${Math.max(1.5, s.w / W * 100).toFixed(2)}" ` +
     `height="${Math.max(1.5, s.h / H * 100).toFixed(2)}"/>`).join('');
   return `<svg class="lthumb" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${rects}</svg>`;
@@ -3357,21 +3614,50 @@ async function removeLayout(l){
    dragningen hade tagit fokus från fältet och startat om gruppens hopfällning. */
 const layPos = new Map();
 
+/* MEDLEMSKAP OCH SYNLIGHET ÄR SKILDA ÅT. `set_member` lägger till/tar bort ur
+   layouten, `set_enabled` visar/döljer. Det var samma anrop till 0.5.3, och det gav
+   ett fel som var lätt att missa men omöjligt att komma runt: att dölja en overlay
+   med ögonknappen i Overlays-fliken kastade ut den ur layouten, och att tända den
+   igen la in den i den layout som råkade vara aktiv då. Att bygga en layout och
+   sedan släcka något en stund gick alltså inte. */
 async function layAdd(id){
-  try { await invoke('set_enabled', { id, enabled: true }); }
+  try { await invoke('set_member', { id, member: true }); }
   catch(err){ toast('Kunde inte lägga till overlayn: ' + errMsg(err), true); return; }
-  const o = ov(id); if (o) o.enabled = true;
+  const o = ov(id); if (o) o.member = true;
   renderList(); renderLayoutTab(); loadLayouts();
 }
 async function layRemove(id){
-  try { await invoke('set_enabled', { id, enabled: false }); }
+  try { await invoke('set_member', { id, member: false }); }
   catch(err){ toast('Kunde inte ta bort overlayn: ' + errMsg(err), true); return; }
-  const o = ov(id); if (o) o.enabled = false;
+  const o = ov(id); if (o) o.member = false;
   renderList(); renderLayoutTab(); loadLayouts();
+}
+// Visa/dölj utan att röra medlemskapet. Samma väg som ögonknappen i Overlays-fliken,
+// så de två flikarna aldrig kan säga olika saker om samma overlay.
+async function setVisible(id, on){
+  const o = ov(id);
+  /* Att VISA något som inte ingår i layouten kan inte lämna det osynligt — då gör
+     knappen ingenting och det ser trasigt ut. Den lägger därför till overlayn i
+     layouten på köpet, och säger det. Motsatsen (dölja → ta bort) är precis det
+     som inte får hända, och den vägen finns inte: `layRemove` är enda stället som
+     tar bort medlemskap. */
+  if (on && o && !o.member){
+    await layAdd(id);
+    toast('Overlayn lades till i layouten.');
+  }
+  if (o) o.enabled = on;
+  renderList(); renderLayoutTab();
+  try { await invoke('set_enabled', { id, enabled: on }); }
+  catch(err){ toast('Kunde inte visa/dölja: ' + errMsg(err), true); }
+  if (selectedId === id){
+    $('btnEye').classList.toggle('active', on);
+    $('btnEye').setAttribute('aria-pressed', String(on));
+  }
+  loadLayouts();
 }
 
 function openAddMenu(anchor){
-  const rest = overlays.filter(o => !o.enabled);
+  const rest = overlays.filter(o => !o.member);
   popMenu(anchor, {
     minWidth: 240,
     items: rest.length
@@ -3404,6 +3690,19 @@ function layGroup(o){
   del.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
   del.addEventListener('click', e => { e.stopPropagation(); layRemove(o.id); });
 
+  // Visa/dölj bredvid ×, för att skillnaden mellan dem är hela poängen med att
+  // medlemskap och synlighet är skilda åt: ögat släcker overlayn men behåller
+  // platsen, × ger tillbaka platsen.
+  const eye = document.createElement('button');
+  eye.className = 'ghide' + (o.enabled ? ' on' : '');
+  eye.title = o.enabled ? 'Dölj (platsen i layouten behålls)' : 'Visa';
+  eye.setAttribute('aria-pressed', String(o.enabled));
+  eye.setAttribute('aria-label', o.title + (o.enabled ? ' — dölj' : ' — visa'));
+  eye.innerHTML = o.enabled
+    ? '<svg viewBox="0 0 24 24"><path d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>'
+    : '<svg viewBox="0 0 24 24"><path d="M4 4l16 16"/><path d="M9.6 6.1A10.6 10.6 0 0 1 12 5.5c6.2 0 10 6.5 10 6.5a17 17 0 0 1-3.4 4.1M6.4 8A17 17 0 0 0 2 12s3.8 6.5 10 6.5c1 0 1.9-.2 2.7-.4"/></svg>';
+  eye.addEventListener('click', e => { e.stopPropagation(); setVisible(o.id, !o.enabled); });
+
   const body = document.createElement('div');
   body.className = 'gbody'; body.id = 'lbody-' + o.id;
 
@@ -3415,15 +3714,18 @@ function layGroup(o){
     '<span class="posf"><label>X<input type="number" step="1"></label>' +
     '<label>Y<input type="number" step="1"></label></span>';
   const [ix, iy] = pos.querySelectorAll('input');
-  ix.value = o.x; iy.value = o.y;
+  // Talen är INNEHÅLLETS koordinater, alltså samma sak som man ser på skärmen och
+  // samma sak som boxen i vyn — inte fönstrets hörn, som ligger en bit upp till
+  // vänster om det synliga (skuggrummet).
+  ix.value = Math.round(ovX(o)); iy.value = Math.round(ovY(o));
   layPos.set(o.id, { x: ix, y: iy });
   const pushPos = () => {
     const x = Math.round(Number(ix.value)), y = Math.round(Number(iy.value));
     if (!isFinite(x) || !isFinite(y)) return;
-    o.x = x; o.y = y;
+    o.x = Math.round(x - padX(o)); o.y = Math.round(y - padY(o));
     const el = $('stScreen').querySelector(`.st-ov[data-id="${CSS.escape(o.id)}"]`);
     if (el) placeBox(el);
-    const f = sendPos(o.id); f(x, y); f.flush();
+    const f = sendPos(o.id); f(o.x, o.y); f.flush();
   };
   ix.addEventListener('change', pushPos);
   iy.addEventListener('change', pushPos);
@@ -3474,7 +3776,137 @@ function layGroup(o){
     },
   });
 
-  grp.appendChild(head); grp.appendChild(del); grp.appendChild(body);
+  grp.appendChild(head); grp.appendChild(eye); grp.appendChild(del); grp.appendChild(body);
+  // Att klicka rubriken markerar också boxen i vyn — samma koppling som åt andra
+  // hållet (pickBox markerar gruppen), annars pekar markören åt ett håll bara.
+  head.addEventListener('click', () => pickBox(o.id));
+  return grp;
+}
+
+/* ── skärmvyns egna inställningar ─────────────────────────────────────────────
+   Gruppen beskriver YTAN man arbetar på, inte någon overlay: hur stor skärmen är,
+   hur många den är, och hur nära kanten något får hamna. Den ligger först och är
+   ÖPPEN som standard, till skillnad från overlay-grupperna under — de handlar om
+   detaljer man söker upp, den här om förutsättningarna för allt annat i vyn.
+   Värdena bor i localStorage och inte i settings.json: det är panelens vy-state,
+   det hör inte till en overlay och ska inte kunna göra settings.json ogiltig
+   (§8.3b). Positionerna som skickas till Rust är oförändrat riktiga
+   skärmkoordinater — det här ändrar bara ritbordet man siktar med. */
+const RES_PRESETS = [
+  { w: 1920, h: 1080, label: '1920 × 1080' },
+  { w: 2560, h: 1440, label: '2560 × 1440' },
+  { w: 3440, h: 1440, label: '3440 × 1440 (ultrawide)' },
+  { w: 5760, h: 1080, label: '5760 × 1080 (triple)' },
+];
+
+function viewRow(label, hint){
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = '<span class="rlabel"></span>';
+  row.querySelector('.rlabel').textContent = label;
+  if (hint) row.querySelector('.rlabel').title = hint;
+  return row;
+}
+
+// Samma väljare som optionsradernas enum (.dd + popMenu), av samma skäl som står
+// där: EN meny i hela panelen. Bygg inte en andra sort här.
+function viewPick(row, current, items){
+  const dd = document.createElement('div'); dd.className = 'dd';
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'dd-btn';
+  btn.setAttribute('aria-haspopup', 'listbox');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.innerHTML = '<span class="ddv"></span><svg viewBox="0 0 12 12"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>';
+  btn.querySelector('.ddv').textContent = (items.find(i => i.key === current) || items[0]).label;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    popMenu(dd, {
+      minWidth: dd.offsetWidth,
+      items: items.map(i => ({ label: i.label, sel: i.key === current, onPick: i.onPick })),
+    });
+  });
+  dd.appendChild(btn);
+  row.appendChild(dd);
+  return row;
+}
+
+function viewSettingsGroup(){
+  const grp = document.createElement('section');
+  grp.className = 'grp lgrp';
+  grp.id = 'lgrp-__view';
+  const head = document.createElement('button');
+  head.className = 'ghead';
+  head.setAttribute('aria-expanded', 'true');
+  head.setAttribute('aria-controls', 'lbody-__view');
+  head.innerHTML = '<span class="gbar"></span><span class="gname">Skärmvy</span>' +
+    '<span class="gcount"></span>' +
+    '<svg class="gchev" viewBox="0 0 12 12"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>';
+  const body = document.createElement('div');
+  body.className = 'gbody'; body.id = 'lbody-__view';
+
+  const refresh = () => { writeLayoutPrefs(); renderLayoutTab(); stageSoon(); };
+
+  // Upplösning. "Skärmen" är utgångsläget; de fasta valen och "Egen" finns för den
+  // som ställer in åt en ANNAN skärm än den panelen står på.
+  const resKey = customRes ? RES_PRESETS.some(p => p.w === customRes.width && p.h === customRes.height)
+                   ? `${customRes.width}x${customRes.height}` : 'egen'
+                 : 'auto';
+  const setRes = (w, h) => { customRes = { width: clampRes(w, 'w'), height: clampRes(h, 'h') }; applyRes(); refresh(); };
+  body.appendChild(viewPick(viewRow('Upplösning'), resKey, [
+    { key: 'auto', label: `Skärmen (${Math.round(autoScreen.width)} × ${Math.round(autoScreen.height)})`,
+      onPick: () => { customRes = null; applyRes(); refresh(); } },
+    ...RES_PRESETS.map(p => ({ key: `${p.w}x${p.h}`, label: p.label, onPick: () => setRes(p.w, p.h) })),
+    { key: 'egen', label: 'Egen …',
+      onPick: () => setRes(customRes ? customRes.width : screenSize.width,
+                           customRes ? customRes.height : screenSize.height) },
+  ]));
+
+  // Talfälten visas bara när en egen upplösning gäller: två tomma fält under ett
+  // "Skärmen"-val hade sett ut som något man MÅSTE fylla i.
+  if (customRes){
+    const row = viewRow('Egna mått');
+    const f = document.createElement('span');
+    f.className = 'posf';
+    f.innerHTML = '<label>B<input type="number" step="1"></label><label>H<input type="number" step="1"></label>';
+    const [iw, ih] = f.querySelectorAll('input');
+    iw.value = customRes.width; ih.value = customRes.height;
+    const push = () => {
+      const w = Number(iw.value), h = Number(ih.value);
+      if (!isFinite(w) || !isFinite(h)) return;
+      setRes(w, h);
+    };
+    iw.addEventListener('change', push); ih.addEventListener('change', push);
+    row.appendChild(f);
+    body.appendChild(row);
+  }
+
+  // Antal skärmar. Ritar skarvarna och lägger till dem som snappunkter — en overlay
+  // mitt i en skarv är delad i två av ramarna, och det syns inte på en enda yta.
+  body.appendChild(viewPick(viewRow('Skärmar'), monitors, [1, 2, 3].map(n => ({
+    key: n, label: n === 1 ? '1 (en skärm)' : `${n} — skarvar visas`,
+    onPick: () => { monitors = n; refresh(); },
+  }))));
+
+  // Kantmarginalen. Reglaget och inte ett talfält: man ställer in den genom att
+  // titta på rutan, inte genom att veta ett tal.
+  {
+    const row = document.createElement('div');
+    row.className = 'row slide';
+    row.innerHTML = '<label>Kantmarginal</label><input type="range" min="0" max="' + MARGIN_MAX +
+                    '" step="2"><span class="val"></span>';
+    const inp = row.querySelector('input'), out = row.querySelector('.val');
+    inp.value = edgeMargin; out.textContent = edgeMargin + ' px';
+    inp.addEventListener('input', () => {
+      edgeMargin = Math.round(Number(inp.value));
+      out.textContent = edgeMargin + ' px';
+      paintRange(inp);
+      fitStage();
+    });
+    inp.addEventListener('change', () => { writeLayoutPrefs(); fitStage(); });
+    body.appendChild(row);
+  }
+
+  grp.appendChild(head); grp.appendChild(body);
   return grp;
 }
 
@@ -3483,8 +3915,26 @@ function renderLayoutTab(){
   stack.innerHTML = '';
   layPos.clear();
   const members = layMembers();
+  {
+    // Skärmvyn först, och den finns även i en tom layout: måtten och marginalen är
+    // det man ställer in INNAN man lägger dit något.
+    const st = grpRead();
+    const grp = viewSettingsGroup();
+    stack.appendChild(grp);
+    countGroup(grp);
+    const open = st[grp.id] !== false;          // öppen som standard, till skillnad från overlay-grupperna
+    setGroupOpen(grp, open, false);
+    grp.querySelector('.ghead').addEventListener('click', () => {
+      const nowOpen = grp.classList.contains('closed');
+      setGroupOpen(grp, nowOpen, true);
+      const s = grpRead(); s[grp.id] = nowOpen; grpWrite(s);
+    });
+  }
   if (!members.length){
-    stack.innerHTML = '<div class="empty">Ingen overlay i layouten. Lägg till en med <b>+</b> i skärmvyn.</div>';
+    const tom = document.createElement('div');
+    tom.className = 'empty';
+    tom.innerHTML = 'Ingen overlay i layouten. Lägg till en med <b>Lägg till</b> i skärmvyn.';
+    stack.appendChild(tom);
   } else {
     const st = grpRead();
     for (const o of members){
@@ -3502,9 +3952,14 @@ function renderLayoutTab(){
         const s = grpRead(); s[grp.id] = nowOpen; grpWrite(s);
       });
     }
-    paintAll();
   }
+  // paintAll() även utan medlemmar: kantmarginalens reglage byggs alltid, och ett
+  // programmatiskt satt värde utlöser inget `input` att måla spåret ur.
+  paintAll();
   renderStage();
+  // Markeringen byggdes bort med stacken — lägg tillbaka den, annars tappar man
+  // valet varje gång något i vyn ändras (skala, tillagd overlay, ny marginal).
+  if (stagePicked) pickBox(stagePicked);
 }
 
 /* ── skärmvyns verktyg ── */
@@ -3522,7 +3977,9 @@ $('btnGrid').addEventListener('click', e => {
   popMenu($('btnGrid'), {
     minWidth: 180,
     items: GRID_COLS.map(c => ({
-      label: `${c} × ${Math.max(2, Math.round(c * screenSize.height / screenSize.width))}`,
+      // Radantalet räknas mot den ANVÄNDBARA ytan, precis som gridRows() — annars
+      // säger menyn ett tal och rutnätet ritar ett annat så fort marginalen ändras.
+      label: `${c} × ${Math.max(2, Math.round(c * safeArea().h / safeArea().w))}`,
       sel: c === gridCols,
       onPick: () => { gridCols = c; writeLayoutPrefs(); if (!snapOn){ snapOn = true; paintSnapBtn(); } fitStage(); },
     })),

@@ -56,6 +56,13 @@
      3,72:1), sa samma hojd ger nastan identiska rektanglar.
      En ny overlay ska rakna sin geometri ur detta varde, inte ur egna pixlar. */
   --overlay-h: 200;               /* enhetslost: overlays gor px av det sjalva */
+  /* Anvandarens skala. bus.js skriver om den ur __OVERLAY_INIT__ och ur varje
+     config-event, men den maste FINNAS har: overlayernas marginal mot fonsterkanten
+     ar en calc() med den i, och en calc() med en odefinierad variabel ar ogiltig —
+     hela deklarationen faller da bort och innehallet hamnar i fonstrets horn med
+     skuggan avklippt. Det gallde precis de lagen som saknar INIT: OBS, en vanlig
+     webblasare och kontrollpanelens forhandsvisning. */
+  --ui-scale: 1;
 
   /* ── Färg: betydelse, inte dekoration ── */
   --green:  #0DE622;   /* snabbare / vinner tid / full gas / negativ delta        */

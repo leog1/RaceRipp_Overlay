@@ -404,8 +404,20 @@ function applyConfigFor(applyConfig, cfg) {
     const { scale, ...rest } = cfg;
     applyConfig(rest);
   } else {
+    if (typeof cfg.scale === 'number') setScaleVar(cfg.scale);
     applyConfig(cfg);
   }
+}
+
+/* --ui-scale sätts HÄR och inte bara i den overlay som råkar använda den. Skälet är
+   marginalen mellan innehållet och fönsterkanten: den ligger i registrets
+   padLeft/padTop, och den måste skala med overlayn för att fönstret ska sitta lika
+   tajt vid varje skala (annars klipps slagskuggan vid stora skalor och innehållet
+   flyter in i onödig död yta vid små). Overlayn multiplicerar med var(--ui-scale) i
+   CSS, alltså behöver variabeln finnas oavsett hur overlayn i övrigt skalar sitt
+   innehåll — inputs-trace räknar t.ex. allt annat ur --H. */
+function setScaleVar(scale) {
+  try { document.documentElement.style.setProperty('--ui-scale', String(scale)); } catch {}
 }
 
 export function wireShell(applyConfig, applyOption) {
@@ -415,6 +427,17 @@ export function wireShell(applyConfig, applyOption) {
   // kolumn, antal rader) hade annars ritat ett frame i fel utseende.
   // Ligger utanför Tauri-kontrollen nedan så det gäller även om event-API:t saknas.
   if (INIT) {
+    // Marginalen mot fönsterkanten först: den är GEOMETRI och måste gälla vid
+    // första paint, precis som skalan (§8.3). Kommer den efteråt ritas ett frame
+    // med CSS-fallbacken och overlayn hoppar några pixlar i sidled vid start.
+    if (INIT.pad) {
+      const p = INIT.pad;
+      try {
+        const root = document.documentElement.style;
+        if (typeof p.l === 'number') root.setProperty('--pad-l', p.l + 'px');
+        if (typeof p.t === 'number') root.setProperty('--pad-t', p.t + 'px');
+      } catch {}
+    }
     applyConfigFor(applyConfig, { scale: INIT.scale, opacity: INIT.opacity });
     if (INIT.options) {
       for (const [k, v] of Object.entries(INIT.options)) applyOne(applyOption, k, v);

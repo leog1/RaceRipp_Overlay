@@ -15,6 +15,11 @@
      så alla overlays är lika stora vid skala 1,0; kontrollpanelen multiplicerar
      med användarens skala. */
   --H:200px;
+  /* Måste stå här även om bus.js sätter den: #ui:s marginal räknas ur den, och en
+     `calc()` med en ODEFINIERAD variabel är ogiltig — hela deklarationen faller
+     då bort och innehållet hamnar i fönstrets hörn med skuggan avklippt. Det gäller
+     precis de lägen som inte har någon INIT: OBS, en webbläsare, panelens preview. */
+  --ui-scale:1;
   --r:calc(var(--H)*0.0625); --pad:calc(var(--H)*0.060);
   --bar-w:calc(var(--H)*0.190); --bar-h:calc(var(--H)*0.735);
   --bar-gap:calc(var(--H)*0.055); --bar-r:calc(var(--H)*0.022);
@@ -30,12 +35,22 @@
 }
 *{box-sizing:border-box;}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:var(--font);}
-#ui{position:absolute;top:14px;left:14px;will-change:opacity;}
+/* MARGINALEN TILL FÖNSTERKANTEN SKALAR MED OVERLAYN, av samma skäl som i
+   delta-baren: fönstret är base × skala, så en fast offset gör marginalen fel vid
+   varje skala utom 1,0 — och åt det håll där den blir för liten klipps slagskuggan
+   av fönsterkanten. Talen kommer ur registry.json (padLeft/padTop) via
+   __OVERLAY_INIT__; fallbacken gäller i OBS och i webbläsaren. */
+#ui{position:absolute;top:calc(var(--pad-t,22px) * var(--ui-scale));
+  left:calc(var(--pad-l,32px) * var(--ui-scale));will-change:opacity;}
 
+/* Slagskuggan räknas ur --H och inte ur tokens --depth (0 10px 30px). Vid H=200 är
+   det exakt samma värden, men --depth står i FASTA pixlar medan panelen skalas: vid
+   liten skala blev skuggan lika stor som vid stor och stack utanför den plats
+   fönstret reserverat, alltså en avklippt kant. */
 .overlay{height:var(--H);width:calc(var(--H)*3.72);padding:var(--pad);
   display:flex;align-items:flex-end;gap:var(--col-gap);
   background:var(--panel);border:1px solid var(--edge);border-radius:var(--r);
-  box-shadow:var(--depth),var(--sheen);
+  box-shadow:0 calc(var(--H)*0.05) calc(var(--H)*0.15) var(--shadow),var(--sheen);
   -webkit-backdrop-filter:var(--glass);backdrop-filter:var(--glass);
   opacity:0;transition:opacity .35s ease;}
 .overlay.ready{opacity:1;}

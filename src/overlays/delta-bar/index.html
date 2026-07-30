@@ -25,7 +25,17 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
 /* skalbart, positionerbart rot-element — window:t är tajt runt detta */
 /* Opaciteten från kontrollpanelen ligger i --ui-opacity, inte som inline style:
    annars kör den över opacity:0 och overlayn blir synlig innan första render. */
-#ui{position:absolute;top:34px;left:30px;transform:scale(calc(var(--ui-scale) * var(--fit)));transform-origin:top left;
+/* MARGINALEN TILL FÖNSTERKANTEN SKALAR MED OVERLAYN. Slagskuggorna ligger inne i
+   det transformerade #ui och växer alltså med skalan, medan offseten tidigare stod
+   fast på 30/34 px — vid stor skala blev det för lite plats åt vänster/upptill och
+   skuggan klipptes av fönsterkanten, vid liten skala låg innehållet i stället och
+   flöt en bit in i ett fönster som var för stort. Talen kommer ur registry.json
+   (padLeft/padTop) via __OVERLAY_INIT__ och är samma tal som baseWidth/baseHeight
+   räknas ur, så fönstret sitter tajt runt innehåll + skugga vid VARJE skala.
+   Fallbacken gäller i OBS och i webbläsaren, där ingen INIT finns. */
+#ui{position:absolute;top:calc(var(--pad-t,20px) * var(--ui-scale));
+  left:calc(var(--pad-l,36px) * var(--ui-scale));
+  transform:scale(calc(var(--ui-scale) * var(--fit)));transform-origin:top left;
   opacity:0;transition:opacity .3s ease;will-change:transform,opacity;}
 #ui.ready{opacity:var(--ui-opacity,1);}
 .delta-row{display:flex;align-items:center;}
