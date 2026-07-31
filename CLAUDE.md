@@ -15,7 +15,7 @@
 > X" i §7).
 ## 1. Vad projektet är
 Modulärt overlay-paket för **Assetto Corsa Competizione (ACC)**.
-Version 0.5.5.
+Version 0.5.6.
 - **Funktionellt** som **Race Element**: lätt, rensat, praktiskt, ingen FPS-förlust.
 - **Visuellt** som **RaceLab**: mörkt, polerat, animerat, premium.
 - Kvalitetsribban är hög och användaren är detaljpetig ner till pixelnivå.
@@ -33,12 +33,21 @@ HTTP (8078)        →  motorn serverar overlay-filerna som OBS browser source
 Overlays (webb)    →  HTML/CSS/SVG/Canvas; en modul per overlay
 ```
 **Globala reglage bor i panelens DRIFTBLOCK** (mittkolumnens fot, syns i både
-Overlays- och Layout-fliken): huvudströmbrytaren, "Endast när ACC kör" och mock-data.
-De tre hör inte till någon overlay och därför inte till någon flik — de avgör om något
-syns på skärmen alls, och en av dem gick tidigare bara att nå från Overlays-fliken.
-Mock-valet är motorns och når den via `engine.config.json` (samma väg som
-referensvarvet, se §8.6g): motorn är en egen PROCESS och lyssnar inte på Tauris
+Overlays- och Layout-fliken): "Endast när ACC kör" och mock-data. De två hör inte till
+någon overlay och därför inte till någon flik, och en av dem gick tidigare bara att nå
+från Overlays-fliken. Mock-valet är motorns och når den via `engine.config.json` (samma
+väg som referensvarvet, se §8.6g): motorn är en egen PROCESS och lyssnar inte på Tauris
 eventbuss.
+
+**Det finns exakt TVÅ sätt att bestämma vad som syns, och de är alternativ till
+varandra:** tänd/släck varje overlay för sig i Overlays-fliken, eller aktivera en
+LAYOUT som skriver ut hela uppsättningen på en gång. Lägg inte till ett tredje.
+0.5.5 hade en global huvudströmbrytare ovanpå de två; den togs bort i 0.5.6 och
+`tests/panel-layout.mjs` kontroll 11 finns för att den inte ska smyga tillbaka.
+Den svarade inte på någon fråga de två inte redan svarade på — den lade bara till ett
+läge där panelen visar en overlay som påslagen medan skärmen är tom, och där man måste
+leta reda på varför. (Fältet `overlays_on` är borta ur `Settings`; serde ignorerar det
+i en gammal fil, så någon som hade släckt allt får tillbaka sina overlays.)
 
 **Kärnkrav:** ny overlay = ny modul + en rad i `registry.json`, **utan att röra kärnan**.
 Overlays är "dumma renderare": DATA från WebSocket, CONFIG (skala/opacitet) från Rust-events.
@@ -101,10 +110,8 @@ hur stora de är och hur de ser ut. Tre regler som hänger ihop och som var för
 lätta att bryta:
 - **MEDLEMSKAP OCH SYNLIGHET ÄR TVÅ SAKER.** `member` = ingår i layouten (`set_member`,
   alltså Layout-flikens `+` och `×`); `enabled` = visas just nu (`set_enabled`, alltså
-  ögonknappen, som finns på båda flikarna). Ovanför båda ligger
-  **huvudströmbrytaren** (`overlays_on`, driftblocket i panelens mittkolumn), som är
-  GLOBAL och därför inte bor i en overlay. Fönstret visas när ALLA TRE är sanna —
-  `OverlayState::visible(master)` är enda stället som avgör det, så de inte kan glida
+  ögonknappen, som finns på båda flikarna). Fönstret visas när BÅDA är sanna —
+  `OverlayState::visible()` är enda stället som avgör det, så de inte kan glida
   isär på det ena ställe någon glömmer. De var samma fält t.o.m. 0.5.3, och följden var
   omöjlig att komma runt: att dölja en overlay en stund kastade ut den ur layouten man
   byggt, och att tända den igen la in den i den layout som råkade vara aktiv då.
@@ -118,10 +125,10 @@ lätta att bryta:
   Utan det gav "Lägg till" en box i skärmvyn som inte motsvarade något på skärmen, och
   Overlays-fliken såg ut att äga av/på ensam. Motsatsen finns fortfarande inte: att
   dölja tar aldrig bort medlemskapet.
-- **Huvudströmbrytaren skriver ALDRIG till `enabled` eller `member`.** Den ligger
-  ovanpå dem just för att "släck allt" ska kunna ångras till exakt den uppsättning man
-  hade. Att i stället släcka varje overlay för sig hade förstört den informationen —
-  vilket var enda vägen före 0.5.5.
+- **Att aktivera en layout är att ta över skärmen.** `activate_layout` skriver ut hela
+  uppsättningen (se nedan), och de fönster som ska synas visas DIREKT — det finns ingen
+  brytare emellan som kan hålla dem släckta. Enda saken ovanför är grinden "Endast när
+  ACC kör", och är den av ligger layouten på skärmen i samma sekund.
 - **Exakt EN layout är aktiv, och den är LIVE-BUNDEN.** `save_settings` kör
   `sync_active_layout`, som speglar det gällande läget in i den aktiva layouten vid varje
   sparning. Det finns alltså inget spara-steg, och — viktigare — ingen andra sanning:
@@ -274,12 +281,14 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
   röda intill varandra läser som två varumärken. Rött används BARA varumärkesbärande:
   brandbaren, aktiva flikbrickan, ordbilden. Undantaget är `--red` (#FF3B3B) på
   motorstatusens offline-prick, som är en SIGNALfärg (§4) och inte varumärke.
-- **Brandbaren är TVÅ linjer à 1 px: röd överst, vit (`--ink`) under.** Summan är samma
-  2 px som en enkel linje, alltså ingen layoutändring. Två
-  tunna linjer i olika kulör läser som en rand på en bilsida; en enda 2 px-linje
-  läser bara som "här slutar titelraden". Vitt är redan ordbildens konturfärg. Gör dem
-  inte 2 px var — då blir det en 4 px bård som
-  konkurrerar med titelraden.
+- **Brandbaren är TVÅ linjer: 2 px röd överst, 1 px vit (`--ink`) under.** Två tunna
+  linjer i olika kulör läser som en rand på en bilsida; en enda linje läser bara som
+  "här slutar titelraden". Vitt är redan ordbildens konturfärg.
+  **Höjderna ska vara OLIKA.** Den röda är accenten och den vita dess högdager — en
+  rand på en bilsida är sällan två lika breda linjer, och den tunnare vita läser som
+  ljus på kanten av den röda i stället för som en andra rand. Gör dem alltså inte lika
+  (då blir det en bård som konkurrerar med titelraden) och byt inte ordning: ljuset
+  kommer uppifrån i hela panelen, så en vit linje ÖVER en röd lyser från fel håll.
 - **Kanterna är dämpade (`--ui-edge-dk` 0,45).** Den mörka kanten sitter på kort, list,
   listkolumn, menyer, verktygsblock och varje liten knapp
   samtidigt, och en nästan svart 1 px-linje mot en yta som bara är några
@@ -348,14 +357,11 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
   fokusringen amber och reglagens fyllnad neutralt vit — ett halvdraget reglage är
   inget tillstånd.
 - **Mittkolumnen är EN yta: lista + driftblock.** Kanten och vasken sitter på
-  `.midcol`, listorna byts ut i den, och driftblocket (huvudströmbrytare, "Endast när
-  ACC kör", mock-data) står kvar i både Overlays- och Layout-fliken. Separationen mot
+  `.midcol`, listorna byts ut i den, och driftblocket ("Endast när ACC kör",
+  mock-data) står kvar i både Overlays- och Layout-fliken. Separationen mot
   listan är EN linje, ingen egen kant och ingen skugga — annars läser kolumnen som två
   staplade paneler. Raderna är titel + en KORT underrad: texterna får inte radbrytas
-  vid 264 px kolumnbredd, för tre tvåradiga rader äter listan på golvet 960×600.
-  Undertexten på huvudströmbrytaren byter lydelse med läget (den är det enda stället
-  panelen kan säga att en tom skärm inte är overlayns fel), och de två raderna under
-  tonas när strömbrytaren är av: de kan inte göra något då.
+  vid 264 px kolumnbredd, för tvåradiga rader äter listan på golvet 960×600.
   Blocket följer INTE med till Referens/Om/Inställningar — hela kolumnen göms där.
 - **Vänsterlisten är en REN IKONLIST på 60 px.** Namnet
   kommer i en tooltip vid hover/fokus. Aktiv flik = 40×40 bricka i `--ui-brand-fill`
@@ -400,6 +406,15 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
     ligger inte i flödet: i flödet hamnade "mitten" där ordbildens plus knapparnas bredd
     råkade lägga den, och den FLYTTADE sig i sidled när Broadcasting-raden dök upp mitt
     under körning. Den bär `data-tauri-drag-region="deep"` själv (§8.4i).
+  - **VERSIONEN är en tredje status i samma grupp**, med samma form (prick + text):
+    grön prick + din version = du kör senaste, amber prick + den NYA versionens nummer
+    = det finns en uppdatering. Ett klick leder till Om-fliken, där uppdateringen görs.
+    **Före första svaret bär raden ingen tillståndsklass alls** — grå prick. Att visa
+    grönt innan kontrollen gått igenom är ett påstående vi inte kan backa upp, och just
+    den lögnen är svår att upptäcka eftersom grönt är det normala.
+    Egna klasser (`.ver.ok` / `.ver.new`) och inte lånade `.live`/`.mock`: prickarna
+    råkar ha samma två kulörer men betyder något annat (kod du KÖR kontra kod som
+    FINNS), och en delad klass gör den ena omöjlig att ändra utan den andra.
   Tillståndsklassen sitter på raden och inte på pricken, för `:has()` finns först i
   Chromium 105.
 - Reglagen är egenritade (`::-webkit-slider-*`); `accent-color` ger systemets. Den
@@ -438,7 +453,7 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
     ett verktyg och inte en skärmdump. Inuti ritas overlayn i en iframe, skalad med
     `overlayns skala × vyns skala` och förskjuten med overlayns padding (iframen bär
     FÖNSTRET, boxen är innehållet). En dold medlem ritas streckad och nedtonad: platsen
-    är reserverad, rutan syns bara inte just nu; är huvudströmbrytaren av tonas alla.
+    är reserverad, rutan syns bara inte just nu.
     **Kostnaden hålls borta av MONTERINGEN, inte av att låta bli.** En riktig overlay är
     ett eget dokument med egen renderloop och egen WebSocket, och fem sådana som tickar
     medan man kör är precis vad previewn en gång fick rivas ur för (§8.5f). Därför:
@@ -461,6 +476,17 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
     kanter och den streckade rutan utgår alla från den användbara ytan (skärmen minus
     marginalen), aldrig från skärmen. Den fanns förut bara som fönstrens skuggrum, alltså
     en osynlig marginal ingen kunde ändra. 8 px som standard.
+    **Den är en GRÄNS, inte ett förslag.** `clampAxis` i `moveTo` håller varje overlay
+    innanför den, och `moveTo` är den enda vägen — drag, piltangenter, talfälten och
+    centreringen i högerklicksmenyn går alla dit. En andra klampning någon annanstans
+    hade kunnat säga något annat. Två saker som INTE är dragningar men ändå flyttar en
+    overlay ut ur ytan täcks också: att öka SKALAN (overlayn växer ut) och att öka
+    MARGINALEN (ytan krymper in) — `keepInside`/`keepAllInside`. Utan dem gäller
+    gränsen bara medan man håller i boxen.
+    **Bakgrundsbilden ritas ändå hela vägen ut till skärmens kant.** Kontrasten mellan
+    "här syns skärmen" och "hit får boxen inte" är det som gör talet begripligt. Klipp
+    alltså inte bort ytan utanför marginalen — då ser vyn bara ut som en mindre skärm,
+    och marginalen blir omöjlig att bedöma.
   - **Upplösning och antal skärmar går att skriva in.** Vyn är ett RITBORD för den skärm
     man ställer in för — positionerna som skickas till Rust är oförändrat riktiga
     skärmkoordinater. Flera skärmar ritar SKARVAR (och snappunkter vid dem och vid varje
@@ -596,7 +622,13 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   skärmvyn och stacken ligger på samma x och bredd utan vågrät skroll, att DÖLJA lämnar
   boxen kvar nedtonad och rör aldrig medlemskapet medan × går genom `set_member`, och
   layoutlistan markerar den aktiva. Panelen kastade inget fel.
-  Åtta medvetet trasiga varianter är körda och samtliga föll (se filens huvud).
+  Sedan 0.5.6 mäter samma test också att KANTMARGINALEN är en gräns (dragning förbi
+  kanten stannar, ett för stort tal i positionsfältet klampas, en bredare marginal drar
+  in det som hamnat utanför — med snappningen AV, annars mäts snappningen i stället),
+  att den globala huvudströmbrytaren är borta, och att titelradens versionsrad är
+  neutral före första svaret, grön utan uppdatering och amber med den nya versionens
+  nummer.
+  Elva medvetet trasiga varianter är körda och samtliga föll (se filens huvud).
 - **Att varje overlay ryms i sitt fönster MED sin slagskugga**
   (`tests/overlay-window-fit.mjs`, Chrome över HTTP, skala 0,6/1,0/1,6 plus ett pass helt
   utan `__OVERLAY_INIT__`): innehållet mäter det `contentWidth`/`contentHeight` säger, och
@@ -610,13 +642,26 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   båda föll.
 
 ### Kvar att verifiera — läs detta först om du tar över
-- **De tre driftreglagen i den riktiga appen.** Rustsidan och panelen är mätta, men
-  ingenting av det är sett i drift: att huvudströmbrytaren släcker ALLA fönster och att
-  de kommer tillbaka med samma uppsättning (inte med allt påslaget), att en overlay som
-  var avstängd INTE tänds av den, och att valet står kvar efter omstart. Prova samtidigt
-  att slå av mock-data medan ACC är stängt — overlays ska bli tomma men fönstren ligga
-  kvar, och motorloggen säga `[engine] mock-data av`. Att valet gäller redan vid start
-  (Rust skriver `engine.config.json` innan motorn startar) är också otestat skarpt.
+- **De två driftreglagen i den riktiga appen.** Rustsidan och panelen är mätta, men
+  ingenting av det är sett i drift. Prova att slå av mock-data medan ACC är stängt —
+  overlays ska bli tomma men fönstren ligga kvar, och motorloggen säga
+  `[engine] mock-data av`. Att valet gäller redan vid start (Rust skriver
+  `engine.config.json` innan motorn startar) är också otestat skarpt.
+- **Att huvudströmbrytarens BORTTAGNING inte lämnar någon släckt.** En settings.json
+  skriven av 0.5.5 kan bära `overlays_on: false`. Fältet finns inte längre i `Settings`,
+  så serde ignorerar det och overlays kommer tillbaka — men det är inte kört mot en
+  riktig sådan fil. Kontrollera samtidigt att fältet är BORTA ur filen efter första
+  sparningen.
+- **Att en layout tar över skärmen direkt.** Klicka en layout i Layout-fliken med
+  "Endast när ACC kör" AV: fönstren ska flytta sig, ändra storlek, tändas och släckas i
+  ett svep, och de som ingår ska synas i samma sekund. Det var hela poängen med att ta
+  bort brytaren ovanför, och det är otestat utanför Chrome.
+- **Att versionsindikatorn stämmer i den riktiga appen.** Testet mäter tillstånden mot en
+  stubb; ingen har sett den mot GitHub. Tre saker: att den blir GRÖN på en installation
+  som kör senaste utgåvan, att den blir amber med rätt nummer när en nyare finns, och —
+  viktigast — att ingen kontroll körs medan man kör (§8.8e). Enklaste sättet att se det
+  sista: kör en session med panelen bakom spelet i en timme och kontrollera att inget
+  nätverksanrop gjorts under tiden.
 - **Skärmvyns live-innehåll medan ACC kör.** Boxarna kör riktiga overlays i iframes.
   Monteringsreglerna är mätta i Chrome (bara i fliken, bara när panelen syns), men
   CPU-kostnaden med spelet igång är inte mätt. Titta på FPS med Layout-fliken framme och
@@ -1729,6 +1774,21 @@ setup.exe och updateraren skriver över den installation som faktiskt körs.
 - Panelen visade tidigare samma text — *"Uppdateringar är inte konfigurerade än"* —
   för varje fel, inklusive riktiga installationsfel. Det var en direkt orsak till att
   buggen ovan var osynlig i två utgåvor. **Visa alltid `errMsg(err)`.**
+- **Den AUTOMATISKA kontrollen (titelradens versionsprick) får aldrig köra medan man
+  kör.** `updCheck` hoppar över sig själv i två lägen och båda behövs:
+  - `engineLive` — motorn får riktig telemetri, alltså sitter man i bilen. Nätverk och
+    JSON-parsning mitt i ett varv är precis den sortens arbete §8.5e handlar om.
+  - `previewPaused` — panelen är inte framme. Då är statussocketen STÄNGD (§8.5f), och
+    `engineLive` är alltså ett gammalt svar; utan den här raden skulle regeln ovan vila
+    på ett värde ingen längre uppdaterar. Priset är att kontrollen bara körs medan
+    panelen syns, vilket ändå är enda stället pricken finns.
+  Takten är avsiktligt låg (6 h, 15 min efter en uppskjuten kontroll, plus en direkt
+  körning när panelen får fokus igen och kontrollen är försenad). En förfrågan oftare än
+  utgåvorna kommer ger ingenting; det enda som händer mellan två kontroller är att en
+  amber prick dyker upp en timme senare. **Öka inte frekvensen "så den känns
+  responsiv"** — den ska vara osynlig.
+  Manuellt sök i Om-fliken och den automatiska kontrollen skriver sitt svar genom SAMMA
+  funktion (`updSetResult`), så pricken och textraden aldrig kan säga olika saker.
 ### 8.8d Spökspåren: referensen är indexerad på POSITION, traces på TID
 Inputs-trace ritar referensvarvets gas/broms bakom dina egna. Den svåra biten är att
 x-axeln i traces är TID (rullande fönster) medan referensen är indexerad på POSITION.

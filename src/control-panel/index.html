@@ -127,6 +127,20 @@ body{font-family:var(--ui-font);color:var(--ink);
 .tb-status.live .dot{background:var(--green);box-shadow:0 0 4px rgba(13,230,34,0.45);}
 .tb-status.mock .dot{background:var(--amber);box-shadow:0 0 4px rgba(251,191,36,0.40);}
 .tb-status.off  .dot{background:var(--red);}
+/* Versionsraden. Egna klassnamn i stället för att låna .live/.mock: prickarna råkar
+   ha samma två kulörer men betyder något annat (kod du kör kontra kod som finns), och
+   en delad klass hade gjort det omöjligt att ändra den ena utan den andra.
+   Före första svaret bär den ingen klass alls — pricken är då `--faint`, vilket är
+   det ärliga svaret: vi vet inte än. Påstå aldrig grönt innan kontrollen gått igenom.
+   Knappreset: en <button> ärver varken bakgrund, kant eller typsnitt, och raden ska
+   se ut EXAKT som de två statusarna bredvid (§4b — ingen yta, ingen kant). */
+.tb-status.ver{appearance:none;background:none;border:0;font:inherit;
+  font-size:var(--ui-fs-xs);font-weight:600;letter-spacing:.3px;cursor:pointer;
+  transition:color .12s ease;}
+.tb-status.ver:hover{color:var(--ink);}
+.tb-status.ver:focus-visible{outline:1px solid var(--ui-focus);outline-offset:2px;border-radius:var(--ui-r-xs);}
+.tb-status.ver.ok  .dot{background:var(--green);box-shadow:0 0 4px rgba(13,230,34,0.45);}
+.tb-status.ver.new .dot{background:var(--amber);box-shadow:0 0 4px rgba(251,191,36,0.40);}
 .titlebar .tb-btns{display:flex;align-self:stretch;}
 .tb-btn{appearance:none;background:none;border:0;width:46px;align-self:stretch;
   display:flex;align-items:center;justify-content:center;color:var(--dim);cursor:pointer;
@@ -152,12 +166,15 @@ body.maximized .tb-btn .ico-max{display:none;}
    på en bilsida, medan en enda 2 px-linje bara läser som "här slutar titelraden".
    Vitt är dessutom redan ordbildens andra färg (konturen runt varje bokstav), så
    paret upprepar loggan i stället för att införa något nytt.
-   Höjden måste vara 1 px per linje och inte 2: summan blir då samma 2 px som förut,
-   alltså ingen layoutändring — och två 2 px-linjer hade blivit en 4 px bård som
-   konkurrerar med titelraden ovanför.
+   Höjderna är OLIKA med flit: 2 px röd över 1 px vit. Den röda är accenten och den
+   vita är dess högdager — en rand på en bilsida är sällan två lika breda linjer, och
+   den tunnare vita läser som ljus på kanten av den röda i stället för som en andra
+   rand. Gör dem alltså inte lika (då blir det en bård som konkurrerar med
+   titelraden) och byt inte ordning: ljuset kommer uppifrån i hela panelen (§4b), så
+   en vit linje ÖVER en röd hade lyst från fel håll.
    Ingen glow på någondera: linjerna identifierar appen, de har inget att larma om. */
-.brandbar{height:1px;flex:0 0 auto;background:var(--ui-brand);}
-.brandbar.alt{background:var(--ink);}
+.brandbar{height:2px;flex:0 0 auto;background:var(--ui-brand);}
+.brandbar.alt{height:1px;background:var(--ink);}
 
 /* trepanelslayout */
 .app{flex:1 1 auto;display:flex;min-height:0;}
@@ -246,17 +263,17 @@ body.maximized .tb-btn .ico-max{display:none;}
   background:linear-gradient(180deg,rgba(255,255,255,0.014),transparent 180px);}
 .list{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;}
 /* Driftblocket. Samma radform som listans fot hade (titel + underrad + växlare), och
-   samma nedsänkta yta: det är kolumnens fot, bara med tre rader i stället för en.
-   Ingen egen kant åt sidorna — separationen mot listan är EN linje (§4b). */
+   samma nedsänkta yta: det är kolumnens fot, bara med två rader i stället för en.
+   Ingen egen kant åt sidorna — separationen mot listan är EN linje (§4b).
+   Här satt t.o.m. 0.5.5 en tredje rad överst, en global huvudströmbrytare. Den är
+   borta: av/på finns redan på två ställen med tydlig räckvidd (ögonknappen per
+   overlay, layouten för hela uppsättningen), och en brytare ovanpå dem gav bara ett
+   läge där panelen visar något som "på" medan skärmen är tom. */
 .drift{flex:0 0 auto;border-top:1px solid var(--ui-edge-dk);
   box-shadow:inset 0 1px 0 rgba(255,255,255,0.028);background:rgba(0,0,0,0.28);}
 .drift .list-head{padding:12px 16px 4px;}
 .drow{display:flex;align-items:center;gap:12px;padding:8px 16px 10px;}
 .drow + .drow{border-top:1px solid rgba(255,255,255,0.045);}
-/* Huvudströmbrytaren av: de två raderna under den kan inte göra något, och en
-   kontroll som inte gör något ska SE ut så i stället för att svara som vanligt.
-   Fortfarande klickbara — det är ett läge, inte ett fel. */
-.midcol[data-master="off"] .drow:not(:first-child){opacity:.45;}
 /* Avdelningsrubriker. Bara typografi: versaler, spärr och amber.
    Här satt tidigare ett litet guldstreck före texten. Det var en markör till på en
    rubrik som redan hade två (versaler OCH en egen färg), och när man väl har tre
@@ -783,9 +800,6 @@ body.maximized .tb-btn .ico-max{display:none;}
 .st-ov .cap .dim{color:var(--faint);font-weight:600;letter-spacing:.4px;
   font-variant-numeric:tabular-nums;text-transform:none;flex:0 0 auto;}
 .st-ov.tiny .cap{display:none;}
-/* Huvudströmbrytaren av: inget av det här syns på skärmen just nu. Vyn säger det
-   genom att tona ner allt på en gång i stället för att låta varje box ljuga. */
-.st-screen.masteroff .st-ov{opacity:.32;}
 /* Medlem i layouten men DÖLJD just nu (ögonknappen i Overlays-fliken). Streckad
    kant och nedtonad: platsen är fortfarande reserverad — det är hela poängen med
    att dölja i stället för att ta bort — men rutan visar inget på skärmen. */
@@ -1274,6 +1288,12 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
       <!-- Broadcasting (andra bilars data). Dold tills motorn faktiskt försöker —
            annars ser den ut som ett fel på riggar som inte har ACC installerat. -->
       <div class="tb-status off" id="bcRow" hidden><span class="dot"></span><span id="bcText"></span></div>
+      <!-- Version + uppdateringsläge. Samma form som de två statusarna bredvid (prick
+           + text) för att det ÄR en status: grön = du kör senaste, amber = det finns
+           en nyare och prickens färg säger vilken. En knapp och inte en div — den
+           leder till Om-fliken, där själva uppdateringen görs. Dold tills versionen
+           är känd: "v—" är sämre än ingenting. -->
+      <button class="tb-status ver" id="verRow" type="button" hidden><span class="dot"></span><span id="verText"></span></button>
     </div>
     <div class="tb-btns">
       <button class="tb-btn" id="tbMin" title="Minimera" aria-label="Minimera">
@@ -1353,18 +1373,11 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
         </div>
       </section>
 
-      <!-- DRIFT. Tre reglage i fallande räckvidd: hela uppsättningen, när den får
-           synas, och vad motorn skickar när ACC inte kör. Ordningen är avsiktlig —
-           det översta slår ut de två under sig. -->
+      <!-- DRIFT. Två reglage som gäller HELA uppsättningen: när den får synas, och
+           vad motorn skickar när ACC inte kör. Vilka overlays som är på avgörs av
+           listan ovanför (eller av den aktiva layouten) — inte här. -->
       <section class="drift" id="driftBar">
         <div class="list-head">Drift</div>
-        <div class="drow">
-          <div class="lf-text">
-            <span class="lf-title">Overlays på skärmen</span>
-            <span class="lf-sub" id="masterSub">Släcker allt, minns lägena</span>
-          </div>
-          <label class="sw" id="masterSwitch"><input type="checkbox" aria-label="Overlays på skärmen"><span class="track"></span><span class="knob"></span></label>
-        </div>
         <div class="drow">
           <div class="lf-text">
             <span class="lf-title">Endast när ACC kör</span>
@@ -2707,6 +2720,13 @@ function renderOptions(o){
    listbyte startat previewns WebSocket mitt under körning, vilket är precis vad pausen
    finns för att stoppa. */
 let previewPaused = false;
+/* Sant medan motorn får RIKTIG telemetri, alltså medan man kör. Skrivs av
+   statusSocket och läses av uppdateringskontrollen (updCheck). Deklarationen ligger
+   här och inte nere hos updCheck: statusSocket startar direkt när skriptet körs och
+   skriver värdet med en gång, och en `let` längre ner hade gett ett kastat undantag i
+   uppstarten (temporal dead zone) — panelen ligger tyst nog att det inte hade synts
+   som annat än en titelrad som saknar delar. */
+let engineLive = false;
 function setPreview(o){
   if (previewPaused) return;
   const pv = $('pv');
@@ -2962,6 +2982,9 @@ $('checkUpd').addEventListener('click', async () => {
       T.updater.check(),
       new Promise((_, rej) => setTimeout(() => rej(new Error('tidsgränsen gick ut')), 15000))
     ]);
+    // Samma väg som den periodiska kontrollen skriver sitt svar: titelradens prick
+    // och den här texten får aldrig komma från två olika ställen.
+    updSetResult(upd);
     if (!upd){ m.textContent = 'Du har senaste versionen.'; return; }
     m.textContent = `Ny version ${upd.version} — laddar ner …`;
     // Spara läge och stäng motorn INNAN installeraren startar: plugin:et gör
@@ -2989,6 +3012,9 @@ const statusSocket = (function statusLoop(){
     // Tillståndet sitter på BRICKAN (ytan + kanten + texten färgas), inte på
     // pricken — se .tb-status i CSS:en.
     $('engRow').className = 'tb-status ' + cls; $('statusText').textContent = txt;
+    // Enda stället som vet om spelet matar motorn just nu. Uppdateringskontrollen
+    // läser det för att aldrig gå ut på nätet mitt i ett varv (se updCheck).
+    engineLive = (cls === 'live');
     // Statusen skrevs tidigare till TVÅ ställen: hit och till en prick i
     // vänsterlisten. Pricken är borta — den upprepade det här värdet utan sin text.
     // Hjälptexten i previewrutan doldes aldrig — den låg kvar BAKOM en körande
@@ -3095,6 +3121,9 @@ const statusSocket = (function statusLoop(){
       // Storleken räknas om av ResizeObserver inne i overlayn när den syns igen.
       if (selectedId){ const o = ov(selectedId); if (o) setPreview(o); }
       mountStageFrames();
+      // En försenad uppdateringskontroll körs nu i stället för att vänta ut sin
+      // retry: panelen är framme, alltså är man inte i bilen (se updCheck).
+      updWake();
     }
   };
   addEventListener('blur',  () => setPaused(true));
@@ -3116,34 +3145,97 @@ if (T && T.event) T.event.listen('edit-mode', async e => {
   if ($('app').dataset.section === 'layout'){ renderLayoutTab(); loadLayouts(); }
 });
 
-/* ── version ── */
-try { T?.app?.getVersion?.().then(v => { if (v) $('omVer').textContent = 'v' + v; }).catch(() => {}); } catch {}
+/* ── version och uppdateringsläge ────────────────────────────────────────────
+   Titelraden bär versionen och säger om den är den senaste. Tre tillstånd, och det
+   första är det som är lätt att fuska bort:
+     ingen klass = vi har inte fått något svar än (grå prick),
+     .ok         = du kör senaste (grön prick + din version),
+     .new        = det finns en nyare (amber prick + DEN versionen).
+   Att visa grönt innan kontrollen gått igenom hade varit ett påstående vi inte kan
+   backa upp — och just den lögnen är svår att upptäcka, eftersom grönt är det normala.
 
-/* ── driftblocket: de tre globala reglagen ──────────────────────────────────
+   NÄR kontrollen körs är resten av kravet, och den är också en prestandaregel:
+   - Vid start (efter en fördröjning, så den inte tävlar med fönsterskapandet och
+     motorstarten om de första sekunderna).
+   - Sedan var UPD_PERIOD_MS. Det är avsiktligt sällan: en HTTPS-förfrågan till
+     GitHub ger ingenting nytt oftare än utgåvorna kommer, och det enda som händer
+     mellan två kontroller är att en amber prick dyker upp någon timme senare.
+   - ALDRIG medan motorn får riktig telemetri (`engineLive`). Man kör då, och nätverk
+     + JSON-parsning mitt i ett varv är precis den sortens arbete §8.5e handlar om.
+   - Inte heller medan panelen är dold, för då är statussocketen stängd (§8.5f) och
+     `engineLive` är alltså ett GAMMALT svar. Utan den regeln skulle "kör inte medan
+     spelet kör" bygga på ett värde som ingen längre uppdaterar. Panelen är dessutom
+     det enda stället pricken syns, så en kontroll i det läget hjälper ingen.
+   Sköts kontrollen upp provar den igen om UPD_RETRY_MS, och när panelen kommer
+   tillbaka i fokus provar den direkt om den är försenad. */
+const UPD_PERIOD_MS = 6 * 3600 * 1000;
+const UPD_RETRY_MS  = 15 * 60 * 1000;
+let appVersion = '', updNew = '', updChecked = false, updLast = 0, updTimer = 0;
+
+function paintVer(){
+  const row = $('verRow'); if (!row) return;
+  if (!appVersion){ row.hidden = true; return; }
+  row.hidden = false;
+  if (updNew){
+    row.className = 'tb-status ver new';
+    $('verText').textContent = 'v' + updNew + ' finns';
+    row.title = `Du kör v${appVersion}. v${updNew} finns att hämta — klicka för att gå till Om.`;
+  } else {
+    row.className = 'tb-status ver' + (updChecked ? ' ok' : '');
+    $('verText').textContent = 'v' + appVersion;
+    row.title = updChecked ? `v${appVersion} — senaste versionen.`
+                           : `v${appVersion} — söker efter uppdateringar …`;
+  }
+}
+// Svaret från updater-plugin:et, oavsett vem som frågade (titelraden eller knappen i
+// Om). Ett enda ställe skriver tillståndet, annars kan de två säga olika saker.
+function updSetResult(upd){
+  updNew = upd ? (upd.version || '') : '';
+  updChecked = true;
+  updLast = Date.now();
+  paintVer();
+}
+function updSchedule(ms){ clearTimeout(updTimer); updTimer = setTimeout(updCheck, ms); }
+async function updCheck(){
+  if (engineLive || previewPaused) return updSchedule(UPD_RETRY_MS);
+  if (!T || !T.updater) return;                 // webbläsare/dev: ingen kontroll alls
+  try { updSetResult(await T.updater.check()); }
+  // Nätet nere, GitHub långsamt, ingen release ännu: behåll förra svaret och prova
+  // igen senare. Ett rött larm i titelraden för att internet blinkade är brus.
+  catch { updSchedule(UPD_RETRY_MS); return; }
+  updSchedule(UPD_PERIOD_MS);
+}
+// Panelen tillbaka i fokus: kör en försenad kontroll direkt i stället för att vänta
+// ut retryn. Det är oftast precis nu man vill veta — man har lämnat spelet.
+function updWake(){ if (Date.now() - updLast >= UPD_PERIOD_MS) updSchedule(1500); }
+
+try {
+  T?.app?.getVersion?.().then(v => {
+    if (!v) return;
+    appVersion = v;
+    $('omVer').textContent = 'v' + v;
+    paintVer();
+  }).catch(() => {});
+} catch {}
+if ($('verRow')) $('verRow').addEventListener('click', () => {
+  const btn = document.querySelector('.nav[data-sec="om"]');
+  if (btn) btn.click();
+});
+updSchedule(4000);
+
+/* ── driftblocket: de två globala reglagen ──────────────────────────────────
    De hör inte till en overlay och därför inte till en flik heller. Blocket står
    kvar i både Overlays och Layout, och det är hela poängen: förut ägde Overlays-
-   fliken av/på ensam, så en layout man byggt gick inte att TÄNDA från den flik man
-   byggde den i. Räckvidden faller uppifrån och ner — huvudströmbrytaren slår ut de
-   två under sig, och panelen visar det genom att tona dem. */
-let masterOn = true;
-function paintMaster(){
-  $('midcol').dataset.master = masterOn ? 'on' : 'off';
-  $('masterSwitch').querySelector('input').checked = masterOn;
-  // Undertexten byter roll med läget: när allt är släckt är det viktigaste
-  // panelen kan säga att det inte är overlayns eget fel att den inte syns.
-  $('masterSub').textContent = masterOn
-    ? 'Släcker allt, minns lägena'
-    : 'Allt släckt — lägena finns kvar';
-  // Skärmvyn ritar medlemmarna nedtonade när ingenting kan synas — annars säger
-  // vyn att fem overlays ligger på skärmen medan skärmen är tom.
-  const sc = $('stScreen'); if (sc) sc.classList.toggle('masteroff', !masterOn);
-}
-$('masterSwitch').querySelector('input').addEventListener('change', async e => {
-  masterOn = e.target.checked;
-  paintMaster();
-  try { await invoke('set_overlays_on', { value: masterOn }); }
-  catch(err){ toast('Kunde inte slå av/på overlays: ' + errMsg(err), true); }
-});
+   fliken de här reglagen ensam, så de gick inte att nå från den flik man byggde
+   layouten i.
+
+   Här låg t.o.m. 0.5.5 en tredje rad överst: en global huvudströmbrytare. Den är
+   borttagen med flit, inte gömd. Appen har redan två sätt att bestämma vad som
+   syns, och de utesluter varandra i praktiken: antingen tänder man overlays var för
+   sig i Overlays-fliken, eller så aktiverar man en LAYOUT som skriver ut hela
+   uppsättningen på en gång. En brytare ovanpå de två svarade inte på någon fråga de
+   inte redan svarade på — den lade bara till ett läge där panelen visar en overlay
+   som påslagen medan skärmen är tom, och där man måste leta reda på varför. */
 $('gateSwitch').querySelector('input').addEventListener('change', async e => {
   try { await invoke('set_hide_until_connected', { value: e.target.checked }); }
   catch(err){ toast('Kunde inte spara inställningen: ' + errMsg(err), true); }
@@ -3161,14 +3253,12 @@ async function loadGlobals(){
     const g = await invoke('get_globals');
     $('gateSwitch').querySelector('input').checked = !!(g && g.hide_until_connected);
     // `?? true` och inte `!!`: ett äldre skal (eller testets stubb) svarar utan
-    // fälten, och då är rätt antagande att allt är PÅ — annars ser panelen ut att
-    // ha släckt allt av sig själv.
-    masterOn = (g && g.overlays_on) ?? true;
+    // fältet, och då är rätt antagande att mock är PÅ — annars ser panelen ut att
+    // ha stängt av det av sig själv.
     $('mockSwitch').querySelector('input').checked = (g && g.mock_enabled) ?? true;
     bgCurrent = (g && g.preview_background) || '';
     if (g && g.hotkey) hotkey = g.hotkey;
   } catch {}
-  paintMaster();
   showHotkey();
   // Läs katalogen FÖRE vi försöker visa bilden: har användaren tagit bort filen ska
   // det bli ett tyst nollställt val, inte ett felmeddelande vid varje appstart.
@@ -3188,9 +3278,9 @@ async function loadGlobals(){
 
    1. MEDLEMSKAP OCH SYNLIGHET ÄR TVÅ SAKER. `set_member` (+ och × här) avgör om
       overlayn INGÅR i layouten, `set_enabled` (ögonknappen, som finns i båda
-      flikarna) om den VISAS just nu. Ovanför båda ligger huvudströmbrytaren i
-      driftblocket. Att lägga till något är dock att vilja se det, så layAdd tänder
-      det som var dolt — motsatsen (dölja → ta bort) finns inte som väg.
+      flikarna) om den VISAS just nu. Fönstret finns när BÅDA är sanna, och det finns
+      ingen tredje nivå ovanför dem. Att lägga till något är dock att vilja se det, så
+      layAdd tänder det som var dolt — motsatsen (dölja → ta bort) finns inte som väg.
 
    2. DEN AKTIVA LAYOUTEN ÄR LIVE-BUNDEN. Rust speglar det gällande läget in i den
       vid varje sparning (sync_active_layout), så det finns inget spara-steg och
@@ -3545,6 +3635,41 @@ function snapAxis(pos, size, axis, selfId){
   return best ? { v: pos + best.d, hit: best.t } : { v: pos, hit: null };
 }
 
+/* KANTMARGINALEN ÄR EN GRÄNS, inte bara en streckad ruta. Den var ritad och snappad
+   mot men gick att dra förbi, alltså en regel man ställt in och som ingenting höll —
+   och då säger den streckade rutan inget om var overlays faktiskt får ligga.
+   Klampningen sitter i `moveTo`, som ALLA vägar går genom (drag, piltangenter,
+   talfälten, centreringen i högerklicksmenyn): en andra klampning någon annanstans
+   hade kunnat säga något annat.
+   Bakgrundsbilden ritas fortfarande hela vägen ut till skärmens kant — det är just
+   kontrasten mellan "här syns skärmen" och "hit får boxen inte" som gör marginalen
+   begriplig. Vore ytan utanför bortklippt hade vyn i stället sett ut som en mindre
+   skärm, och då hade talet varit omöjligt att bedöma.
+   Är overlayn STÖRRE än den användbara ytan finns ingen giltig placering. Den läggs
+   då vid ytans början i stället för att hoppa till ett negativt intervall — man ser
+   direkt att den inte får plats, och nästa steg är att minska skalan. */
+function clampAxis(pos, size, axis){
+  const a = safeArea();
+  const start = axis === 'x' ? a.x : a.y;
+  const span  = axis === 'x' ? a.w : a.h;
+  if (size >= span) return start;
+  return Math.min(Math.max(pos, start), start + span - size);
+}
+
+/* En overlay kan hamna utanför utan att man FLYTTAT den: den kan växa ut genom
+   marginalen när skalan ökar, och marginalen kan växa in under den. Båda drar den
+   tillbaka — annars gäller gränsen bara medan man håller i boxen, och den streckade
+   rutan blir återigen ett förslag. Gör ingenting när boxen redan ligger rätt, så en
+   skalning som inte krockar inte skickar en position i onödan. */
+function keepInside(o){
+  const x = clampAxis(ovX(o), ovW(o), 'x'), y = clampAxis(ovY(o), ovH(o), 'y');
+  if (Math.round(x) === Math.round(ovX(o)) && Math.round(y) === Math.round(ovY(o))) return;
+  moveTo(o, x, y, null, null);
+  showPos(null);
+  sendPos(o.id).flush();
+}
+function keepAllInside(){ for (const o of layMembers()) keepInside(o); }
+
 function showGuides(hx, hy){
   const gv = $('stGuideV'), gh = $('stGuideH');
   gv.classList.toggle('on', hx != null);
@@ -3576,7 +3701,11 @@ function sendPos(id){
    först där (i set_position) fönsterkoordinaten finns. Räkna aldrig tillbaka åt
    andra hållet någon annanstans: två ställen som konverterar glider isär. */
 function moveTo(o, x, y, hx, hy){
-  const cx = Math.round(x), cy = Math.round(y);
+  // Klampningen ligger FÖRE avrundningen och före allt annat: talfälten, boxen i vyn
+  // och det som skickas till Rust ska alla se samma värde. Skrev fältet 2000 på en
+  // 1920-skärm ska det stå det klampade talet efteråt, inte det man skrev.
+  const cx = Math.round(clampAxis(x, ovW(o), 'x'));
+  const cy = Math.round(clampAxis(y, ovH(o), 'y'));
   o.x = Math.round(cx - padX(o));
   o.y = Math.round(cy - padY(o));
   const el = $('stScreen').querySelector(`.st-ov[data-id="${CSS.escape(o.id)}"]`);
@@ -3905,10 +4034,6 @@ async function setVisible(id, on){
     await layAdd(id);
     toast('Overlayn lades till i layouten.');
   }
-  /* Huvudströmbrytaren ligger ovanför både medlemskap och av/på, så att tända något
-     medan den är av ser ut att inte göra någonting. Säg det i stället — reglaget står
-     i kolumnen bredvid och går att slå på direkt. */
-  if (on && !masterOn) toast('Overlays är avstängda med huvudströmbrytaren i kolumnen till vänster.');
   if (o) o.enabled = on;
   renderList(); renderLayoutTab();
   try { await invoke('set_enabled', { id, enabled: on }); }
@@ -3983,13 +4108,16 @@ function layGroup(o){
   // vänster om det synliga (skuggrummet).
   ix.value = Math.round(ovX(o)); iy.value = Math.round(ovY(o));
   layPos.set(o.id, { x: ix, y: iy });
+  // Samma väg som skärmvyn: moveTo klampar mot kantmarginalen, ritar om boxen och
+  // skriver TILLBAKA det gällande talet i fälten. Skriver man 2000 på en 1920-skärm
+  // ska fältet visa det klampade värdet — annars säger fältet och skärmen olika
+  // saker, och det är fältet man tror på.
   const pushPos = () => {
-    const x = Math.round(Number(ix.value)), y = Math.round(Number(iy.value));
+    const x = Number(ix.value), y = Number(iy.value);
     if (!isFinite(x) || !isFinite(y)) return;
-    o.x = Math.round(x - padX(o)); o.y = Math.round(y - padY(o));
-    const el = $('stScreen').querySelector(`.st-ov[data-id="${CSS.escape(o.id)}"]`);
-    if (el) placeBox(el);
-    const f = sendPos(o.id); f(o.x, o.y); f.flush();
+    moveTo(o, x, y, null, null);
+    showPos(null);
+    sendPos(o.id).flush();
   };
   ix.addEventListener('change', pushPos);
   iy.addEventListener('change', pushPos);
@@ -4017,8 +4145,11 @@ function layGroup(o){
     try { await invoke('set_scale', { id: o.id, scale: v }); }
     catch(err){ toast('Kunde inte spara skalan: ' + errMsg(err), true); }
   });
-  const scaleSend = (v) => { o.scale = v; stageSoon(); sScale(v); };
-  scaleSend.flush = () => sScale.flush();
+  // En större overlay kan växa ut genom kantmarginalen den låg innanför. Att skala
+  // är också att placera, så den dras tillbaka — annars gäller gränsen bara medan
+  // man drar i boxen.
+  const scaleSend = (v) => { o.scale = v; keepInside(o); stageSoon(); sScale(v); };
+  scaleSend.flush = () => { sScale.flush(); sendPos(o.id).flush(); };
   const sOpacity = throttleIpc(async (v) => {
     try { await invoke('set_opacity', { id: o.id, opacity: v }); }
     catch(err){ toast('Kunde inte spara opaciteten: ' + errMsg(err), true); }
@@ -4166,7 +4297,10 @@ function viewSettingsGroup(){
       paintRange(inp);
       fitStage();
     });
-    inp.addEventListener('change', () => { writeLayoutPrefs(); fitStage(); });
+    // keepAllInside vid `change` och inte vid `input`: en marginal som växer medan
+    // man drar reglaget hade knuffat varje overlay en gång per pixel, alltså en
+    // storm av set_position (§8.5e) och boxar som glider medan man tittar.
+    inp.addEventListener('change', () => { writeLayoutPrefs(); fitStage(); keepAllInside(); });
     body.appendChild(row);
   }
 

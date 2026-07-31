@@ -30,7 +30,10 @@
  *   - låt layRemove anropa set_enabled           → kontroll 7 faller
  *   - snappa mot skärmen i st.f. den användbara  → 6 kontroller i 4 faller
  *     ytan (start=0, span=skärmen)
- *   - ta bort masteroff-klassen i paintMaster    → kontroll 11 faller
+ *   - lägg tillbaka huvudströmbrytaren i driften  → kontroll 11 faller
+ *   - ta bort clampAxis-anropen i moveTo          → 4 kontroller i 14 faller
+ *   - ta bort keepAllInside ur marginalreglaget   → 1 kontroll i 14 faller
+ *   - sätt .ok på versionsraden innan svaret      → 1 kontroll i 15 faller
  *   - strunta i paddingen i placeBox (bara scale)  → 3 kontroller i 12 faller
  *   - låt stageFramesWanted strunta i fliken       → kontroll 12 (rivet) faller
  *   - lägg tillbaka den gamla skrollloopen (läs    → 2 kontroller i 13 faller
@@ -154,6 +157,16 @@ window.__PANEL_TEST__ = { calls: [] };
     core: { invoke },
     event: { listen: async () => (() => {}) },
     app:  { getVersion: async () => '0.5.1' },
+    /* Updateraren. Utgångsläget (odefinierat svar) KASTAR med flit: panelen kör en
+       kontroll av sig själv några sekunder efter start, och hade den fått ett svar
+       vore raden redan grön när kontroll 15 börjar — då går det inte längre att mäta
+       att den är NEUTRAL innan första svaret, vilket är hela poängen. Testet sätter
+       sedan null (senaste versionen) respektive ett objekt (nyare finns). */
+    updater: { check: async () => {
+      const u = window.__PANEL_TEST__.update;
+      if (u === undefined) throw new Error('ingen kontakt (testets utgångsläge)');
+      return u;
+    } },
   };
   // Fångar fel som annars bara syns i konsolen — panelen har legat tyst nog förut
   // att ett kastat undantag i uppstarten inte märktes (§7).
@@ -641,48 +654,36 @@ try {
   lika(skapad.aktiv, 'Natt', 'en ny layout blir aktiv');
   lika(skapad.skapaAnrop?.args, { name: 'Natt' }, 'create_layout ska ha fått namnet');
 
-  /* 11. Driftblocket. De tre reglagen hör inte till en flik — de avgör om något
+  /* 11. Driftblocket. De två reglagen hör inte till en flik — de avgör om något
          syns på skärmen alls, och tills 0.5.5 låg grinden i overlay-listans fot,
          alltså oåtkomlig från Layout-fliken. Det mätta: att blocket finns i BÅDA
-         flikarna, att huvudströmbrytaren går hela vägen till set_overlays_on, och
-         att skärmvyn säger ifrån när allt är släckt (annars ritar vyn fem overlays
-         på en tom skärm). */
+         flikarna, att det INTE följer med till en flik utan overlay-lista, och att
+         den globala HUVUDSTRÖMBRYTAREN är borta. Den sista är en kontroll mot att
+         någon lägger tillbaka den: appen har två sätt att bestämma vad som syns
+         (per overlay, eller en aktiv layout), och en tredje nivå ovanpå dem gav bara
+         ett läge där panelen visar något som påslaget medan skärmen är tom. */
   console.log('11 driftblocket når båda flikarna');
   const drift = await cdp.eval(`
     const syns = (el) => !!(el && el.getClientRects().length);
     const rad = (id) => document.getElementById(id);
-    const iLayout = { master: syns(rad('masterSwitch')), gate: syns(rad('gateSwitch')), mock: syns(rad('mockSwitch')) };
+    const iLayout = { gate: syns(rad('gateSwitch')), mock: syns(rad('mockSwitch')) };
     document.querySelector('.nav[data-sec="overlays"]').click();
     await new Promise(r => setTimeout(r, 200));
-    const iOverlays = { master: syns(rad('masterSwitch')), gate: syns(rad('gateSwitch')), mock: syns(rad('mockSwitch')) };
+    const iOverlays = { gate: syns(rad('gateSwitch')), mock: syns(rad('mockSwitch')) };
     document.querySelector('.nav[data-sec="installningar"]').click();
     await new Promise(r => setTimeout(r, 120));
-    const iInst = syns(rad('masterSwitch'));
+    const iInst = syns(rad('gateSwitch'));
     document.querySelector('.nav[data-sec="layout"]').click();
     await new Promise(r => setTimeout(r, 250));
-    return { iLayout, iOverlays, iInst };
+    return { iLayout, iOverlays, iInst,
+             master: !!rad('masterSwitch'),
+             tonad: document.getElementById('stScreen').className };
   `);
-  lika(drift.iLayout, { master: true, gate: true, mock: true }, 'driftblocket i Layout-fliken');
-  lika(drift.iOverlays, { master: true, gate: true, mock: true }, 'driftblocket i Overlays-fliken');
+  lika(drift.iLayout, { gate: true, mock: true }, 'driftblocket i Layout-fliken');
+  lika(drift.iOverlays, { gate: true, mock: true }, 'driftblocket i Overlays-fliken');
   sant(!drift.iInst, 'driftblocket ska INTE följa med till flikar utan overlay-lista');
-
-  const master = await cdp.eval(`
-    const inp = document.querySelector('#masterSwitch input');
-    inp.checked = false; inp.dispatchEvent(new Event('change'));
-    await new Promise(r => setTimeout(r, 200));
-    const av = { anrop: window.__PANEL_TEST__.calls.filter(c => c.cmd === 'set_overlays_on').pop(),
-                 tonad: document.getElementById('stScreen').classList.contains('masteroff'),
-                 kolumn: document.getElementById('midcol').dataset.master };
-    inp.checked = true; inp.dispatchEvent(new Event('change'));
-    await new Promise(r => setTimeout(r, 200));
-    return { av, pa: { anrop: window.__PANEL_TEST__.calls.filter(c => c.cmd === 'set_overlays_on').pop(),
-                       tonad: document.getElementById('stScreen').classList.contains('masteroff') } };
-  `);
-  lika(master.av.anrop?.args, { value: false }, 'huvudströmbrytaren av ska anropa set_overlays_on');
-  sant(master.av.tonad, 'skärmvyn ska visa att inget syns när strömbrytaren är av');
-  lika(master.av.kolumn, 'off', 'kolumnen ska tona de reglage som inte kan göra något');
-  lika(master.pa.anrop?.args, { value: true }, 'huvudströmbrytaren på ska anropa set_overlays_on');
-  sant(!master.pa.tonad, 'markeringen ska släppa när strömbrytaren slås på igen');
+  sant(!drift.master, 'huvudströmbrytaren ska vara borta, inte dold');
+  sant(!drift.tonad.includes('masteroff'), 'skärmvyn ska inte ha kvar något masteroff-läge');
 
   /* 12. Boxarnas innehåll. Boxen är fortfarande MÅTTET (kontroll 3 mäter det), men
          den ritar numera overlayn själv. Två saker kan gå sönder osynligt: iframens
@@ -767,8 +768,97 @@ try {
   nara(await snurra(0, 100), ned, 25, 'fem snäpp nedåt från toppen ska flytta 5 × 100 px');
   nara(await snurra(ruta.max, -100), ruta.max - ned, 25, 'fem snäpp uppåt från botten ska flytta lika långt');
 
-  // 14. Inget fel kastades under hela mätningen.
-  console.log('14 inga fel kastades under körningen');
+  /* 14. KANTMARGINALEN ÄR EN GRÄNS. Den ritades och snappades mot men gick att dra
+         förbi — alltså en regel man ställt in och som ingenting höll, och då säger
+         den streckade rutan inget om var overlays faktiskt får ligga.
+         SNAPPNINGEN ÄR AVSTÄNGD i mätningen med flit: med den på hade en dragning
+         mot kanten landat på marginalen ändå (kanterna är snap-måltavlor, kontroll
+         4C), och testet hade mätt snappningen i stället för gränsen.
+         Tre vägar mäts, för alla tre går genom `moveTo` och en klampning som bara
+         sitter i dragningen är den lätta att skriva: dragning, talfälten, och att
+         ÖKA marginalen under en overlay som redan ligger där. */
+  console.log('14 kantmarginalen går inte att placera utanför');
+  await cdp.eval(`
+    document.querySelector('.nav[data-sec="layout"]').click();
+    await new Promise(r => setTimeout(r, 300));
+    document.getElementById('btnSnap').click();          // snappningen AV
+    await new Promise(r => setTimeout(r, 120));
+  `);
+  const hogerKant = 1920 - MARGIN - 736;                 // innehållets högsta x
+  const nedreKant = 1080 - MARGIN - 200;
+  const utanfor = await drag('delta-bar', 3000);
+  nara(utanfor.pixelX, hogerKant, 0.6, 'en dragning förbi högerkanten ska stanna på marginalen');
+  nara(utanfor.falt, hogerKant, 0.6, 'positionsfältet ska säga det klampade värdet');
+  nara(utanfor.skickat?.args?.x ?? -1, hogerKant - 36, 0.6,
+       'set_position ska få FÖNSTRETS klampade x, inte det man drog till');
+  const vansterUt = await drag('delta-bar', -3000);
+  nara(vansterUt.pixelX, MARGIN, 0.6, 'och samma sak åt vänster');
+
+  // Talfälten är den andra vägen in. Skriver man 5000 ska fältet visa det värde som
+  // GÄLLER efteråt — annars säger fältet och skärmen olika saker, och det är fältet
+  // man tror på.
+  const falten = await cdp.eval(`
+    const f = document.querySelectorAll('#lgrp-delta-bar .posf input');
+    f[0].value = 5000; f[0].dispatchEvent(new Event('change', { bubbles: true }));
+    f[1].value = 5000; f[1].dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 160));
+    return { x: Number(f[0].value), y: Number(f[1].value) };
+  `);
+  nara(falten.x, hogerKant, 0.6, 'ett för stort X i talfältet ska klampas');
+  nara(falten.y, nedreKant, 0.6, 'ett för stort Y i talfältet ska klampas');
+
+  // Tredje vägen: marginalen växer IN under en overlay som redan ligger vid kanten.
+  // Utan det gäller gränsen bara medan man håller i boxen.
+  const bredMarginal = await cdp.eval(`
+    const inp = [...document.querySelectorAll('#lgrp-__view input[type=range]')].pop();
+    inp.value = 120;
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 200));
+    return Number(document.querySelector('#lgrp-delta-bar .posf input').value);
+  `);
+  nara(bredMarginal, 1920 - 120 - 736, 0.6, 'en bredare marginal ska dra in det som låg utanför');
+  await cdp.eval(`
+    const inp = [...document.querySelectorAll('#lgrp-__view input[type=range]')].pop();
+    inp.value = ${MARGIN};
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 160));
+    document.getElementById('btnSnap').click();          // snappningen tillbaka på
+  `);
+
+  /* 15. Versionen i titelraden. Den ska säga vilken version man kör OCH om den är
+         den senaste, och den får aldrig påstå grönt innan kontrollen gått igenom —
+         just den lögnen är svår att upptäcka, eftersom grönt är det normala.
+         Stubben svarar att 0.9.9 finns. */
+  console.log('15 versionen och uppdateringsläget i titelraden');
+  const ver = await cdp.eval(`
+    const row = document.getElementById('verRow');
+    const fore = { dold: row.hidden, klass: row.className, text: document.getElementById('verText').textContent };
+    // Panelen hoppar kontrollen medan den är ur fokus (då är statussocketen stängd
+    // och "kör spelet?" ett gammalt svar). Headless-Chrome kan mycket väl anse sig
+    // ofokuserad, så säg uttryckligen att den är framme.
+    previewPaused = false;
+    window.__PANEL_TEST__.update = null;             // "du har senaste versionen"
+    await updCheck();
+    const senaste = { klass: row.className, text: document.getElementById('verText').textContent };
+    window.__PANEL_TEST__.update = { version: '0.9.9' };
+    await updCheck();
+    const nyare = { klass: row.className, text: document.getElementById('verText').textContent };
+    return { fore, senaste, nyare };
+  `);
+  sant(!ver.fore.dold, 'versionsraden ska synas så fort versionen är känd');
+  sant(!/\b(ok|new)\b/.test(ver.fore.klass),
+       'före första svaret får raden varken vara grön eller amber (' + ver.fore.klass + ')');
+  sant(ver.fore.text.startsWith('v'), 'versionen ska stå där från början');
+  sant(ver.senaste.klass.includes('ok') && !ver.senaste.klass.includes('new'),
+       'utan nyare version ska pricken vara grön');
+  lika(ver.senaste.text, ver.fore.text, 'och texten ska fortsätta visa DIN version');
+  sant(ver.nyare.klass.includes('new'), 'finns en nyare version ska pricken bli amber');
+  sant(ver.nyare.text.includes('0.9.9'), 'och texten ska säga VILKEN den nya versionen är');
+
+  // 16. Inget fel kastades under hela mätningen.
+  console.log('16 inga fel kastades under körningen');
   lika(await cdp.eval(`return window.__PANEL_TEST__.errors;`), [], 'fel under körningen');
 
 } finally {

@@ -256,12 +256,23 @@ stacken linjerar utan vågrät skroll, och — viktigast — att **dölja inte �
 ögat skriver `set_enabled` och boxen ligger kvar nedtonad, × skriver `set_member`
 (CLAUDE.md §2).
 
-Sedan 0.5.5 mäter samma test tre saker till, och de två sista har inget med geometri
-att göra — de ligger här för att de kräver en riktig webbläsare:
-- **Driftblocket** (huvudströmbrytare, ACC-grind, mock-data) finns i BÅDA flikarna och
-  inte i de andra, huvudströmbrytaren går hela vägen till `set_overlays_on`, och
-  skärmvyn tonas när den är av. Innan blocket fanns låg ACC-grinden i overlay-listans
-  fot och gick alltså inte att nå från Layout-fliken.
+Samma test mäter fem saker till, och flera av dem har inget med geometri att göra — de
+ligger här för att de kräver en riktig webbläsare:
+- **Driftblocket** (ACC-grind, mock-data) finns i BÅDA flikarna och inte i de andra.
+  Innan blocket fanns låg ACC-grinden i overlay-listans fot och gick alltså inte att nå
+  från Layout-fliken. Kontrollen mäter också att den globala huvudströmbrytaren är
+  BORTA — den fanns i 0.5.5 och togs bort igen, och testet finns för att den inte ska
+  smyga tillbaka: av/på hör hemma per overlay eller i en layout, och en tredje nivå
+  ovanpå dem ger bara ett läge där panelen visar något som påslaget medan skärmen är tom.
+- **Kantmarginalen är en GRÄNS**, inte bara en streckad ruta: en dragning förbi kanten
+  stannar på marginalen, ett för stort tal i positionsfältet klampas, och en marginal
+  som växer drar in det som hamnade utanför. Snappningen är avstängd i den kontrollen
+  med flit — med den på hade dragningen landat rätt ändå och testet hade mätt
+  snappningen i stället för gränsen.
+- **Versionen i titelraden**: grön prick när man kör senaste, amber med den NYA
+  versionens nummer när det finns en, och — det som är lätt att fuska bort — varken
+  eller innan kontrollen svarat. Stubbens updater kastar i sitt utgångsläge just för
+  att det neutrala tillståndet ska gå att mäta.
 - **Boxarnas innehåll**: iframen ritar FÖNSTRET och skjuts upp/vänster med overlayns
   padding × skalan (boxen är innehållet), måttchippen visar innehållets storlek, och
   dokumentet RIVS när man lämnar fliken — döljs det bara lever dess WebSocket vidare
@@ -309,10 +320,12 @@ KRAV registret ska uppfylla. En overlay som saknas i tabellen får testet att fa
 en ny overlay ska inte kunna glida in utan att någon räknat på dess skuggrum.
 
 **Visa att panel-layout biter:** utöver de åtta äldre varianterna (se filens huvud) är
-fyra nya körda och samtliga föll — ta bort `masteroff`-klassen ur `paintMaster`
-(kontroll 11), strunta i paddingförskjutningen i `placeBox` (12), låt
-`stageFramesWanted` strunta i vilken flik som är framme (12), och lägg tillbaka den
-gamla skrollloopen som läser `scrollTop` som sanning (13, tappar 100–200 px).
+sex nya körda och samtliga föll — strunta i paddingförskjutningen i `placeBox` (12), låt
+`stageFramesWanted` strunta i vilken flik som är framme (12), lägg tillbaka den
+gamla skrollloopen som läser `scrollTop` som sanning (13, tappar 100–200 px), ta bort
+`clampAxis`-anropen ur `moveTo` (14, fem kontroller), ta bort `keepAllInside` ur
+marginalreglagets `change` (14, en kontroll), och sätt `.ok` på versionsraden innan
+kontrollen svarat (15).
 
 **Visa att overlay-window-fit biter:** tre varianter är körda och föll — ta bort `--ui-scale` ur
 både `tokens.css` och inputs-trace (de två kontrollerna utan INIT faller), lås
