@@ -15,7 +15,7 @@
 > X" i §7).
 ## 1. Vad projektet är
 Modulärt overlay-paket för **Assetto Corsa Competizione (ACC)**.
-Version 0.5.7.
+Version 0.5.8.
 - **Funktionellt** som **Race Element**: lätt, rensat, praktiskt, ingen FPS-förlust.
 - **Visuellt** som **RaceLab**: mörkt, polerat, animerat, premium.
 - Kvalitetsribban är hög och användaren är detaljpetig ner till pixelnivå.
@@ -454,6 +454,13 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
   därför stängs den vid skroll, vilket ändå är rätt beteende. Den öppnas UPPÅT när det
   inte finns plats nedåt, och den måste gå att styra med tangentbordet (piltangenter,
   Enter, Esc): utan det är den ett steg bakåt mot `<select>`, som kunde det.
+  **Skroll INNE i menyn är undantaget, och det är inte en detalj.** Menyn har
+  `max-height` och skrollar själv när listan är lång (bakgrundsväljaren med många egna
+  bilder), och den skrollen fångas av samma lyssnare — följden var att de nedersta
+  raderna, inklusive "Öppna mappen …", inte gick att nå: menyn stängde sig i samma
+  ögonblick man rörde hjulet. Lyssnaren släpper därför igenom händelser vars mål ligger
+  i den öppna menyn. Att skrolla i menyn är att ANVÄNDA den, inte att något annat rörde
+  sig under den.
 
 - Panelen sätter `font-family:inherit` på `button,input,select,textarea` en gång
   globalt: formulärkontroller ärver inte typsnitt, så varje ny kontroll som glömmer sin
@@ -507,12 +514,27 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
     "här syns skärmen" och "hit får boxen inte" är det som gör talet begripligt. Klipp
     alltså inte bort ytan utanför marginalen — då ser vyn bara ut som en mindre skärm,
     och marginalen blir omöjlig att bedöma.
-  - **Upplösning och antal skärmar går att skriva in.** Vyn är ett RITBORD för den skärm
-    man ställer in för — positionerna som skickas till Rust är oförändrat riktiga
-    skärmkoordinater. Flera skärmar ritar SKARVAR (och snappunkter vid dem och vid varje
-    skärms mitt): en overlay mitt i en skarv är delad i två av ramarna, och det syns inte
-    på en enda stor yta. Skärmarna antas lika breda — en blandning av upplösningar skulle
-    kräva att man matar in varje skärm för sig.
+  - **Man anger skärmens FORM och antal — aldrig dess upplösning.** Upplösningen läser
+    appen själv (`get_screen`), och den är dessutom det man minst av allt minns om sin
+    skärm; formen (16:9, 16:10, 21:9, 4:3) är det man vet. Varje form bär en igenkännbar
+    upplösning inom parentes — den UPPTÄCKTA när formen stämmer med skärmen appen ligger
+    på, annars formens typvärde — så den som inte tänker i bildformat ändå hittar sin rad.
+    Stämmer formen är det användarens EGNA mått som gäller hela vägen ut i positionerna;
+    stämmer den inte ställer man in åt en annan skärm än den panelen står på, och då är
+    typvärdet det bästa som finns. Vyn är ett RITBORD — positionerna som skickas till
+    Rust är oförändrat riktiga skärmkoordinater.
+    **Antalet skärmar BREDDAR vyn** (`screenSize.width = en skärm × antalet`), det ritar
+    inte streck i en oförändrad yta. Så ser Windows det också: tre 16:9-skärmar är ett
+    skrivbord med tre gånger bredden och samma höjd. Förut delade skärmväljaren bara upp
+    samma yta, alltså sa vyn "tre skärmar" om något som fortfarande var format som en.
+    Skarvarna får snappunkter (och en vid varje skärms mitt): en overlay mitt i en skarv
+    är delad i två av ramarna. Skärmarna antas lika breda — en blandning skulle kräva att
+    man matar in varje skärm för sig.
+    **Skarven ritas i rutans egen yta (`--ui-stage`), inte som en mörk linje**, och är
+    tilltagen i bredd (10 px). En 3 px mörk strimma läser som en linje ritad OVANPÅ en
+    skärm; ett brett glapp i samma kulör som ytan bakom skärmen läser som mellanrummet
+    MELLAN två skärmar, vilket är vad det är. De hårfina ljusa kanterna är skärmarnas
+    ytterkant — höj dem inte, då blir glappet en list igen.
   - **Hjälplinjen vid snappning är amber**, samma signalfärg som fokusringen och den
     aktiva presetens markör. Grönt hade betytt "på", och en snappning är inget tillstånd.
     Samma amber markerar den VALDA boxens grupp i listan under — att dra en box och sedan
@@ -657,8 +679,9 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   mäter exakt som overlayns INNEHÅLL gör (olika mått, skala, padding och position per
   overlay i fixturen), snappningen väljer NÄRMASTE kandidat, snappar mot ytan innanför
   kantmarginalen och skickar FÖNSTRETS position vidare som `set_position`, med
-  snappningen av ligger boxen kvar där pekaren släppte, en egen upplösning ändrar vyns
-  form och tre skärmar ritar två skarvar på rätt x, en vald box markerar sin grupp,
+  snappningen av ligger boxen kvar där pekaren släppte, ett annat BILDFORMAT ändrar vyns
+  form medan den egna skärmens form ger den UPPTÄCKTA upplösningen, tre skärmar ger en
+  tre gånger så bred vy med två skarvar på rätt x, en vald box markerar sin grupp,
   inställningsgrupperna är hopfällda (utom Skärmvy) med rätt `aria-expanded` och radantal,
   skärmvyn och stacken ligger på samma x och bredd utan vågrät skroll, att DÖLJA lämnar
   boxen kvar nedtonad och rör aldrig medlemskapet medan × går genom `set_member`, och
@@ -740,9 +763,12 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
     (streckad box, streckad rektangel i miniatyren) och komma tillbaka på sin plats när
     man visar den igen. Kontrollera samtidigt att `member` dyker upp i settings.json och
     att en fil från 0.5.3 läses utan att något tappas (`member` ärver då `enabled`).
-  - **Att en egen upplösning och flera skärmar gör nytta.** Vyn ritar då en skärm som
-    inte är den panelen står på — positionerna är fortfarande riktiga koordinater, men
-    ingen har provat att ställa in en triple-rigg och sedan köra på den.
+  - **Att bildformat och flera skärmar gör nytta.** Väljer man ett format som inte är
+    skärmens ritar vyn en skärm som inte är den panelen står på — positionerna är
+    fortfarande riktiga koordinater, men ingen har provat att ställa in en triple-rigg
+    och sedan köra på den. Kontrollera samtidigt att en 21:9- eller 16:10-skärm får sin
+    EGNA upplösning i parentesen och inte tabellens typvärde (`aspectFits`); här har
+    bara en 16:9-skärm funnits.
 - **Att ACC känns igen som förgrundsprocess** (§8.5c). Detektionen fungerar åt båda
   hållen mot andra program och mot vårt eget fönster, men är **aldrig körd mot ACC** —
   spelet har inte funnits på maskinen. Slår igenkänningen fel göms overlays under HELA
@@ -1277,6 +1303,24 @@ Regeln: **varje variabel som används i en `calc()` måste ha ett värde i CSS**
 den man råkar tänka på. En `var(--x, fallback)` skyddar bara `--x`.
 `tests/overlay-window-fit.mjs` kör därför ett pass helt utan INIT.
 
+### 8.4n En variantklass måste vara MER specifik än basklassen den ändrar
+Layoutradens av/på-växlare är `class="sw lsw"`: `.sw` är växlaren (och sätter
+`position:relative` för sina absolut positionerade delar), `.lsw` placerar den i raden
+med `position:absolute; right:40px`. Båda är EN klass, alltså samma specificitet — och
+`.sw` står längre ner i stilmallen, så den vann. Växlaren föll ur sitt absoluta läge,
+`right:40px` tolkades som en RELATIV förskjutning 40 px åt vänster, och knappen hamnade
+utanför listan bakom ikonlisten.
+
+Det ser ut som en positioneringsbugg och är en kaskadbugg, vilket är det som gör den
+dyr: `.lsw`-regeln är korrekt skriven och elementet har rätt klasser.
+
+Regeln: **en regel som ändrar en basklass ska nämna basklassen** — `.sw.lsw`, inte
+`.lsw`. Då är källordningen likgiltig, och nästa person kan flytta blocken fritt.
+Samma sak gäller `[hidden]` mot en `display`-regel (§8.4f) — det är samma familj:
+en deklaration som förutsätter att den läses sist.
+`tests/panel-layout.mjs` kontroll 16 mäter numera växlarens `position` och dess
+rektangel mot radens.
+
 ### 8.5 Flicker-mönster att aldrig upprepa
 Alla dessa fanns i delta-baren och gav synligt flimmer:
 - **Tröskel som slår ut ett element helt.** `valueArc()` returnerade `''` när
@@ -1538,7 +1582,10 @@ filnamn.
 - Halftone-rastret är ren CSS (`radial-gradient` + `background-size`), inte en bild:
   det blir knivskarpt i alla storlekar och på alla DPI. Det ligger ovanför bakgrunden
   men **under** overlayn — ett raster över själva overlayn hade förstört precis det
-  previewn finns för att bedöma.
+  previewn finns för att bedöma. **Det ska ANTYDAS, inte läsas** (0,20 alfa, 0,7 px
+  punkter): på 0,45/0,85 var det ett synligt prickmönster som konkurrerade med den
+  overlay rutan finns för att bedöma och gjorde bakgrundsbilden grynig. Behöver rutan
+  mer struktur är det vinjetten som ska ta den.
 
 ### 8.6 Motorn får aldrig dö tyst
 ACC:s delade minne kan försvinna mitt i en session (alt-F4) och kasta. Utan

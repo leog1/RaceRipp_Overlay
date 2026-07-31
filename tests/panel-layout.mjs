@@ -41,7 +41,10 @@
  *   - låt stageFramesWanted strunta i fliken       → kontroll 12 (rivet) faller
  *   - lägg tillbaka den gamla skrollloopen (läs    → 2 kontroller i 13 faller
  *     scrollTop som sanning, ge upp vid kanten)
- * Alla femton är körda och föll. Kontroll 2 är därför medvetet räknad ur BEHÅLLAREN
+ *   - låt skärmantalet inte bredda vyn (screenSize → 1 kontroll i 9 faller
+ *     = en skärm oavsett `monitors`)
+ *   - skriv selektorn `.lsw` i st.f. `.sw.lsw`     → 3 kontroller i 16 faller
+ * Alla sjutton är körda och föll. Kontroll 2 är därför medvetet räknad ur BEHÅLLAREN
  * och inte ur panelens `stageK`: en kontroll som hämtar omräkningsfaktorn ur koden
  * den granskar stämmer alltid mot sig själv och kan inte falla.
  */
@@ -614,11 +617,13 @@ try {
   `);
   lika(markerad, ['lgrp-inputs-trace'], 'exakt den valda overlayns grupp ska vara markerad');
 
-  /* 9. Skärmvyns egna inställningar: en egen upplösning ändrar vyns FORM (annars
-        går den inte att ställa in för en annan skärm än den panelen står på), och
-        antalet skärmar ritar skarvarna — en overlay mitt i en skarv är delad i två
-        av ramarna, och det syns inte på en enda stor yta. */
-  console.log('9  egen upplösning och skärmskarvar');
+  /* 9. Skärmvyns egna inställningar: BILDFORMATET ändrar vyns form (annars går den
+        inte att ställa in för en annan skärm än den panelen står på), och antalet
+        skärmar gör vyn så många skärmar BRED med skarvar emellan — en overlay mitt
+        i en skarv är delad i två av ramarna, och det syns inte på en enda stor yta.
+        Att skärmantalet ändrar FORMEN och inte bara ritar streck är hela poängen:
+        förut sa vyn "tre skärmar" om något som fortfarande var format som en. */
+  console.log('9  bildformat, skärmantal och skarvar');
   const pickDD = async (index, label) => cdp.eval(
     `const dd = [...document.querySelectorAll('#lgrp-__view .dd-btn')][${index}];\n` +
     `dd.click();\n` +
@@ -629,32 +634,48 @@ try {
     `rad.click();\n` +
     `await new Promise(r => setTimeout(r, 260));`);
 
-  await pickDD(0, '5760');
-  const bred = await cdp.eval(`
+  // Den upptäckta skärmen är 16:9, så 21:9 kan inte vara användarens egna mått —
+  // formens typvärde (3440×1440) ska gälla i stället.
+  await pickDD(0, '21:9');
+  const ultra = await cdp.eval(`
     const el = document.getElementById('stScreen');
     return { form: el.clientWidth / el.clientHeight,
              text: document.getElementById('stRes').textContent };
   `);
-  nara(bred.form, 5760 / 1080, 0.02, 'skärmvyn ska ta den egna upplösningens form');
-  sant(bred.text.includes('5760'), 'måttet i hörnet ska säga vilken upplösning som gäller');
+  nara(ultra.form, 3440 / 1440, 0.02, 'skärmvyn ska ta det valda bildformatets form');
+  sant(ultra.text.includes('3440'), 'måttet i hörnet ska säga vilken upplösning som gäller');
 
+  // Tillbaka till skärmens egen form: DÄR ska den UPPTÄCKTA upplösningen gälla, inte
+  // tabellens typvärde. Det är hela skälet att man anger form och inte upplösning.
+  await pickDD(0, '16:9');
+  const egen = await cdp.eval(`
+    const el = document.getElementById('stScreen');
+    return { form: el.clientWidth / el.clientHeight,
+             text: document.getElementById('stRes').textContent };
+  `);
+  nara(egen.form, 1920 / 1080, 0.02, 'skärmens egen form ska tillbaka');
+  sant(egen.text.includes('1920') && egen.text.includes('1080'),
+       'den upptäckta upplösningen ska gälla när formen stämmer');
+
+  // Tre skärmar = tre gånger så bred vy, inte samma yta med streck i.
   await pickDD(1, '3');
   const skarvar = await cdp.eval(`
     const el = document.getElementById('stScreen');
     const k = el.clientWidth / 5760;
-    return { antal: document.querySelectorAll('#stSeams i').length,
+    return { form: el.clientWidth / el.clientHeight, k,
+             antal: document.querySelectorAll('#stSeams i').length,
              x: [...document.querySelectorAll('#stSeams i')].map(i => parseFloat(i.style.left) / k) };
   `);
+  nara(skarvar.form, 5760 / 1080, 0.02, 'tre skärmar ska ge en tre gånger så bred vy');
   lika(skarvar.antal, 2, 'tre skärmar ska ge två skarvar');
   nara(skarvar.x[0], 1920, 1.5, 'första skarven');
   nara(skarvar.x[1], 3840, 1.5, 'andra skarven');
 
-  // Tillbaka till skärmen och en skärm, så resten av mätningen står på känd mark.
-  await pickDD(1, '1 (en skärm)');
-  await pickDD(0, 'Skärmen');
+  // Tillbaka till en skärm, så resten av mätningen står på känd mark.
+  await pickDD(1, '1');
   nara(await cdp.eval(`const el = document.getElementById('stScreen');
                        return el.clientWidth / el.clientHeight;`),
-       1920 / 1080, 0.02, 'valet "Skärmen" ska ge skärmens form igen');
+       1920 / 1080, 0.02, 'en skärm ska ge skärmens form igen');
 
   // 10. Layoutlistan: aktiv layout markerad, och att klicka en annan aktiverar den.
   console.log('10 layoutlistan och aktiveringen');
@@ -923,6 +944,21 @@ try {
        'menyn ska INTE ha kvar Aktivera/Inaktivera — tva vagar till samma val ar brus (' +
        vaxel.meny.join(', ') + ')');
   await cdp.eval(`document.body.click(); await new Promise(r => setTimeout(r, 120));`);
+
+  /* Och vaxlaren maste LIGGA i raden. `.sw` satter position:relative och star langre
+     ner i stilmallen an `.lsw`; med lika specificitet vann den, och `right:40px`
+     blev da en relativ forskjutning 40 px at VANSTER — vaxlaren hamnade utanfor
+     listan, bakom ikonlisten. Selektorn ar darfor `.sw.lsw`. */
+  const swPos = await cdp.eval(`
+    const w = document.querySelector('#layList .lrowwrap');
+    const a = w.getBoundingClientRect(), b = w.querySelector('.lsw').getBoundingClientRect();
+    return { fast: getComputedStyle(w.querySelector('.lsw')).position,
+             inne: b.left >= a.left && b.right <= a.right + 0.5,
+             hoger: a.right - b.right };
+  `);
+  lika(swPos.fast, 'absolute', 'vaxlaren ska vara absolut positionerad i raden');
+  sant(swPos.inne, 'vaxlaren ska ligga INNANFOR sin rad, inte utanfor listan');
+  nara(swPos.hoger, 40, 2, 'vaxlaren ska sta 40 px fran radens hogerkant');
 
   /* 17. PRESET per overlay i Layout-fliken. Den fanns bara i Overlays-fliken, och att
          bygga en nattlayout krävde alltså: välj overlay dar, klicka chip, gå tillbaka,

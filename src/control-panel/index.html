@@ -400,9 +400,13 @@ body.maximized .tb-btn .ico-max{display:none;}
    alla storlekar och på alla DPI, och kostar inget att ladda. Ligger ovanför
    bakgrunden men UNDER overlayn — ett raster över själva overlayn hade förstört
    just det previewn finns för att bedöma.
-   Visas oberoende av om en bakgrundsbild är vald. */
+   Visas oberoende av om en bakgrundsbild är vald.
+   Rastret ska ANTYDAS, inte läsas. Det låg på 0,45 och 0,85 px punkter, alltså ett
+   synligt prickmönster som konkurrerade med den overlay rutan finns för att bedöma —
+   och som dessutom gjorde bakgrundsbilden gryning. Höj inte tillbaka det: behöver
+   rutan mer struktur är det vinjetten som ska ta den, inte rastret. */
 .pv-halftone{position:absolute;inset:0;pointer-events:none;
-  background-image:radial-gradient(circle at 50% 50%, rgba(0,0,0,0.45) 0.85px, transparent 1.05px);
+  background-image:radial-gradient(circle at 50% 50%, rgba(0,0,0,0.20) 0.7px, transparent 0.95px);
   background-size:3px 3px;}
 /* Vinjett: drar ner hörnen så overlayn lyfter ur rutan. Ligger under overlayn av
    samma skäl som rastret — den får mörka bakgrunden, aldrig det som bedöms. */
@@ -746,12 +750,16 @@ body.maximized .tb-btn .ico-max{display:none;}
   pointer-events:none;border:1px dashed rgba(255,255,255,0.16);}
 .st-safe[hidden]{display:none;}
 /* Skarvarna i en flerskärmsuppsättning. En overlay som hamnar mitt i en skarv är
-   delad i två på riktigt, och det syns inte på en enda stor rektangel. Linjen är
-   ljusare än rutnätet och har en mörk kärna: den ska läsas som en fysisk kant. */
+   delad i två på riktigt, och det syns inte på en enda stor rektangel.
+   Skarven är RUTANS EGEN YTA (`--ui-stage`, samma som bakom skärmen) och inte en
+   mörk linje: den läser då som ett glapp MELLAN två skärmar i stället för som en
+   linje ritad ovanpå en. Bredden är därför också tilltagen — en 3 px-strimma är en
+   linje, ett 10 px-glapp är två ramar. De hårfina ljusa kanterna är skärmarnas
+   ytterkant och inget annat; höj dem inte, då blir glappet en list igen. */
 .st-seams{position:absolute;inset:0;pointer-events:none;}
-.st-seams i{position:absolute;top:0;bottom:0;width:3px;margin-left:-1.5px;
-  background:linear-gradient(90deg,rgba(255,255,255,0.10),rgba(0,0,0,0.75) 40%,
-             rgba(0,0,0,0.75) 60%,rgba(255,255,255,0.10));}
+.st-seams i{position:absolute;top:0;bottom:0;width:10px;margin-left:-5px;
+  background:var(--ui-stage);
+  box-shadow:inset 1px 0 0 rgba(255,255,255,0.10),inset -1px 0 0 rgba(255,255,255,0.10);}
 /* Skärmens mittlinjer. Egen regel och inte en cell i rutnätet: mitten finns
    oavsett täthet, och den är den punkt man oftast siktar mot. */
 .st-mid{position:absolute;inset:0;pointer-events:none;}
@@ -886,8 +894,13 @@ body.maximized .tb-btn .ico-max{display:none;}
    sakerna på en gång: vad som gäller, och att det går att ändra.
    Absolut positionerad av samma skäl som .lmenu: raden är en <button>, och en
    <label> med en <input> inuti en knapp är ogiltig HTML — klicket hade dessutom
-   räknats som ett radklick. */
-.lsw{position:absolute;right:40px;top:50%;transform:translateY(-50%);}
+   räknats som ett radklick.
+   SELEKTORN MÅSTE VARA `.sw.lsw` och inte bara `.lsw`. Basklassen `.sw` sätter
+   `position:relative` och står LÄNGRE NER i filen; med lika specificitet (en klass
+   mot en klass) vann den, växlaren föll ur sitt absoluta läge och `right:40px`
+   tolkades som en relativ förskjutning 40 px åt VÄNSTER — alltså ut ur listan och
+   in bakom ikonlisten. Två klasser i selektorn gör ordningen likgiltig. */
+.sw.lsw{position:absolute;right:40px;top:50%;transform:translateY(-50%);}
 .lmenu{position:absolute;right:8px;top:50%;transform:translateY(-50%);
   width:26px;height:26px;display:flex;align-items:center;justify-content:center;
   appearance:none;background:none;border:1px solid transparent;border-radius:var(--ui-r-sm);
@@ -1891,8 +1904,17 @@ function popMenu(anchor, spec){
 }
 // Klick utanför, skroll och storleksändring stänger. `capture` så att en meny inuti
 // den skrollande listan stängs innan skrollen målas — annars ligger den kvar i luften.
+// MEN: menyn skrollar SJÄLV när listan är längre än max-height (bakgrundsväljaren med
+// många egna bilder), och den skrollen fångas av samma lyssnare. Följden var att de
+// nedersta raderna — inklusive "Öppna mappen …" — inte gick att nå: menyn stängde sig
+// i samma ögonblick man rörde hjulet. Skroll som händer INNE i menyn är alltså inte
+// "något annat rörde sig", den är att man använder menyn.
 addEventListener('click', () => closePop());
-addEventListener('scroll', () => closePop(), true);
+addEventListener('scroll', (e) => {
+  const t = e.target;
+  if (openPop && t instanceof Node && openPop.el.contains(t)) return;
+  closePop();
+}, true);
 addEventListener('resize', () => closePop());
 addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
 
@@ -3445,15 +3467,26 @@ const GRID_COLS = [8, 12, 16, 24];
    skärmkanten, litet nog att inte kännas som en ram. */
 const MARGIN_MAX = 120;
 const MONITOR_MAX = 3;
-const RES_MIN = { w: 640, h: 480 }, RES_MAX = { w: 15360, h: 8640 };
+/* Skärmvyn ställs in på FORMEN, inte på upplösningen. Upplösningen kan appen läsa
+   själv (`get_screen`), och den siffran är dessutom den som ingen minns utantill —
+   formen är det man vet om sin skärm. Varje form bär en igenkännbar upplösning inom
+   parentes i väljaren, så den som inte tänker i bildformat ändå hittar rätt rad.
+   `w`/`h` används bara när den upptäckta skärmen INTE har den valda formen (man
+   ställer alltså in åt en annan skärm än den panelen står på); stämmer formen är det
+   användarens egna mått som gäller, hela vägen ut i positionerna. */
+const ASPECTS = [
+  { key: '16:9',  r: 16 / 9,  w: 1920, h: 1080 },
+  { key: '16:10', r: 16 / 10, w: 1920, h: 1200 },
+  { key: '21:9',  r: 21 / 9,  w: 3440, h: 1440 },
+  { key: '4:3',   r: 4 / 3,   w: 1600, h: 1200 },
+];
 let snapOn = true, gridCols = 12, edgeMargin = 8, monitors = 1;
 // Ritar boxarna de riktiga overlayerna? Se mountStageFrames för varför det är
 // monteringen och inte flaggan som håller CPU-kostnaden borta.
 let stageLive = true;
-// Egen upplösning: null = använd skärmen appen ligger på. En egen är till för den
-// som ställer in för en ANNAN skärm än den panelen står på (triple, TV:n i vardags-
-// rummet, en rigg man bygger layouten till innan man sitter i den).
-let customRes = null;
+// Skärmens form. null = inte vald ännu; då härleds den ur den upptäckta skärmen
+// vid första `applyRes()`, så en vanlig 16:9-rigg aldrig behöver ställa in något.
+let aspect = null;
 (function readLayoutPrefs(){
   try {
     const v = JSON.parse(localStorage.getItem(LAY_KEY)) || {};
@@ -3462,18 +3495,16 @@ let customRes = null;
     if (Number.isFinite(v.margin)) edgeMargin = Math.min(MARGIN_MAX, Math.max(0, Math.round(v.margin)));
     if (Number.isFinite(v.monitors)) monitors = Math.min(MONITOR_MAX, Math.max(1, Math.round(v.monitors)));
     if (typeof v.live === 'boolean') stageLive = v.live;
-    if (v.res && Number.isFinite(v.res.width) && Number.isFinite(v.res.height))
-      customRes = { width: clampRes(v.res.width, 'w'), height: clampRes(v.res.height, 'h') };
+    if (ASPECTS.some(a => a.key === v.aspect)) aspect = v.aspect;
+    // `v.res` (den gamla egna upplösningen) läses med flit INTE in. En sparad
+    // 5760×1080 hade blivit tre skärmar gånger tre i den nya modellen, alltså en vy
+    // nio gånger för bred utan att något syntes vara fel.
   } catch {}
 })();
-function clampRes(v, axis){
-  const lim = axis === 'w' ? [RES_MIN.w, RES_MAX.w] : [RES_MIN.h, RES_MAX.h];
-  return Math.min(lim[1], Math.max(lim[0], Math.round(v)));
-}
 function writeLayoutPrefs(){
   try {
     localStorage.setItem(LAY_KEY, JSON.stringify({
-      snap: snapOn, cols: gridCols, margin: edgeMargin, monitors, res: customRes, live: stageLive,
+      snap: snapOn, cols: gridCols, margin: edgeMargin, monitors, aspect, live: stageLive,
     }));
   } catch {}
 }
@@ -3490,14 +3521,35 @@ async function loadScreen(){
   autoScreen = (s && s.width > 0 && s.height > 0) ? s : { width: 1920, height: 1080 };
   applyRes();
 }
-// En egen upplösning vinner över den upptäckta. Positionerna som skickas till Rust
-// är oförändrat riktiga skärmkoordinater — vyn är alltså ett RITBORD för den skärm
-// man ställer in för, och att det inte är den man tittar på just nu är hela poängen
-// med att kunna skriva in måtten.
+const aspectDef = key => ASPECTS.find(a => a.key === key) || ASPECTS[0];
+// Formen ligger nära nog: 2560×1080 är 21,33:9 och 1366×768 är 16,004:9, alltså inte
+// exakta bråk. Toleransen ska fånga dem utan att låta 16:10 passera som 16:9.
+const aspectFits = (s, d) => Math.abs(s.width / s.height - d.r) < 0.03;
+function nearestAspect(s){
+  return ASPECTS.reduce((b, a) =>
+    Math.abs(a.r - s.width / s.height) < Math.abs(b.r - s.width / s.height) ? a : b).key;
+}
+/* EN skärms mått: användarens egna om den upptäckta skärmen har den valda formen,
+   annars formens typvärde. Poängen är att den som kör en vanlig rigg får sin
+   RIKTIGA upplösning utan att skriva in något — positionerna vyn skickar till Rust
+   är riktiga skärmkoordinater, så ett typvärde som inte stämmer hade gjort varje
+   placering ungefärlig. */
+function oneScreen(){
+  const d = aspectDef(aspect);
+  return aspectFits(autoScreen, d)
+    ? { width: autoScreen.width, height: autoScreen.height }
+    : { width: d.w, height: d.h };
+}
+/* Vyns yta är ANTALET skärmar bredvid varandra, inte en yta som delas upp av
+   skarvar. Det är också vad Windows ser: tre 16:9-skärmar är ett skrivbord på
+   3 × bredden med oförändrad höjd. Förut ändrade skärmväljaren bara var strecken
+   ritades, alltså sa vyn "tre skärmar" om något som fortfarande var format som en. */
 function applyRes(){
-  screenSize = customRes ? { ...customRes } : { ...autoScreen };
-  $('stRes').textContent = Math.round(screenSize.width) + '×' + Math.round(screenSize.height) +
-    (customRes ? ' (egen)' : '');
+  if (!aspect) aspect = nearestAspect(autoScreen);
+  const one = oneScreen();
+  screenSize = { width: one.width * monitors, height: one.height };
+  $('stRes').textContent = Math.round(one.width) + '×' + Math.round(one.height) +
+    (monitors > 1 ? ` ×${monitors}` : '');
 }
 
 /* MEDLEM i layouten ≠ SYNLIG. `member` är "ingår i layouten" (+ och × här),
@@ -4398,13 +4450,11 @@ function layGroup(o){
    Värdena bor i localStorage och inte i settings.json: det är panelens vy-state,
    det hör inte till en overlay och ska inte kunna göra settings.json ogiltig
    (§8.3b). Positionerna som skickas till Rust är oförändrat riktiga
-   skärmkoordinater — det här ändrar bara ritbordet man siktar med. */
-const RES_PRESETS = [
-  { w: 1920, h: 1080, label: '1920 × 1080' },
-  { w: 2560, h: 1440, label: '2560 × 1440' },
-  { w: 3440, h: 1440, label: '3440 × 1440 (ultrawide)' },
-  { w: 5760, h: 1080, label: '5760 × 1080 (triple)' },
-];
+   skärmkoordinater — det här ändrar bara ritbordet man siktar med.
+   Här stod tidigare en UPPLÖSNINGSväljare med fasta val och två talfält. Den bad om
+   en siffra appen redan känner till (`get_screen`) och som dessutom är den man minst
+   av allt kommer ihåg om sin skärm. Nu anges FORMEN, upplösningen läses av, och
+   "triple" är inte längre ett förvalt tal utan antalet skärmar gånger formen. */
 
 function viewRow(label, hint){
   const row = document.createElement('div');
@@ -4453,45 +4503,25 @@ function viewSettingsGroup(){
 
   const refresh = () => { writeLayoutPrefs(); renderLayoutTab(); stageSoon(); };
 
-  // Upplösning. "Skärmen" är utgångsläget; de fasta valen och "Egen" finns för den
-  // som ställer in åt en ANNAN skärm än den panelen står på.
-  const resKey = customRes ? RES_PRESETS.some(p => p.w === customRes.width && p.h === customRes.height)
-                   ? `${customRes.width}x${customRes.height}` : 'egen'
-                 : 'auto';
-  const setRes = (w, h) => { customRes = { width: clampRes(w, 'w'), height: clampRes(h, 'h') }; applyRes(); refresh(); };
-  body.appendChild(viewPick(viewRow('Upplösning'), resKey, [
-    { key: 'auto', label: `Skärmen (${Math.round(autoScreen.width)} × ${Math.round(autoScreen.height)})`,
-      onPick: () => { customRes = null; applyRes(); refresh(); } },
-    ...RES_PRESETS.map(p => ({ key: `${p.w}x${p.h}`, label: p.label, onPick: () => setRes(p.w, p.h) })),
-    { key: 'egen', label: 'Egen …',
-      onPick: () => setRes(customRes ? customRes.width : screenSize.width,
-                           customRes ? customRes.height : screenSize.height) },
-  ]));
+  // Bildformat i stället för upplösning: formen är det man vet om sin skärm, och
+  // upplösningen läser appen själv. Parentesen bär en igenkännbar upplösning — den
+  // UPPTÄCKTA när formen stämmer med skärmen appen ligger på, annars formens
+  // typvärde — så den som inte tänker i bildformat ändå hittar sin rad.
+  body.appendChild(viewPick(viewRow('Bildformat'), aspect, ASPECTS.map(a => {
+    const m = aspectFits(autoScreen, a)
+      ? `${Math.round(autoScreen.width)} × ${Math.round(autoScreen.height)}`
+      : `${a.w} × ${a.h}`;
+    return { key: a.key, label: `${a.key}  (${m})`,
+             onPick: () => { aspect = a.key; applyRes(); refresh(); } };
+  })));
 
-  // Talfälten visas bara när en egen upplösning gäller: två tomma fält under ett
-  // "Skärmen"-val hade sett ut som något man MÅSTE fylla i.
-  if (customRes){
-    const row = viewRow('Egna mått');
-    const f = document.createElement('span');
-    f.className = 'posf';
-    f.innerHTML = '<label>B<input type="number" step="1"></label><label>H<input type="number" step="1"></label>';
-    const [iw, ih] = f.querySelectorAll('input');
-    iw.value = customRes.width; ih.value = customRes.height;
-    const push = () => {
-      const w = Number(iw.value), h = Number(ih.value);
-      if (!isFinite(w) || !isFinite(h)) return;
-      setRes(w, h);
-    };
-    iw.addEventListener('change', push); ih.addEventListener('change', push);
-    row.appendChild(f);
-    body.appendChild(row);
-  }
-
-  // Antal skärmar. Ritar skarvarna och lägger till dem som snappunkter — en overlay
-  // mitt i en skarv är delad i två av ramarna, och det syns inte på en enda yta.
+  // Antal skärmar. Vyn blir så många skärmar BRED, med skarvarna ritade emellan och
+  // tillagda som snappunkter — en overlay mitt i en skarv är delad i två av ramarna,
+  // och det syns inte på en enda yta. Siffran räcker som etikett: vad valet gör syns
+  // i rutan ovanför i samma sekund.
   body.appendChild(viewPick(viewRow('Skärmar'), monitors, [1, 2, 3].map(n => ({
-    key: n, label: n === 1 ? '1 (en skärm)' : `${n} — skarvar visas`,
-    onPick: () => { monitors = n; refresh(); },
+    key: n, label: String(n),
+    onPick: () => { monitors = n; applyRes(); refresh(); },
   }))));
 
   // Kantmarginalen. Reglaget och inte ett talfält: man ställer in den genom att
