@@ -83,8 +83,16 @@ mäter exakt som ett riktigt värde, enstaka `null`-ramar slår inte igenom, sto
 renderas utan att klampas (§8.5, §8.8). Dessutom att reglaget `delta-source` är det ENDA
 som styr siffran (§8.8f): varje källa har ett eget värde i testramen, så en overlay som
 visar fel källa syns — annars är felet osynligt, siffran ser lika rimlig ut.
+
+Sedan 0.5.9 också MITTSPALTEN: den visar den valda MoTeC-filens varvtid och finns bara
+när ramen bär `motecMs`. Fyra kontroller, och den viktiga är att spalten FÖRSVINNER igen
+när fältet slutar komma (filen väljs bort i panelen) — en spalt som blir kvar med en
+gammal tid är värre än ingen spalt. Att den står kvar när MoTeC-KÄLLAN inte gäller
+varvet (ut-varv, fel bana) mäts också: `motecMs` beskriver panelens val, `refs["motec"]`
+beskriver varvet.
 ```
 node tests/overlay-delta-bar.mjs a31b1c1     # 4 kontroller ska misslyckas
+node tests/overlay-delta-bar.mjs 6f5519b     # de 5 nya spaltkontrollerna ska falla
 ```
 
 ## overlay-inputs-trace.mjs
@@ -176,6 +184,14 @@ släpper ska en rendering ske på FÖRSTA framet — annars visas telemetri som 
 en sovperiod gammal i samma ögonblick som man tabbar in i bilen. Tar man bort
 `_wakers`-anropet i `_applyGate` faller två kontroller.
 
+Kontroll 12 (0.5.9) mäter det omvända fallet: skalet rör fönstret utan att av/på
+ÄNDRAS. `activate_layout` skickar `enabled` för varje overlay i registret, alltså också
+för dem som redan var på — och med grinden på måste bus.js då dölja fönstret igen.
+Snabbutgången "värdet är oförändrat, gör inget" gjorde att overlays som skalet visat låg
+kvar över skrivbordet med spelet stängt, och nästa layoutklick skickade samma oförändrade
+värde så det gick inte att ångra heller. Kör mot `git stash`:ad bus.js — båda
+kontrollerna faller.
+
 ## acc_source.py
 Ett fejkat delat minne låter testet styra exakt när `read_shared_memory()` ger `None`,
 vilket är omöjligt mot riktiga ACC. Bevakar att "ingen ny data" inte tolkas som
@@ -255,6 +271,15 @@ hopfällda tills man öppnar dem (utom skärmvyns egen, som är öppen), att sk�
 stacken linjerar utan vågrät skroll, och — viktigast — att **dölja inte är att ta bort**:
 ögat skriver `set_enabled` och boxen ligger kvar nedtonad, × skriver `set_member`
 (CLAUDE.md §2).
+
+Sedan 0.5.9 mäter det också att **av/på ligger i overlay-listan**: förhandsvisningens
+ögonknapp är borta (inte dold), varje rad har en växlare som speglar läget och går via
+`set_enabled` utan att röra medlemskapet — och att **layoutväxlaren betyder samma sak åt
+båda hållen**: att slå AV släcker varje box i skärmvyn, att slå PÅ tänder dem igen. Det
+var den rapporterade buggen: att slå av lämnade exakt samma bild på skärmen, så växlaren
+såg ut att vara trasig. Stubben speglar därför lib.rs på två punkter — `set_member` drar
+med sig av/på, och `activate_layout` skriver av/på på VARJE overlay — annars mäter testet
+en panel som lever i en annan verklighet än appen.
 
 Samma test mäter fem saker till, och flera av dem har inget med geometri att göra — de
 ligger här för att de kräver en riktig webbläsare:
@@ -349,10 +374,17 @@ gamla skrollloopen som läser `scrollTop` som sanning (13, tappar 100–200 px),
 marginalreglagets `change` (14, en kontroll), och sätt `.ok` på versionsraden innan
 kontrollen svarat (15).
 
-**Visa att overlay-window-fit biter:** tre varianter är körda och föll — ta bort `--ui-scale` ur
+Mätningen sker i overlayns BREDASTE läge: sidan matas med en ram där allt är på
+(`MATNINGSRAM`), eftersom delta-baren har en spalt som bara finns när en MoTeC-fil är
+vald. WebSocket-klassen byts ut i stället för att starta en riktig server — motorn kan
+redan äga port 8777 på maskinen som kör testet, och en mätning som beror på det är ingen
+mätning.
+
+**Visa att overlay-window-fit biter:** fyra varianter är körda och föll — ta bort `--ui-scale` ur
 både `tokens.css` och inputs-trace (de två kontrollerna utan INIT faller), lås
 inputs-traces `#ui` till fasta `top/left` (4 kontroller), sänk dess `baseHeight`
-till 222 (bottenkravet vid alla tre skalorna).
+till 222 (bottenkravet vid alla tre skalorna), och ta bort `motecMs` ur `MATNINGSRAM`
+(delta-barens contentWidth-krav vid alla tre skalorna: uppmätt 558,6 mot 736).
 
 ## mock_toggle.py
 **Bevakar:** att mock-data går att stänga av och på i drift. Panelens reglage skriver

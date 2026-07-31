@@ -119,6 +119,14 @@ window.__PANEL_TEST__ = { calls: [] };
       option_defs: [], options: {} },
   ];
   let layouts = [{ id: 'race', name: 'Race', active: true, slots: [] }];
+  let refs = [
+    { id: 'spa-fer', path: 'C:/varv/spa_ferrari.ld', label: 'Spa hotlap',
+      track: 'Spa', car: 'Ferrari 296 GT3', active: true, missing: false },
+    { id: 'spa-por', path: 'C:/varv/spa_regn.ld', label: 'Spa regn',
+      track: 'Spa', car: 'Porsche 992 GT3 R', active: false, missing: false },
+    { id: 'gammal', path: 'D:/flyttad/monza.ld', label: 'Monza gammal',
+      track: '', car: '', active: false, missing: true },
+  ];
   // Sloten bär INNEHÅLLETS rektangel (så gör layout_info i lib.rs) och om overlayn
   // är dold just nu — en dold medlem hör kvar i layouten.
   const slotsOf = () => defs.filter(d => d.member)
@@ -136,6 +144,18 @@ window.__PANEL_TEST__ = { calls: [] };
       case 'get_globals':  return { hide_until_connected: false, preview_background: '',
                                     hotkey: 'Ctrl+Alt+Space', reference_ld: '' };
       case 'list_backgrounds': return [];
+      /* Referensbiblioteket. Tre poster med FLIT olika: tva pa samma bana (ska hamna i
+         samma grupp och sorteras pa bil), en utan bana och med en fil som inte finns
+         (grupperas sist, ritas som saknad). En fixtur dar alla ser likadana ut hade
+         gjort varje grupperings- och sorteringsfel osynligt (§9). */
+      case 'list_references': return refs;
+      case 'select_reference': refs.forEach(r => r.active = r.id === args.id); return refs;
+      case 'remove_reference': refs = refs.filter(r => r.id !== args.id); return refs;
+      case 'update_reference': {
+        const r = refs.find(x => x.id === args.id);
+        if (r) Object.assign(r, { label: args.label, track: args.track, car: args.car });
+        return refs;
+      }
       // Presetlistan ar densamma for alla overlays i fixturen: kontroll 17 mater att
       // Layout-flikens valjare hittar den som MATCHAR nuvarande varden, och da maste
       // minst en preset kunna matcha och minst en inte gora det.
@@ -154,16 +174,28 @@ window.__PANEL_TEST__ = { calls: [] };
       case 'set_scale':    if (d) d.scale = args.scale; return null;
       case 'set_opacity':  if (d) d.opacity = args.opacity; return null;
       case 'set_enabled':  if (d) d.enabled = args.enabled; return null;
-      // Medlemskap är EGET sedan 0.5.4: att dölja en overlay får inte kasta ut den
-      // ur layouten. Stubben håller isär dem precis som lib.rs gör.
-      case 'set_member':   if (d) d.member = args.member; return null;
+      /* Medlemskap är EGET sedan 0.5.4: att dölja en overlay får inte kasta ut den
+         ur layouten. Stubben håller isär dem precis som lib.rs gör — men EN riktning
+         hänger ihop och måste speglas här, annars mäter testet en panel som lever i
+         en annan verklighet än appen: set_member drar med sig av/på (att lägga till
+         i layouten är att vilja se overlayn, att ta bort är att vilja bli av med den).
+         Motsatsen gäller inte: set_enabled rör aldrig medlemskapet. */
+      case 'set_member':   if (d){ d.member = args.member; d.enabled = args.member; } return null;
       case 'set_option':   if (d) d.options[args.option] = args.value; return null;
       case 'create_layout':
         layouts.forEach(l => l.active = false);
         layouts.push({ id: 'ny', name: args.name, active: true, slots: [] });
         return 'ny';
+      /* LAYOUTEN HAR SISTA ORDET (0.5.9). Aktivering skriver av/på på VARJE overlay,
+         inte bara på sina egna medlemmar, och att slå AV släcker allt. Stubben gör
+         samma sak som lib.rs; utan det hade panelen sett en skärm som inte ändrade
+         sig och kontroll 16 mätt en växlare utan verkan — precis den bugg som
+         rapporterades. Fixturens layout innehåller de overlays som är medlemmar just
+         nu, vilket räcker för mätningen. */
       case 'activate_layout':
         layouts.forEach(l => l.active = l.id === args.id);
+        if (!args.id) defs.forEach(x => { x.enabled = false; });
+        else defs.forEach(x => { x.enabled = x.member; });
         return null;
       case 'delete_layout': layouts = layouts.filter(l => l.id !== args.id); return null;
       case 'rename_layout': { const l = layouts.find(l => l.id === args.id); if (l) l.name = args.name; return null; }
@@ -1005,8 +1037,117 @@ try {
   lika(stbg.anrop?.args, { kind: 'stage' }, 'skarmvyns valjare ska lasa stage-katalogen');
   sant(stbg.oppen, 'menyn skulle oppnats');
 
-  // 19. Inget fel kastades under hela mätningen.
-  console.log('19 inga fel kastades under körningen');
+  /* 19. AV/PA BOR I OVERLAY-LISTAN (0.5.9). Den lag som en ogonknapp i
+         forhandsvisningens verktygsrad, alltsa langst fran listan dar man valjer
+         overlay — och den gallde bara den VALDA, sa man fick byta rad for att slacka
+         nagot, och de andras tillstand syntes inte alls medan man stod i rutan.
+         Tre saker mats: att knappen ar BORTA (inte bara dold), att varje rad har en
+         vaxlare som speglar lage, och att den gar via set_enabled UTAN att rora
+         medlemskapet — det senare ar hela skalet till att de tva ar skilda falt. */
+  console.log('19 av/pa ligger i overlay-listan');
+  const ovsw = await cdp.eval(`
+    document.querySelector('.nav[data-sec="overlays"]').click();
+    await new Promise(r => setTimeout(r, 260));
+    const rader = [...document.querySelectorAll('#list .lrowwrap')];
+    const fore = rader.map(w => !!w.querySelector('.osw input').checked);
+    const medlemFore = window.__PANEL_TEST__.calls.filter(c => c.cmd === 'set_member').length;
+    const inp = rader[0].querySelector('.osw input');
+    inp.checked = false; inp.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 260));
+    const w0 = document.querySelectorAll('#list .lrowwrap')[0];
+    const r0 = w0.getBoundingClientRect(), s0 = w0.querySelector('.osw').getBoundingClientRect();
+    return { oga: !!document.getElementById('btnEye'), fore,
+             anrop: window.__PANEL_TEST__.calls.filter(c => c.cmd === 'set_enabled').pop(),
+             medlemsanrop: window.__PANEL_TEST__.calls.filter(c => c.cmd === 'set_member').length - medlemFore,
+             efter: !!w0.querySelector('.osw input').checked,
+             fast: getComputedStyle(w0.querySelector('.osw')).position,
+             inne: s0.left >= r0.left && s0.right <= r0.right + 0.5 };
+  `);
+  sant(!ovsw.oga, 'ogonknappen i forhandsvisningen ska vara borta, inte dold');
+  lika(ovsw.fore, [true, true, false], 'varje rad ska ha en vaxlare som speglar lage');
+  lika(ovsw.anrop, { cmd: 'set_enabled', args: { id: 'delta-bar', enabled: false } },
+       'vaxlaren ska ga via set_enabled');
+  lika(ovsw.medlemsanrop, 0, 'att slacka i listan far ALDRIG rora medlemskapet');
+  sant(!ovsw.efter, 'vaxlaren ska sta kvar i av-lage efterat');
+  lika(ovsw.fast, 'absolute', 'vaxlaren ska vara absolut positionerad i raden (.sw.osw)');
+  sant(ovsw.inne, 'vaxlaren ska ligga INNANFOR sin rad');
+
+  /* 20. LAYOUTEN BESTAMMER, OCH VAXLAREN BETYDER SAMMA SAK AT BADA HALLEN.
+         Rapporterat: layoutvaxlaren "fungerade inte" — att sla AV lamnade exakt samma
+         bild pa skarmen (bara bindningen slapptes), sa knappen sag ut att vara trasig.
+         Nu slacker AV allt layouten tande, och PA skriver ut den igen. Kontrollen
+         maater panelens BILD av lagena, alltsa det list_overlays svarar efterat. */
+  console.log('20 att sla av layouten slacker overlays');
+  const lav = await cdp.eval(`
+    document.querySelector('.nav[data-sec="layout"]').click();
+    await new Promise(r => setTimeout(r, 300));
+    const inp = document.querySelector('#layList .lrowwrap .lsw input');
+    inp.checked = false; inp.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 300));
+    const av = [...document.querySelectorAll('.st-ov')].map(e => e.classList.contains('off'));
+    const inp2 = document.querySelector('#layList .lrowwrap .lsw input');
+    inp2.checked = true; inp2.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 300));
+    const pa = [...document.querySelectorAll('.st-ov')].map(e => e.classList.contains('off'));
+    return { av, pa };
+  `);
+  sant(lav.av.length > 0 && lav.av.every(Boolean),
+       'med layouten av ska varje box ritas nedtonad, alltsa slackt (' + JSON.stringify(lav.av) + ')');
+  sant(lav.pa.length > 0 && lav.pa.every(v => !v),
+       'och tandas igen nar layouten slas pa (' + JSON.stringify(lav.pa) + ')');
+
+  /* 21. REFERENSBIBLIOTEKET. Flera sparade MoTeC-filer, EN vald. Fyra saker mats:
+         grupperingen pa BANA (den enda indelning som alltid ar relevant — en referens
+         som inte ar inspelad pa banan man kor anvands inte alls, §8.8b), att posterna
+         utan bana hamnar SIST, att en fil som flyttats visas som SAKNAD i stallet for
+         att stadas bort tyst, och att ett klick pa den valda raden KOPPLAR BORT den
+         (samma handling sedd fran andra hallet). */
+  console.log('21 referensbiblioteket: gruppering, val och sokning');
+  const bib = await cdp.eval(`
+    document.querySelector('.nav[data-sec="referens"]').click();
+    await new Promise(r => setTimeout(r, 260));
+    const las = () => ({
+      grupper: [...document.querySelectorAll('#refList .rfgroup')].map(e => e.textContent),
+      rader: [...document.querySelectorAll('#refList .refrow')].map(e => ({
+        namn: e.querySelector('.rfname').textContent,
+        vald: e.classList.contains('sel'),
+        saknad: e.classList.contains('missing') })),
+      sokvag: document.getElementById('refpath').textContent,
+    });
+    const start = las();
+    // Rad 2 (Spa regn) ska ga att valja …
+    document.querySelectorAll('#refList .refrow')[1].click();
+    await new Promise(r => setTimeout(r, 200));
+    const valt = las();
+    const valanrop = window.__PANEL_TEST__.calls.filter(c => c.cmd === 'select_reference').pop();
+    // … och ett klick pa DEN valda kopplar bort den.
+    document.querySelectorAll('#refList .refrow')[1].click();
+    await new Promise(r => setTimeout(r, 200));
+    const bort = window.__PANEL_TEST__.calls.filter(c => c.cmd === 'select_reference').pop();
+    const utan = las();
+    // Sokningen filtrerar pa bil lika val som pa bana och namn.
+    const sok = document.getElementById('refSearch');
+    sok.value = 'porsche'; sok.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 120));
+    const filtrerat = las();
+    sok.value = ''; sok.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 120));
+    return { start, valt, valanrop, bort, utan, filtrerat };
+  `);
+  lika(bib.start.grupper, ['Spa', 'Utan bana'], 'referenserna ska grupperas pa bana, utan bana sist');
+  lika(bib.start.rader.map(r => r.namn), ['Spa hotlap', 'Spa regn', 'Monza gammal'],
+       'raderna ska sorteras pa bil inom banan');
+  sant(bib.start.rader[0].vald, 'den valda referensen ska vara markerad');
+  sant(bib.start.rader[2].saknad, 'en fil som inte finns ska visas som saknad, inte stadas bort');
+  lika(bib.start.sokvag, 'C:/varv/spa_ferrari.ld', 'sokvagen till den valda ska sta under listan');
+  lika(bib.valanrop?.args, { id: 'spa-por' }, 'ett klick ska valja just den raden');
+  sant(bib.valt.rader[1].vald && !bib.valt.rader[0].vald, 'markeringen ska flytta med valet');
+  lika(bib.bort?.args, { id: '' }, 'ett klick pa den VALDA raden ska koppla bort referensen');
+  sant(bib.utan.rader.every(r => !r.vald), 'ingen rad ska vara markerad efterat');
+  lika(bib.filtrerat.rader.map(r => r.namn), ['Spa regn'], 'sokningen ska filtrera pa bil ocksa');
+
+  // 22. Inget fel kastades under hela mätningen.
+  console.log('22 inga fel kastades under körningen');
   lika(await cdp.eval(`return window.__PANEL_TEST__.errors;`), [], 'fel under körningen');
 
 } finally {

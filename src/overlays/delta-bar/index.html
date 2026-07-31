@@ -100,6 +100,11 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
 .lab{font-size:12.5px;font-weight:600;letter-spacing:1.6px;color:var(--dim);text-transform:uppercase;
   display:flex;align-items:center;gap:7px;white-space:nowrap;}
 .lab svg{width:14px;height:14px;}.lab svg path{fill:currentColor;}
+/* Streckade ikoner (MoTeC-spaltens stoppur). Regeln ovan fyller VARJE path i en
+   etikettikon, och en CSS-regel vinner över `fill="none"` i märkspråket — utan den
+   här raden blev stoppuret en solid klump. */
+.lab svg.line{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.lab svg.line path,.lab svg.line circle{fill:none;stroke:currentColor;}
 .col.pred .time{color:var(--green);} .col.pred .lab{color:var(--green);}
 .col.pred[data-slow] .time{color:var(--red);} .col.pred[data-slow] .lab{color:var(--red);}
 .col.best::before,.col.best::after{content:"";position:absolute;left:10px;right:10px;height:3px;background:var(--amber);}
@@ -138,10 +143,17 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
       </div>
       <div class="bar">
         <div class="col best"><div class="time" id="tBest"></div><div class="lab">P.Session Best</div></div>
-        <div class="col"><div class="time" id="tRef"></div>
+        <!-- MITTSPALTEN ÄR MoTeC-FILENS VARVTID, och den finns bara när en fil är
+             vald i panelens referensflik. Här stod t.o.m. 0.5.8 sessionens bästa EN
+             GÅNG TILL, med förarnamnet som etikett — alltså samma siffra som spalten
+             till vänster, vilket gjorde den till dekoration. Motorn skickar `motecMs`
+             så länge en fil är vald (även på fel bana och på ut-varv: talet beskriver
+             FILEN, inte varvet man kör), och saknas fältet tas hela spalten bort. -->
+        <div class="col" id="cellRef"><div class="time" id="tRef"></div>
           <div class="lab">
-            <svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5Zm0 2c-4 0-8 2-8 5v1h16v-1c0-3-4-5-8-5Z"/></svg>
-            <span id="driver">—</span>
+            <svg class="line" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/>
+              <path d="M12 9v4.2l2.8 1.6"/><path d="M9.4 3.2h5.2"/></svg>
+            <span>MoTeC</span>
           </div>
         </div>
         <div class="col pred" id="cellPred"><div class="time" id="tPred"></div><div class="lab">Predicted</div></div>
@@ -185,7 +197,7 @@ function setCells(el,cache,str){
 
 const $=id=>document.getElementById(id);
 const el={arc:$('arc'),knob:$('knob'),deltaVal:$('deltaVal'),tBest:$('tBest'),tRef:$('tRef'),
-          tPred:$('tPred'),cellPred:$('cellPred'),driver:$('driver')};
+          tPred:$('tPred'),cellPred:$('cellPred'),cellRef:$('cellRef')};
 (()=>{const a=-90*Math.PI/180;el.knob.setAttribute('cx',140+120*Math.cos(a));el.knob.setAttribute('cy',140+120*Math.sin(a));})();
 const cD={n:-1},cB={n:-1},cR={n:-1},cP={n:-1};
 
@@ -209,8 +221,13 @@ const HOLD_MS=700;
 /* DEADBAND: under detta behåller vi föregående tecken, så färg och '+'/'-' inte
    vänder fram och tillbaka när delta ligger och vaggar kring noll. */
 const DEADBAND=0.02;
-const state={target:0,shown:0,bestMs:null,refMs:null,driver:'',
-             deltaAt:-Infinity,bestAt:-Infinity,refAt:-Infinity};
+/* MOTEC_HOLD_MS är längre än HOLD_MS med flit: `motecMs` beskriver PANELENS VAL och
+   inte körningen, så det enda som får ta bort spalten är att filen väljs bort (eller
+   att motorn tystnar helt). En kort hållning hade fått spalten att blinka bort vid
+   varje tappad ram — och en spalt som kommer och går ändrar overlayns bredd. */
+const MOTEC_HOLD_MS=2000;
+const state={target:0,shown:0,bestMs:null,refMs:null,motecMs:null,
+             deltaAt:-Infinity,bestAt:-Infinity,refAt:-Infinity,motecAt:-Infinity};
 let signAhead=null;                      // latchat tecken (true = snabbare/grönt)
 
 /* Vilken referens deltat räknas mot. Registrets `delta-source` styr den och är det
@@ -237,11 +254,15 @@ bus.subscribe(f=>{
   // Referensvarvets totaltid — grunden för predicted-kolumnen. Kommer ur den VALDA
   // källan, så "förra varvet" predikterar mot förra varvets tid och inte mot bästa.
   if(e&&typeof e.totalMs==='number'){state.refMs=e.totalMs;state.refAt=now;}
-  if(f.driverName && f.driverName!==state.driver){state.driver=f.driverName;el.driver.textContent=f.driverName;}
+  // Den valda MoTeC-filens varvtid. Skild från refs.motec: den nyckeln finns bara när
+  // filen GÄLLER det varv som körs (rätt bana, inte ut-varv), medan spalten ska stå
+  // kvar så länge filen är vald — annars försvinner den när man rullar ut ur depån.
+  if(typeof f.motecMs==='number'){state.motecMs=f.motecMs;state.motecAt=now;}
 });
 
 /* render — skriv till DOM bara vid ändring, i 30 Hz-tak */
-let lastArc='',lastAhead=null,lastD='',lastB='',lastP='',lastFaintD=null,lastFaintB=null,lastFaintP=null;
+let lastArc='',lastAhead=null,lastD='',lastB='',lastP='',lastR='',lastRefCol=null,
+    lastFaintD=null,lastFaintB=null,lastFaintP=null;
 function aheadOf(d){                     // hysteres kring noll
   if(d<-DEADBAND) return true;
   if(d> DEADBAND) return false;
@@ -253,11 +274,22 @@ function render(now=performance.now()){
   const bestMs   = (now-state.bestAt)  < HOLD_MS ? state.bestMs : null;
   const refMs    = (now-state.refAt)   < HOLD_MS ? state.refMs  : null;
 
-  // best/ref-tid
+  // Sessionens bästa (vänsterspalten).
   const b = bestMs!=null ? fmtLap(bestMs) : DASH_L;
-  if(b!==lastB){setCells(el.tBest,cB,b);setCells(el.tRef,cR,b);lastB=b;}
+  if(b!==lastB){setCells(el.tBest,cB,b);lastB=b;}
   if((bestMs==null)!==lastFaintB){lastFaintB=(bestMs==null);
-    el.tBest.classList.toggle('faint',lastFaintB);el.tRef.classList.toggle('faint',lastFaintB);}
+    el.tBest.classList.toggle('faint',lastFaintB);}
+
+  /* MoTeC-spalten: finns bara när en fil är vald. Hela SPALTEN tas bort och inte bara
+     siffran — en tom ruta med en etikett under är ett löfte om ett värde som aldrig
+     kommer, och baren blir smalare i stället för att bära död yta. */
+  const motecMs = (now-state.motecAt) < MOTEC_HOLD_MS ? state.motecMs : null;
+  const hasMotec = motecMs!=null;
+  if(hasMotec!==lastRefCol){lastRefCol=hasMotec;el.cellRef.style.display=hasMotec?'':'none';}
+  if(hasMotec){
+    const r = fmtLap(motecMs);
+    if(r!==lastR){setCells(el.tRef,cR,r);lastR=r;}
+  }
 
   const pbase = refMs!=null ? refMs : bestMs;
 

@@ -293,6 +293,13 @@ async def run():
             if frame is None:
                 frame = mock.read() if (mock and use_mock) else Frame(connected=False)
 
+            # Den valda MoTeC-filens varvtid följer med VARJE ram, även mock och
+            # frånkopplade: den beskriver panelens val, inte körningen. Delta-baren
+            # visar spalten just så länge fältet finns, så en fil som väljs bort i
+            # panelen tar bort spalten i samma sekund utan att overlayn behöver veta
+            # något om filhantering.
+            frame.motecMs = ref.total_ms()
+
             # Broadcasting läggs PÅ ramen, den ersätter inget. Samma inkapsling som
             # ACC-läsningen: en bugg här får inte ta ner motorn (§8.6).
             if bc is not None:

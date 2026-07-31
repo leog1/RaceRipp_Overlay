@@ -29,6 +29,12 @@
  *   - lås inputs-traces #ui till fasta `top/left`               → 4 kontroller faller
  *   - sänk inputs-traces baseHeight till 222                    → bottenkravet
  *     faller vid alla tre skalorna
+ *   - ta bort `motecMs` ur MATNINGSRAM                          → delta-barens
+ *     contentWidth-krav faller vid alla tre skalorna (uppmätt 558,6 mot 736)
+ *
+ * MÄTNINGEN SKER I OVERLAYNS BREDASTE LÄGE. Fönstret ska rymma det den KAN visa, inte
+ * det den råkar visa just nu: delta-baren har en spalt som bara finns när en MoTeC-fil
+ * är vald, så sidan matas med en ram där allt är på (se MATNINGSRAM).
  */
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
@@ -159,11 +165,37 @@ const krav = (v, min, vad) => {
 };
 
 const reg = JSON.parse(readFileSync(join(ROOT, 'src/overlays/registry.json'), 'utf8')).overlays;
+/* En BUSS SOM MATAR. Fönstret ska rymma overlayns BREDASTE läge, och delta-baren har
+   sedan 0.5.9 en spalt som bara finns när en MoTeC-fil är vald (`motecMs` i ramen).
+   Utan data mäter testet alltså en smalare overlay än den registret beskriver, och
+   kravet på contentWidth blir omöjligt att bedöma — samma familj som §8.4g: räkna
+   bredden på det bredaste värdet fältet kan visa, inte på det som råkar stå där.
+   WebSocket-klassen byts ut i stället för att starta en riktig server: motorn kan
+   redan äga port 8777 på maskinen som kör testet, och en mätning som beror på det
+   är ingen mätning. Ramen skickas om var 200:e ms — overlayns latch är 2 s och
+   sidan hinner vänta längre än så på fonten. */
+const MATNINGSRAM = {
+  connected: true, motecMs: 136250, sessionBestMs: 138120, curLapMs: 45000,
+  position: 0.5, throttle: 1, brake: 0, gear: 4, speedKph: 180, rpm: 7000,
+  refs: { best:  { delta: -0.5, totalMs: 138120, throttle: 1, brake: 0, src: 'lap' },
+          motec: { delta: 0.25, totalMs: 136250, throttle: 1, brake: 0, src: 'motec' } },
+};
 let cdp, initScript = null;
 try {
   cdp = await connect();
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
+  await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `window.WebSocket = class {
+      constructor(){
+        this.readyState = 1; this.onopen = this.onmessage = this.onerror = this.onclose = null;
+        const ram = { data: JSON.stringify(${JSON.stringify(MATNINGSRAM)}) };
+        setTimeout(() => { this.onopen && this.onopen(); this.onmessage && this.onmessage(ram); }, 0);
+        this._t = setInterval(() => { this.onmessage && this.onmessage(ram); }, 200);
+      }
+      send(){} close(){ clearInterval(this._t); }
+    };`,
+  });
 
   for (const d of reg){
     const behov = SKUGGA[d.id];

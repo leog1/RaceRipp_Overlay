@@ -21,6 +21,13 @@ class Frame:
     lastLapMs: Optional[int] = None
     curLapMs: Optional[int] = None   # internt: aktuell varvtid för delta
     refTotalMs: Optional[int] = None # referensvarvets totaltid (om MoTeC laddad)
+    # Varvtiden i den VALDA MoTeC-filen, satt så fort en fil är laddad — oberoende av
+    # om den GÄLLER just nu (rätt bana, inte ut-varv). Skild från `refs["motec"]`
+    # med flit: den nyckeln säger "den här referensen går att jämföra mot i det här
+    # varvet", medan det här bara säger "så här snabb är filen du valt". Delta-baren
+    # visar den i en egen spalt, och spalten ska inte försvinna för att man råkar
+    # rulla ut ur depån. None = ingen fil vald.
+    motecMs: Optional[int] = None
     driverName: str = ""
     position: float = 0.0            # normalizedCarPosition 0..1
     trackId: str = ""                # ACC:s bannamn — MoTeC-referensen måste matcha

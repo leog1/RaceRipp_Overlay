@@ -406,18 +406,24 @@ impl OverlayState {
     fn is_member(&self) -> bool {
         self.member.unwrap_or(self.enabled)
     }
-    // Ett fönster ska finnas när overlayn både ingår i layouten och är påslagen.
-    // Den här funktionen är enda stället som avgör det — annars glider de två
-    // begreppen isär på det ena stället någon glömmer.
+    // SYNLIGHET ÄR ETT ENDA FÄLT: `enabled`. Medlemskapet är layoutens bokföring,
+    // inte en andra strömbrytare framför fönstret.
     //
-    // Här låg t.o.m. 0.5.5 en tredje nivå: en global huvudströmbrytare ovanför båda.
-    // Den är borta med flit. Appen har redan två vägar att styra vad som syns, och de
-    // räcker: Overlays-fliken tänder och släcker varje overlay för sig, Layout-fliken
-    // aktiverar en hel uppsättning på en gång. En tredje brytare ovanpå dem svarade
-    // inte på någon fråga de två inte redan svarade på — den lade bara till ett läge
-    // där panelen visar en overlay som "på" medan skärmen är tom.
+    // Här stod t.o.m. 0.5.8 `enabled && is_member()`, och det var det som gjorde av/på
+    // svårbegripligt: en overlay kunde vara påslagen och ändå osynlig (utanför den
+    // aktiva layouten), alltså ett läge där panelen sa "på" och skärmen var tom — och
+    // ingen knapp i den flik man stod i kunde ändra det. Nu gäller i stället:
+    //   • En LAYOUT bestämmer helt vad som är av och på när den aktiveras
+    //     (`activate_layout` sätter `enabled` på varje overlay, även de som inte
+    //     ingår — de släcks).
+    //   • Efter det är `enabled` fritt att ändra i Overlays-fliken, även för en
+    //     overlay som INTE ingår i layouten. Den visas då utan att gå med i layouten;
+    //     nästa aktivering skriver över valet, vilket är hela poängen med att
+    //     layouten har sista ordet.
+    // Här låg t.o.m. 0.5.5 dessutom en global huvudströmbrytare ovanför båda. Den är
+    // borta med flit, av samma skäl: ett läge till att leta i.
     fn visible(&self) -> bool {
-        self.enabled && self.is_member()
+        self.enabled
     }
 }
 
@@ -438,6 +444,25 @@ fn default_state_for(d: &OverlayDef) -> OverlayState {
         options,
     }
 }
+
+// En sparad MoTeC-referens. `label`, `track` och `car` är användarens text: de fylls i
+// ur .ld-huvudet när filen läggs till, men får ändras — ACC:s egna namn
+// ("ferrari_296_gt3") är inte det man kallar bilen, och bana och bil är valfria.
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct RefEntry {
+    id: String,
+    path: String,
+    label: String,
+    #[serde(default)]
+    track: String,
+    #[serde(default)]
+    car: String,
+}
+
+// Samma resonemang som MAX_LAYOUTS: taket finns för att en fastnad panel-loop inte ska
+// kunna blåsa upp settings.json, inte för att någon skulle spara 200 varv för hand.
+const MAX_REFERENCES: usize = 200;
+const REF_TEXT_MAX: usize = 64;
 
 #[derive(Serialize, Deserialize, Default)]
 struct Settings {
@@ -462,7 +487,22 @@ struct Settings {
     // ett index pekar på fel layout så fort en tidigare tas bort.
     #[serde(default)]
     active_layout: String,
+    /* Sökvägen till den VALDA MoTeC-filen. Fältet är oförändrat sedan 0.2: det är den
+       enda referens motorn känner till (engine.config.json, §8.6g), och biblioteket
+       nedan ligger utanför den vägen med flit — motorn ska inte behöva veta att det
+       finns fler filer att välja mellan. Tom sträng = ingen vald. */
     reference_ld: String,
+    /* Biblioteket av sparade MoTeC-filer. En post är en SÖKVÄG plus det man behöver för
+       att känna igen den ett halvår senare: namn, bana och bil. Filerna kopieras INTE
+       in i app-mappen — de är stora, de ligger redan där ACC lade dem, och en kopia
+       hade blivit inaktuell i samma stund man exporterade om varvet. Priset är att en
+       post kan peka på en fil som flyttats; `list_references` markerar den som saknad
+       i stället för att tyst städa bort den, för sökvägen är det enda spåret av vad
+       man valt.
+       Nytt fält: serde ignorerar det i en äldre build (samma nedgraderingsväg som
+       presets och layouts, §8.3b) — den ser då bara den valda sökvägen, som förut. */
+    #[serde(default)]
+    references: Vec<RefEntry>,
     // global: visa overlays först när motorn är synkad mot ACC (connected==true)
     #[serde(default)]
     hide_until_connected: bool,
@@ -572,10 +612,143 @@ fn load_settings(app: &AppHandle) -> Settings {
             // annars ligger de kvar för alltid och växer med varje borttagen modul.
             s.presets.retain(|k, _| def_of(k).is_some());
             sanitize_layouts(&mut s);
+            sanitize_references(&mut s);
             s
         }
         Err(_) => default_settings(),
     }
+}
+
+/* Referensbiblioteket städas av samma skäl som layouterna: filen kan vara
+   handredigerad eller komma från en nyare version. Här ligger dessutom MIGRERINGEN
+   från tiden då det bara fanns EN referens: `reference_ld` är kvar som "den valda
+   sökvägen" (motorns kontrakt, §8.6g), och en fil skriven före biblioteket har en
+   sökväg utan post i listan. Den läggs in som en post i stället för att bli osynlig i
+   panelen — annars hade uppgraderingen sett ut att kasta referensen man valt. */
+fn sanitize_references(s: &mut Settings) {
+    s.references.truncate(MAX_REFERENCES);
+    let mut seen_path: Vec<String> = Vec::new();
+    let mut seen_id: Vec<String> = Vec::new();
+    s.references.retain_mut(|r| {
+        r.path = r.path.trim().to_string();
+        if r.path.is_empty() || seen_path.contains(&r.path) {
+            return false;
+        }
+        seen_path.push(r.path.clone());
+        r.label = clip(&r.label, REF_TEXT_MAX);
+        if r.label.is_empty() {
+            r.label = file_stem_of(&r.path);
+        }
+        r.track = clip(&r.track, REF_TEXT_MAX);
+        r.car = clip(&r.car, REF_TEXT_MAX);
+        if r.id.trim().is_empty() || seen_id.contains(&r.id) {
+            r.id = unique_ref_id(&seen_id, &r.label);
+        }
+        seen_id.push(r.id.clone());
+        true
+    });
+    // Den valda sökvägen måste finnas i listan, annars kan panelen inte visa VILKEN
+    // referens som gäller — och det var precis den blindheten som gjorde ett oväntat
+    // MoTeC-delta omöjligt att förklara (§8.8b).
+    let active = s.reference_ld.trim().to_string();
+    s.reference_ld = active.clone();
+    if !active.is_empty() && !s.references.iter().any(|r| r.path == active) {
+        if s.references.len() < MAX_REFERENCES {
+            let mut r = new_reference(&active, &s.references);
+            r.id = unique_ref_id(&seen_id, &r.label);
+            s.references.push(r);
+        } else {
+            // Fullt bibliotek och en okänd vald fil: hellre ingen vald referens än en
+            // som inte går att se eller ta bort i panelen.
+            s.reference_ld = String::new();
+        }
+    }
+}
+
+fn clip(s: &str, n: usize) -> String {
+    s.trim().chars().take(n).collect()
+}
+
+fn file_stem_of(path: &str) -> String {
+    let name = std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Referens");
+    clip(name, REF_TEXT_MAX)
+}
+
+fn unique_ref_id(taken: &[String], label: &str) -> String {
+    let base = slug(label);
+    let mut id = base.clone();
+    let mut n = 2;
+    while taken.contains(&id) {
+        id = format!("{base}-{n}");
+        n += 1;
+    }
+    id
+}
+
+/* En ny post ur en filsökväg: namn ur filnamnet, bana och bil ur .ld-huvudet.
+   Metadatan LÄSES och skrivs inte om senare: filen kan hinna försvinna, och en post
+   som tappar sin bana för att disken är urkopplad är sämre än en post med gammal
+   men riktig text. Båda fälten går dessutom att ändra för hand i panelen — ACC:s
+   bilnamn ("ferrari_296_gt3") är inte det man kallar bilen. */
+fn new_reference(path: &str, taken: &[RefEntry]) -> RefEntry {
+    let head = read_ld_head(std::path::Path::new(path)).unwrap_or_default();
+    let label = file_stem_of(path);
+    let ids: Vec<String> = taken.iter().map(|r| r.id.clone()).collect();
+    RefEntry {
+        id: unique_ref_id(&ids, &label),
+        path: path.to_string(),
+        label,
+        track: clip(&head.venue, REF_TEXT_MAX),
+        car: clip(&head.vehicle, REF_TEXT_MAX),
+    }
+}
+
+/* ── .ld-huvudet ────────────────────────────────────────────────────────────
+   MoTeC-filens huvud är en `struct` med FASTA offset (ldparser.py:ldHead.fmt, som
+   vi läser referensvarvet med i motorn). Vi vill bara ha tre textfält ur den, och att
+   dra in en .ld-parser i Rust för det vore fel storlek på verktyg — men offseten är
+   uträknade ur exakt samma formatsträng och verifierade med `struct.calcsize`:
+
+     94  16s date       126 16s time
+     158 64s driver     222 64s vehicleid     350 64s venue
+
+   Strängarna är NUL-terminerade enkelbyte-tecken (latin-1 räcker: fälten är ASCII i
+   ACC:s export). Ser något ut som binärskräp lämnar vi fältet TOMT i stället för att
+   fylla panelen med kontrolltecken — man kan skriva in bana och bil själv. */
+#[derive(Default)]
+struct LdHead {
+    driver: String,
+    vehicle: String,
+    venue: String,
+}
+
+const LD_HEAD_BYTES: usize = 414;
+
+fn ld_field(buf: &[u8], at: usize, len: usize) -> String {
+    let raw = &buf[at..at + len];
+    let end = raw.iter().position(|b| *b == 0).unwrap_or(len);
+    let text: String = raw[..end].iter().map(|b| *b as char).collect();
+    // Kontrolltecken = vi läser fel offset eller en fil som inte är en .ld. Då är
+    // tomt det ärliga svaret.
+    if text.chars().any(|c| (c as u32) < 0x20) {
+        return String::new();
+    }
+    text.trim().to_string()
+}
+
+fn read_ld_head(path: &std::path::Path) -> Option<LdHead> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(path).ok()?;
+    let mut buf = vec![0u8; LD_HEAD_BYTES];
+    f.read_exact(&mut buf).ok()?;
+    Some(LdHead {
+        driver: ld_field(&buf, 158, 64),
+        vehicle: ld_field(&buf, 222, 64),
+        venue: ld_field(&buf, 350, 64),
+    })
 }
 
 // Samma behandling som för presets: en layout kan vara handredigerad, komma från en
@@ -939,11 +1112,20 @@ fn set_enabled(app: AppHandle, state: State<Mutex<Settings>>, id: String, enable
 // Lägg till / ta bort ur layouten (+ och × i Layout-fliken). Speglas in i den aktiva
 // layouten av save_settings, precis som allt annat — det finns fortfarande ingen väg
 // som skriver till en layout direkt.
+//
+// Medlemskapet drar med sig av/på, och det är avsiktligt: att lägga till en overlay i
+// layouten är att vilja SE den (annars får man en box i skärmvyn som inte motsvarar
+// något på skärmen), och att ta bort den ur layouten är att vilja bli av med den
+// (annars ligger den kvar över spelet med × redan klickat). Motsatt riktning gäller
+// INTE: `set_enabled` rör aldrig medlemskapet.
 #[tauri::command]
 fn set_member(app: AppHandle, state: State<Mutex<Settings>>, id: String, member: bool) {
     let show = {
         let mut s = state.lock().unwrap();
-        if let Some(st) = s.overlays.get_mut(&id) { st.member = Some(member); }
+        if let Some(st) = s.overlays.get_mut(&id) {
+            st.member = Some(member);
+            st.enabled = member;
+        }
         let show = s.overlays.get(&id).map(|st| st.visible()).unwrap_or(false);
         save_settings(&app, &mut s);
         show
@@ -953,15 +1135,24 @@ fn set_member(app: AppHandle, state: State<Mutex<Settings>>, id: String, member:
 
 // Eventet skickas FÖRE show/hide: bus.js ska ha släppt sitt anspråk på fönstret innan
 // skalet rör det, annars kan grinden hinna dölja det vi just visat (§8.5c).
+//
+// GRINDEN ÄGER SYNLIGHETEN NÄR DEN ÄR PÅ. Med "Endast när ACC kör" påslagen ropar vi
+// alltså ALDRIG show() här: bara bus.js vet om ACC matar motorn just nu och om något
+// annat program ligger i förgrunden, och ett show() från skalet gick förbi båda. Följden
+// var fönster som dök upp över skrivbordet så fort man aktiverade en layout med spelet
+// stängt — och som inte gick att få bort igen, eftersom bus.js inte såg någon ändring
+// att reagera på. Eventet räcker: bus.js visar fönstret i samma stund grinden släpper.
 fn apply_visibility(app: &AppHandle, state: &State<Mutex<Settings>>, id: &str, show: bool) {
+    let gate = { state.lock().unwrap().hide_until_connected };
     let _ = app.emit("enabled", EnabledPayload { id: id.to_string(), enabled: show });
     if let Some(win) = app.get_webview_window(id) {
-        if show { let _ = win.show(); } else { let _ = win.hide(); }
+        if !show {
+            let _ = win.hide();
+        } else if !gate {
+            let _ = win.show();
+        }
     } else if show {
-        let (st, gate) = {
-            let s = state.lock().unwrap();
-            (s.overlays.get(id).cloned(), s.hide_until_connected)
-        };
+        let st = { state.lock().unwrap().overlays.get(id).cloned() };
         if let (Some(def), Some(st)) = (def_of(id), st) {
             let _ = create_overlay(app, def, &st, gate);
         }
@@ -1262,7 +1453,18 @@ fn delete_layout(app: AppHandle, state: State<Mutex<Settings>>, id: String) -> R
 }
 
 // Aktiverar en layout (tom sträng = ingen aktiv) och SKRIVER UT den: varje overlay som
-// ingår får sitt läge tillbaka, varje overlay som inte ingår stängs av.
+// ingår får sitt läge tillbaka, varje overlay som inte ingår SLÄCKS.
+//
+// LAYOUTEN HAR SISTA ORDET. Den skriver alltså `enabled` på varje overlay i registret
+// och inte bara på sina egna medlemmar — annars låg det som var påslaget sedan tidigare
+// kvar över spelet bredvid den layout man just valde, och man fick släcka dem en och en
+// i den andra fliken. Efter aktiveringen går var och en att tända igen för hand
+// (`set_enabled`), även utanför layouten; det är undantaget, och det överlever inte
+// nästa aktivering.
+//
+// Att slå AV växlaren (tom sträng) släcker allt: växlaren ska betyda samma sak åt båda
+// hållen. Lägena finns kvar i `overlays` och kommer tillbaka när layouten aktiveras
+// igen — man tappar inte positioner, bara bilden på skärmen.
 //
 // Vägen är medvetet densamma som apply_preset/reset_overlay tar, med ett tillägg:
 // positionen. Missar man storleken ritas overlayn i ny skala i ett fönster med gammal
@@ -1282,7 +1484,20 @@ fn activate_layout(app: AppHandle, state: State<Mutex<Settings>>, id: String) ->
         sync_active_layout(&mut s);
         if id.is_empty() {
             s.active_layout = String::new();
+            for st in s.overlays.values_mut() {
+                st.enabled = false;
+            }
             save_settings(&app, &mut s);
+            gate = s.hide_until_connected;
+            plan = registry()
+                .iter()
+                .map(|d| {
+                    let st = s.overlays.get(&d.id).cloned().unwrap_or_else(|| default_state_for(d));
+                    (d, st)
+                })
+                .collect();
+            drop(s);
+            apply_layout_windows(&app, plan, gate);
             return Ok(());
         }
         let l = s.layouts.iter().find(|l| l.id == id).cloned().ok_or("okänd layout")?;
@@ -1294,11 +1509,13 @@ fn activate_layout(app: AppHandle, state: State<Mutex<Settings>>, id: String) ->
                     sanitize_state(d, &mut st);
                     s.overlays.insert(d.id.clone(), st);
                 }
-                // Bara medlemskapet ändras för den som inte ingår: dess läge — och
-                // dess av/på — ska finnas kvar om man lägger tillbaka den senare.
+                // Den som inte ingår släcks och tappar medlemskapet. Läget (position,
+                // skala, utseende) står kvar och kommer tillbaka om man lägger in den
+                // igen — det är bara bilden på skärmen layouten bestämmer över.
                 None => {
                     if let Some(st) = s.overlays.get_mut(&d.id) {
                         st.member = Some(false);
+                        st.enabled = false;
                     }
                 }
             }
@@ -1315,6 +1532,16 @@ fn activate_layout(app: AppHandle, state: State<Mutex<Settings>>, id: String) ->
             .collect();
     }
 
+    apply_layout_windows(&app, plan, gate);
+    Ok(())
+}
+
+// Skriver ut en hel uppsättning på fönstren: storlek, position, always-on-top, av/på
+// och samtliga config/option-event. Bruten ur activate_layout för att "ingen layout
+// aktiv" (tom sträng) ska ta EXAKT samma väg — annars släcker den ena vägen fönster som
+// den andra fortsätter visa, och det är precis den sortens glapp som gör en växlare
+// opålitlig.
+fn apply_layout_windows(app: &AppHandle, plan: Vec<(&'static OverlayDef, OverlayState)>, gate: bool) {
     for (def, st) in plan {
         // Eventet FÖRE show/hide, av samma skäl som i set_enabled: bus.js måste ha
         // släppt sitt anspråk på fönstret innan skalet rör det (§8.5c).
@@ -1329,13 +1556,16 @@ fn activate_layout(app: AppHandle, state: State<Mutex<Settings>>, id: String) ->
                     ));
                     let _ = win.set_position(tauri::LogicalPosition::new(st.x as f64, st.y as f64));
                     let _ = win.set_always_on_top(st.always_on_top);
-                    let _ = win.show();
+                    // Grinden äger synligheten när den är på — se apply_visibility.
+                    if !gate {
+                        let _ = win.show();
+                    }
                 } else {
                     let _ = win.hide();
                 }
             }
             None if show => {
-                if let Err(e) = create_overlay(&app, def, &st, gate) {
+                if let Err(e) = create_overlay(app, def, &st, gate) {
                     eprintln!("[shell] kunde ej skapa overlay {}: {e}", def.id);
                 }
             }
@@ -1351,7 +1581,6 @@ fn activate_layout(app: AppHandle, state: State<Mutex<Settings>>, id: String) ->
             }
         }
     }
-    Ok(())
 }
 
 // ── Presets ─────────────────────────────────────────────────────────────────
@@ -1642,12 +1871,146 @@ fn write_engine_config(app: &AppHandle, s: &Settings) {
 }
 
 // Skriv referens-path till motorns config-fil (motorn pollar den och laddar .ld).
+// Ligger kvar som lågnivåväg och som det panelbygge före biblioteket anropade; den
+// registrerar numera också filen i biblioteket, så en väg in aldrig ger en vald
+// referens som inte syns i listan.
 #[tauri::command]
 fn set_reference(app: AppHandle, state: State<Mutex<Settings>>, path: String) {
     let mut s = state.lock().unwrap();
-    s.reference_ld = path;
+    let p = path.trim().to_string();
+    if !p.is_empty() && !s.references.iter().any(|r| r.path == p) && s.references.len() < MAX_REFERENCES {
+        let r = new_reference(&p, &s.references);
+        s.references.push(r);
+    }
+    s.reference_ld = p;
     save_settings(&app, &mut s);
     write_engine_config(&app, &s);
+}
+
+// ── Referensbiblioteket ─────────────────────────────────────────────────────
+// Flera sparade MoTeC-filer, en vald. Panelen ritar; Rust äger listan, validerar och
+// läser .ld-huvudet. Samma arbetsfördelning som presets och layouter.
+#[derive(Serialize)]
+struct RefInfo {
+    id: String,
+    path: String,
+    label: String,
+    track: String,
+    car: String,
+    // Den valda. Ett fält och inte "panelen jämför sökvägar": jämförelsen ska göras på
+    // ETT ställe, annars kan listan och motorn peka på olika filer.
+    active: bool,
+    // Filen finns inte längre där posten pekar. Visas som saknad i stället för att
+    // städas bort: sökvägen är det enda spåret av vad man valt, och en extern disk
+    // som inte är inkopplad just nu är inte samma sak som en borttagen referens.
+    missing: bool,
+}
+
+fn ref_infos(s: &Settings) -> Vec<RefInfo> {
+    s.references
+        .iter()
+        .map(|r| RefInfo {
+            id: r.id.clone(),
+            path: r.path.clone(),
+            label: r.label.clone(),
+            track: r.track.clone(),
+            car: r.car.clone(),
+            active: !s.reference_ld.is_empty() && s.reference_ld == r.path,
+            missing: !std::path::Path::new(&r.path).is_file(),
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn list_references(state: State<Mutex<Settings>>) -> Vec<RefInfo> {
+    ref_infos(&state.lock().unwrap())
+}
+
+/* Lägg till en fil i biblioteket och VÄLJ den. Att välja på köpet är avsiktligt: man
+   öppnar en filväljare för att man vill köra mot det varvet, och ett extra klick i
+   listan efteråt hade bara varit ett steg att glömma.
+   En sökväg som redan finns läggs inte till två gånger — den väljs. */
+#[tauri::command]
+fn add_reference(app: AppHandle, state: State<Mutex<Settings>>, path: String) -> Result<Vec<RefInfo>, String> {
+    let p = path.trim().to_string();
+    if p.is_empty() {
+        return Err("Ingen fil vald.".into());
+    }
+    if !std::path::Path::new(&p).is_file() {
+        return Err("Filen finns inte.".into());
+    }
+    let mut s = state.lock().unwrap();
+    if !s.references.iter().any(|r| r.path == p) {
+        if s.references.len() >= MAX_REFERENCES {
+            return Err(format!("Max {MAX_REFERENCES} sparade referenser."));
+        }
+        let r = new_reference(&p, &s.references);
+        s.references.push(r);
+    }
+    s.reference_ld = p;
+    save_settings(&app, &mut s);
+    write_engine_config(&app, &s);
+    Ok(ref_infos(&s))
+}
+
+// Välj en sparad referens. Tomt id = ingen vald, alltså delta mot session-bästa igen.
+#[tauri::command]
+fn select_reference(app: AppHandle, state: State<Mutex<Settings>>, id: String) -> Result<Vec<RefInfo>, String> {
+    let mut s = state.lock().unwrap();
+    if id.is_empty() {
+        s.reference_ld = String::new();
+    } else {
+        let path = s.references.iter().find(|r| r.id == id).map(|r| r.path.clone())
+            .ok_or("okänd referens")?;
+        s.reference_ld = path;
+    }
+    save_settings(&app, &mut s);
+    write_engine_config(&app, &s);
+    Ok(ref_infos(&s))
+}
+
+// Namn, bana och bil. Alla tre är valfria — bana och bil finns för att kunna sortera
+// och hitta bland många filer, inte för att motorn ska läsa dem (den kontrollerar
+// banan mot .ld-huvudet själv, §8.8b).
+#[tauri::command]
+fn update_reference(
+    app: AppHandle,
+    state: State<Mutex<Settings>>,
+    id: String,
+    label: String,
+    track: String,
+    car: String,
+) -> Result<Vec<RefInfo>, String> {
+    let mut s = state.lock().unwrap();
+    {
+        let r = s.references.iter_mut().find(|r| r.id == id).ok_or("okänd referens")?;
+        r.label = clip(&label, REF_TEXT_MAX);
+        if r.label.is_empty() {
+            r.label = file_stem_of(&r.path);
+        }
+        r.track = clip(&track, REF_TEXT_MAX);
+        r.car = clip(&car, REF_TEXT_MAX);
+    }
+    save_settings(&app, &mut s);
+    Ok(ref_infos(&s))
+}
+
+/* Ta bort en post ur biblioteket. Filen på disk rörs ALDRIG — den är användarens
+   MoTeC-export och ligger i ACC:s egen mapp. Var posten vald blir ingen vald, och
+   motorn får veta det i samma sparning: annars hade deltat fortsatt komma från en fil
+   som inte längre står i listan, vilket är exakt det osynliga läge §8.8b handlar om. */
+#[tauri::command]
+fn remove_reference(app: AppHandle, state: State<Mutex<Settings>>, id: String) -> Result<Vec<RefInfo>, String> {
+    let mut s = state.lock().unwrap();
+    let path = s.references.iter().find(|r| r.id == id).map(|r| r.path.clone())
+        .ok_or("okänd referens")?;
+    s.references.retain(|r| r.id != id);
+    if s.reference_ld == path {
+        s.reference_ld = String::new();
+    }
+    save_settings(&app, &mut s);
+    write_engine_config(&app, &s);
+    Ok(ref_infos(&s))
 }
 
 // Anropas av panelen strax innan updateraren installerar. Updateraren startar
@@ -1982,6 +2345,11 @@ pub fn run() {
             set_edit_mode,
             set_hotkey,
             set_reference,
+            list_references,
+            add_reference,
+            select_reference,
+            update_reference,
+            remove_reference,
             get_globals,
             set_hide_until_connected,
             set_mock,
@@ -2674,14 +3042,15 @@ mod tests {
     // ett `active_layout` som pekar på en borttagen layout (då hade speglingen skrivit
     // ut i tomma intet vid varje sparning) och en slot vars `member` säger false (en
     // overlay som både ingår och inte ingår i samma layout).
-    /* Ett fönster finns när overlayn både INGÅR i layouten och är PÅSLAGEN — de två
-       begreppen som gick isär i 0.5.4. Testet finns för att det är exakt en `&&` som
-       skiljer dem, och felet syns inte förrän man kör appen.
+    /* SYNLIGHET ÄR `enabled` OCH INGET ANNAT (0.5.9). Testet bevakar den ena raden som
+       skiljer den nya regeln från den gamla `enabled && is_member()`: en overlay som
+       tänts för hand utanför den aktiva layouten MÅSTE synas, annars är panelens av/på
+       en knapp som ibland inte gör något — och man kan inte se varför.
        Sista raden är den som verkligen kan gå sönder tyst: `Settings::default()` ger
        `false` för en bool, alltså hade en NY installation startat med mock-data av —
        en app som inte visar någonting förrän ACC kör. */
     #[test]
-    fn medlemskap_och_avpa_maste_bada_galla() {
+    fn synlighet_ar_enbart_avpa() {
         let mut st = OverlayState {
             enabled: true, member: Some(true), x: 0, y: 0, scale: 1.0, opacity: 1.0,
             always_on_top: true, options: HashMap::new(),
@@ -2691,7 +3060,7 @@ mod tests {
         assert!(!st.visible(), "en avstängd overlay syns inte fast den är medlem");
         st.enabled = true;
         st.member = Some(false);
-        assert!(!st.visible(), "en icke-medlem syns inte fast den är påslagen");
+        assert!(st.visible(), "en påslagen overlay UTANFÖR layouten ska också synas");
 
         let d = default_settings();
         assert!(d.mock_enabled, "en ny installation måste starta med mock-data PÅ");
@@ -2766,5 +3135,58 @@ mod tests {
         assert_eq!(b64(b"fooba"), "Zm9vYmE=");
         assert_eq!(b64(b"foobar"), "Zm9vYmFy");
         assert_eq!(b64(&[0u8, 255, 128]), "AP+A");
+    }
+
+    // ── Referensbiblioteket ─────────────────────────────────────────────────
+    /* Offseten i .ld-huvudet är uträknade ur ldparser.py:ldHead.fmt och kan inte
+       kontrolleras mot en riktig fil här (en .ld är flera megabyte och ligger inte i
+       repot). Testet bygger därför ett huvud med KÄNDA fält på de uträknade
+       positionerna och kräver att läsaren hittar exakt dem — går offseten isär läser
+       den grannfältet, och en referens hade fått "Ferrari" som bana.
+       Sista raden är den som gör testet värt något: binärskräp ska ge TOMT, inte en
+       rad kontrolltecken i panelen. */
+    #[test]
+    fn ld_huvudet_lases_pa_ratt_offset() {
+        let mut buf = vec![0u8; LD_HEAD_BYTES];
+        buf[158..158 + 6].copy_from_slice(b"Leo G.");
+        buf[222..222 + 16].copy_from_slice(b"ferrari_296_gt3\0");
+        buf[350..350 + 3].copy_from_slice(b"Spa");
+        assert_eq!(ld_field(&buf, 158, 64), "Leo G.");
+        assert_eq!(ld_field(&buf, 222, 64), "ferrari_296_gt3");
+        assert_eq!(ld_field(&buf, 350, 64), "Spa");
+
+        buf[350] = 0x07;
+        assert_eq!(ld_field(&buf, 350, 64), "", "kontrolltecken = fel fil, inte metadata");
+    }
+
+    /* Städningen är också MIGRERINGEN från en enda referens till ett bibliotek. Tre
+       saker som var för sig hade gett en panel som inte kan visa vad som gäller:
+       en vald sökväg utan post (uppgradering), två poster med samma sökväg (två
+       rader som gör samma sak) och två poster med samma id (panelen väljer fel när
+       man klickar). */
+    #[test]
+    fn referenser_stadas_och_migreras() {
+        let mut s = Settings::default();
+        s.references.push(RefEntry { id: "a".into(), path: "C:/varv/spa.ld".into(),
+                                     label: "  ".into(), track: "".into(), car: "".into() });
+        s.references.push(RefEntry { id: "a".into(), path: "C:/varv/monza.ld".into(),
+                                     label: "Monza".into(), track: "".into(), car: "".into() });
+        s.references.push(RefEntry { id: "c".into(), path: "C:/varv/spa.ld".into(),
+                                     label: "dubblett".into(), track: "".into(), car: "".into() });
+        s.references.push(RefEntry { id: "d".into(), path: "   ".into(),
+                                     label: "tom".into(), track: "".into(), car: "".into() });
+        s.reference_ld = "C:/varv/nurburgring.ld".into();
+        sanitize_references(&mut s);
+
+        let paths: Vec<&str> = s.references.iter().map(|r| r.path.as_str()).collect();
+        assert_eq!(paths, vec!["C:/varv/spa.ld", "C:/varv/monza.ld", "C:/varv/nurburgring.ld"],
+                   "dubbletter och tomma sökvägar bort, den valda filen tillagd");
+        assert_eq!(s.references[0].label, "spa", "tomt namn faller tillbaka på filnamnet");
+        let ids: Vec<&str> = s.references.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids.len(), 3);
+        assert!(ids.iter().all(|id| !id.is_empty()));
+        assert_eq!(ids.iter().collect::<std::collections::HashSet<_>>().len(), 3,
+                   "två poster med samma id gör att panelen väljer fel rad");
+        assert_eq!(s.reference_ld, "C:/varv/nurburgring.ld", "valet ska inte tappas av städningen");
     }
 }

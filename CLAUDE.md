@@ -15,7 +15,7 @@
 > X" i §7).
 ## 1. Vad projektet är
 Modulärt overlay-paket för **Assetto Corsa Competizione (ACC)**.
-Version 0.5.8.
+Version 0.5.9.
 - **Funktionellt** som **Race Element**: lätt, rensat, praktiskt, ingen FPS-förlust.
 - **Visuellt** som **RaceLab**: mörkt, polerat, animerat, premium.
 - Kvalitetsribban är hög och användaren är detaljpetig ner till pixelnivå.
@@ -108,27 +108,43 @@ Fyra saker som är avsiktliga och lätta att råka bryta:
 på EN overlay; en **layout** är hela skärmen: vilka overlays som är på, var de sitter,
 hur stora de är och hur de ser ut. Tre regler som hänger ihop och som var för sig är
 lätta att bryta:
-- **MEDLEMSKAP OCH SYNLIGHET ÄR TVÅ SAKER.** `member` = ingår i layouten (`set_member`,
-  alltså Layout-flikens `+` och `×`); `enabled` = visas just nu (`set_enabled`, alltså
-  ögonknappen, som finns på båda flikarna). Fönstret visas när BÅDA är sanna —
-  `OverlayState::visible()` är enda stället som avgör det, så de inte kan glida
-  isär på det ena ställe någon glömmer. De var samma fält t.o.m. 0.5.3, och följden var
-  omöjlig att komma runt: att dölja en overlay en stund kastade ut den ur layouten man
-  byggt, och att tända den igen la in den i den layout som råkade vara aktiv då.
-  `sync_active_layout` speglar därför MEDLEMMAR (inte påslagna), och en layout får
-  mycket väl innehålla en overlay som är dold — `sanitize_layouts` tvingar `member`,
-  aldrig `enabled`. Att VISA något som inte är medlem lägger till det i layouten och
-  säger det; motsatsen (dölja → ta bort) finns inte som väg.
-  Migreringen: `member` är `Option<bool>` och `is_member()` faller tillbaka på
+- **SYNLIGHET ÄR ETT ENDA FÄLT: `enabled`.** `OverlayState::visible()` returnerar det
+  rakt av, och `member` (ingår i layouten, `set_member` = Layout-flikens `+` och `×`) är
+  layoutens bokföring — inte en andra strömbrytare framför fönstret. Här stod
+  `enabled && is_member()` t.o.m. 0.5.8, och det var det som gjorde av/på obegripligt:
+  en overlay kunde vara påslagen och ändå osynlig (utanför den aktiva layouten), alltså
+  ett läge där panelen sa "på" och skärmen var tom — och ingen knapp i den flik man stod
+  i kunde ändra det.
+- **LAYOUTEN HAR SISTA ORDET, och växlaren betyder samma sak åt båda hållen.**
+  `activate_layout` skriver `enabled` på VARJE overlay i registret: medlemmarna får
+  layoutens läge, de andra släcks. Att slå AV layouten (tomt id) släcker allt den tände.
+  Utan den regeln låg det som var påslaget sedan tidigare kvar bredvid den layout man
+  valde, och att slå av lämnade exakt samma bild på skärmen — växlaren såg ut att vara
+  trasig, vilket också rapporterades. Lägena finns kvar i `overlays` och kommer tillbaka
+  vid nästa aktivering; det är bara bilden på skärmen layouten bestämmer över.
+  **UNDANTAGET, och det är det enda:** efter aktiveringen går vilken overlay som helst
+  att tända för hand i Overlays-fliken, även en som inte ingår i layouten. Den visas då
+  utan att gå med (raden märks "utanför"), och nästa aktivering skriver över valet.
+  Att tända något utanför layouten LADE TILL det i layouten t.o.m. 0.5.8 — det skrev om
+  en layout man byggt för att man ville se något en stund.
+- **`set_member` drar med sig av/på, `set_enabled` aldrig medlemskapet.** Att lägga till
+  i layouten är att vilja SE overlayn (annars får man en box i skärmvyn som inte
+  motsvarar något på skärmen), och att ta bort är att vilja bli av med den (annars ligger
+  den kvar över spelet med × redan klickat). Riktningen åt andra hållet finns inte:
+  att dölja tar aldrig bort medlemskapet, för då kastades man ur layouten man byggt så
+  fort man släckte något en stund (så var det t.o.m. 0.5.3).
+  `sync_active_layout` speglar MEDLEMMAR (inte påslagna), och en layout får mycket väl
+  innehålla en overlay som är dold — `sanitize_layouts` tvingar `member`, aldrig
+  `enabled`. Migreringen: `member` är `Option<bool>` och `is_member()` faller tillbaka på
   `enabled`, vilket ger exakt det gamla beteendet på en fil skriven före 0.5.4.
-  **Att LÄGGA TILL i layouten tänder också det som var dolt** (`layAdd` → `setVisible`).
-  Utan det gav "Lägg till" en box i skärmvyn som inte motsvarade något på skärmen, och
-  Overlays-fliken såg ut att äga av/på ensam. Motsatsen finns fortfarande inte: att
-  dölja tar aldrig bort medlemskapet.
 - **Att aktivera en layout är att ta över skärmen.** `activate_layout` skriver ut hela
-  uppsättningen (se nedan), och de fönster som ska synas visas DIREKT — det finns ingen
-  brytare emellan som kan hålla dem släckta. Enda saken ovanför är grinden "Endast när
-  ACC kör", och är den av ligger layouten på skärmen i samma sekund.
+  uppsättningen (se nedan) — det finns ingen brytare emellan som kan hålla fönstren
+  släckta. Enda saken ovanför är grinden "Endast när ACC kör", och **när den är PÅ ropar
+  skalet aldrig `show()` själv** (`apply_visibility`, `apply_layout_windows`): bara
+  bus.js vet om ACC matar motorn och om något annat program ligger i förgrunden. Ett
+  `show()` förbi grinden gav fönster som dök upp över skrivbordet med spelet stängt och
+  inte gick att få bort igen (§8.5c). Är grinden av ligger layouten på skärmen i samma
+  sekund.
 - **Exakt EN layout är aktiv, och den är LIVE-BUNDEN.** `save_settings` kör
   `sync_active_layout`, som speglar det gällande läget in i den aktiva layouten vid varje
   sparning. Det finns alltså inget spara-steg, och — viktigare — ingen andra sanning:
@@ -374,6 +390,16 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
   staplade paneler. Raderna är titel + en KORT underrad: texterna får inte radbrytas
   vid 264 px kolumnbredd, för tvåradiga rader äter listan på golvet 960×600.
   Blocket följer INTE med till Referens/Om/Inställningar — hela kolumnen göms där.
+- **AV/PÅ BOR I LISTRADEN**, som en växlare (`.sw.osw`), inte i förhandsvisningens
+  verktygsrad. Där satt den som en ögonknapp t.o.m. 0.5.8, och den gällde bara den VALDA
+  overlayn: man fick byta rad för att släcka något, och de andras tillstånd syntes inte
+  medan man stod i rutan. Med växlaren i raden är hela uppsättningen läsbar och
+  ändringsbar på en gång. Brickan i raden säger inte längre "på/av" — det gör växlaren —
+  utan bara det den ensam kan säga: **"utanför"**, alltså att overlayn står utanför den
+  aktiva layouten och släcks nästa gång layouten aktiveras.
+  Växlaren är ett SYSKON till raden (`.lrowwrap`), inte ett barn: raden är en `<button>`,
+  och en `<label>` med en `<input>` inuti en knapp är ogiltig HTML. Selektorn måste vara
+  `.sw.osw` av samma skäl som layoutlistans `.sw.lsw` (§8.4n).
 - **Vänsterlisten är en REN IKONLIST på 60 px.** Namnet
   kommer i en tooltip vid hover/fokus. Aktiv flik = 40×40 bricka i `--ui-sel-fill`
   med ikonen i `--amber`. Brickan var BRANDRÖD t.o.m. 0.5.6; rött identifierar APPEN
@@ -578,7 +604,7 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
 ## 5. Overlay-katalog & status
 | # | Overlay | Status | Not |
 |---|---------|--------|-----|
-| 1 | **Delta + varvtidsrad** | KLAR (look+funktion+animation), kopplad på bussen | cirkel: 0=topp, grön medurs=snabbare, full båge 180°=1.0 s |
+| 1 | **Delta + varvtidsrad** | KLAR (look+funktion+animation), kopplad på bussen | cirkel: 0=topp, grön medurs=snabbare, full båge 180°=1.0 s; tre spalter (§5b) |
 | 2 | Delta-graf + minisektorer + hörnkarta | **ej byggd** | hörnkarta/kurvnummer/graf är **banberoende, ritas live** — hårdkoda ALDRIG kurvform |
 | 3 | Inputs-HUD (växel/fart/ratt/pedaler) | delvis (inputs-trace KLAR & kopplad) | ratt-vinkel + växel/fart-modul återstår |
 | 4 | Inputs-trace (gas/broms + staplar) | KLAR, kopplad på bussen | ABS=gult trace, TC=blått; Canvas rullande; tidsfönster 2–10 s valbart; spökspår mot VALD delta-källa (§8.8f) |
@@ -586,6 +612,22 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
 
 **Nästa naturliga bygge:** en overlay i taget, helt klar (funktion+look+animation) innan nästa.
 Mät referensbilder pixel-exakt FÖRST; bekräfta struktur i EN avstämning innan kod.
+
+### 5b. Delta-barens tre spalter
+Vänster = **sessionens bästa** (ditt), mitten = **den valda MoTeC-filens varvtid**,
+höger = **predicted**. Tre regler:
+- **Mittspalten finns bara när en fil är vald**, och hela SPALTEN tas bort när den inte
+  är det — inte bara siffran. En tom ruta med en etikett under är ett löfte om ett värde
+  som aldrig kommer. Fram t.o.m. 0.5.8 stod sessionens bästa där en gång till, med
+  förarnamnet som etikett: samma siffra som spalten bredvid, alltså dekoration.
+- **Fältet är `motecMs` och inte `refs["motec"]`.** `refs`-nyckeln finns bara när filen
+  GÄLLER varvet som körs (rätt bana, inte ut-varv, förbi mållinjens spikskydd), medan
+  spalten beskriver PANELENS VAL — den ska inte försvinna för att man rullar ut ur depån.
+  Motorn sätter `motecMs` på varje ram, även mock och frånkopplade.
+- **Fönstret är byggt för det BREDASTE läget** (alla tre spalterna, `contentWidth` 736).
+  En spalt som försvinner gör overlayn smalare än sin box i skärmvyn; motsatsen — ett
+  fönster som inte rymmer tre spalter — hade klippt innehållet.
+  `tests/overlay-window-fit.mjs` matar därför sidan med en ram där allt är på.
 
 ## 6. Filkarta
 ```
@@ -686,6 +728,10 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   skärmvyn och stacken ligger på samma x och bredd utan vågrät skroll, att DÖLJA lämnar
   boxen kvar nedtonad och rör aldrig medlemskapet medan × går genom `set_member`, och
   layoutlistan markerar den aktiva. Panelen kastade inget fel.
+  Sedan 0.5.9 mäter det att av/på ligger i OVERLAY-LISTAN: förhandsvisningens ögonknapp
+  är borta (inte dold), varje rad har en växlare som speglar läget, den går via
+  `set_enabled` utan att röra medlemskapet, och att slå AV layouten släcker varje box i
+  skärmvyn medan PÅ tänder dem igen.
   Sedan 0.5.7 mäter det dessutom layoutradens av/på-växlare (att slå AV skickar tom
   layout-id, alltså "ingen aktiv", och att menyns Aktivera/Inaktivera är borta),
   Layout-flikens presetväljare (etiketten räknas ut ur nuvarande värden, tomma
@@ -708,9 +754,41 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   overlays och rör aldrig en inaktiv layout, en tom `active_layout` skriver ingenstans,
   inläsningen städar dubbletter/tomma namn/borttagna overlays/orimliga tal och nollställer
   en `active_layout` som inte finns, och id:n blir unika. Två trasiga varianter körda,
-  båda föll.
+  båda föll. Sedan 0.5.9 också att synlighet är ENBART `enabled` (en påslagen overlay
+  utanför layouten ska synas).
+- **Referensbiblioteket i Rust** (två tester): .ld-huvudets tre textfält läses på rätt
+  offset och binärskräp ger tomt i stället för kontrolltecken; städningen tar bort
+  dubbletter och tomma sökvägar, ger unika id:n, faller tillbaka på filnamnet som
+  etikett och MIGRERAR en vald `reference_ld` som saknar post in i listan.
+- **Grinden mot skalets av/på-event** (`tests/overlay-gate.mjs` kontroll 12): ett
+  `enabled`-event med OFÖRÄNDRAT värde döljer fönstret igen när grinden är på och visar
+  det när ACC kör. Kört mot den gamla bus.js — båda kontrollerna föll.
+- **Delta-barens MoTeC-spalt** (`tests/overlay-delta-bar.mjs` kontroll 6): spalten finns
+  bara med `motecMs` i ramen, visar filens tid, försvinner när fältet slutar komma och
+  står kvar när MoTeC-KÄLLAN inte gäller varvet. Kört mot 0.5.8 — fem kontroller föll.
 
 ### Kvar att verifiera — läs detta först om du tar över
+- **Layoutväxlaren i drift, med grinden i BÅDA lägena.** Det var den rapporterade buggen
+  (0.5.8): med "Endast när ACC kör" på och spelet stängt dök overlays upp när man
+  aktiverade en layout, och gick inte att få bort. Fixen sitter på två ställen (skalet
+  ropar aldrig `show()` när grinden är på; bus.js kör om beslutet även vid oförändrat
+  `enabled`) och är mätt i Chrome — men aldrig i appen. Prova fyra vägar: slå på/av en
+  layout med grinden PÅ och ACC stängt (ingenting ska synas), samma med grinden AV
+  (fönstren ska följa direkt), slå AV grinden medan en layout är på (fönstren ska komma
+  fram), och slå PÅ den igen (de ska försvinna).
+- **Att en overlay går att tända UTANFÖR den aktiva layouten.** Undantaget från "layouten
+  bestämmer". Tänd en overlay som inte ingår i layouten i Overlays-fliken: den ska synas
+  på skärmen, raden ska säga "utanför", layouten ska INTE ha ändrats, och nästa gång man
+  aktiverar layouten ska den släckas igen.
+- **Referensbiblioteket mot riktiga .ld-filer.** Offseten i .ld-huvudet är uträknade ur
+  ldparser.py och testade mot ett syntetiskt huvud — ingen riktig fil har lästs av
+  Rust-koden. Lägg till två–tre exporter från olika banor och bilar och kontrollera att
+  bana och bil fylls i automatiskt och stämmer. Kontrollera samtidigt att valet överlever
+  omstart, att en borttagen post inte lämnar kvar deltat (motorloggen ska säga
+  "referensen bortvald"), och att en fil som flyttats visas som SAKNAD.
+- **Att uppdateringen inte längre laddar ner av sig själv.** Klicka Sök uppdatering med
+  en nyare release publicerad: den ska rapportera fyndet och VÄNTA. Först "Ladda ner och
+  installera" får starta nedladdningen (och `prepare_update` före den, §8.8e).
 - **De två driftreglagen i den riktiga appen.** Rustsidan och panelen är mätta, men
   ingenting av det är sett i drift. Prova att slå av mock-data medan ACC är stängt —
   overlays ska bli tomma men fönstren ligga kvar, och motorloggen säga
@@ -1807,11 +1885,31 @@ Ett undantag att inte råka bryta: när en giltig referens ger `None` (spikskydd
 mållinjen, §8.8) ska **inget** delta visas, inte ACC:s. Att växla mellan två olika
 referenser mellan ramar får siffran att hoppa.
 
-Panelen kunde dessutom bara LÄGGA TILL en referens, aldrig ta bort den, och visade
-alltid "Ingen referens laddad" även när en låg sparad. Följden var att ett oväntat
-MoTeC-delta varken gick att förklara eller bli av med. Nu hämtas sökvägen med
-`get_globals` vid start och en "Ta bort referens"-knapp anropar `set_reference` med
-tom sträng; motorn ser det i `engine.config.json` och kör `ref.unload()`.
+**Panelen håller ett BIBLIOTEK av referenser, motorn känner bara till en.**
+`settings.references` är en lista med `{id, path, label, track, car}` och
+`reference_ld` är den VALDA sökvägen — det enda som går vidare till motorn
+(`engine.config.json`, §8.6g). Motorn ska inte behöva veta att det finns fler filer att
+välja mellan. Fem regler:
+- **Filerna kopieras inte in i appen.** De är stora, ligger redan där ACC lade dem, och
+  en kopia hade blivit inaktuell i samma stund man exporterade om varvet. Priset är att
+  en post kan peka på något som flyttats: den visas som SAKNAD i listan i stället för att
+  städas bort tyst — sökvägen är hela spåret av vad man valt.
+- **Bana och bil läses ur .ld-huvudet EN gång, vid tillägget**, och är sedan användarens
+  text (redigerbar, valfri). ACC:s eget bilnamn är `ferrari_296_gt3`. Metadatan skrivs
+  aldrig om senare: en post som tappar sin bana för att en extern disk är urkopplad är
+  sämre än en post med gammal men riktig text. Fälten styr BARA sortering och
+  igenkänning — motorn matchar banan mot huvudet själv (§8.8b).
+- **Huvudet läses i Rust ur fasta offset** (`read_ld_head`), uträknade ur
+  `ldparser.py:ldHead.fmt`: driver 158, vehicleid 222, venue 350, 64 byte var. Att dra in
+  en .ld-parser i Rust för tre textfält vore fel storlek på verktyg. Ser fältet ut som
+  binärskräp lämnas det TOMT i stället för att fylla panelen med kontrolltecken.
+- **`sanitize_references` är också MIGRERINGEN** från en enda referens: en
+  `reference_ld` utan post i listan läggs in. Utan det hade uppgraderingen sett ut att
+  kasta referensen man valt, eftersom panelen bara visar det som står i listan.
+- **Att ta bort den valda posten nollar `reference_ld` i samma sparning.** Annars fortsatte
+  deltat komma från en fil som inte längre står i listan — exakt det osynliga läge den
+  här paragrafen handlar om. Panelen kunde tidigare bara LÄGGA TILL en referens och
+  visade alltid "Ingen referens laddad" även när en låg sparad.
 
 ### 8.8c Namnbytet till SimMatrix: två saker som ALDRIG får ändras
 Bytet från "ACC Overlay" är med flit **bara kosmetiskt** —
@@ -1864,6 +1962,12 @@ setup.exe och updateraren skriver över den installation som faktiskt körs.
     Where-Object DisplayName -match SimMatrix | Select DisplayName,DisplayVersion,InstallLocation
   ```
   Står det `.msi` i den ena och `AppData\Local` i den andra är det den här buggen.
+- **ATT SÖKA OCH ATT INSTALLERA ÄR TVÅ HANDLINGAR.** Knappen "Sök uppdatering" gjorde
+  båda i ett klick: hittades en version laddades den ner direkt och appen startade om
+  sig själv — mitt i en session, utan att någon frågat. Sökningen rapporterar nu bara,
+  fyndet ligger kvar i `updFound`, och användaren väljer "Ladda ner och installera"
+  eller "Avvakta". Slå inte ihop dem igen: en omstart är den mest ingripande sak appen
+  kan göra, och den ska aldrig vara en bieffekt av att fråga.
 - **`process::exit(0)` i updateraren går förbi appens avslutsväg.**
   `tauri-plugin-updater`s `install_inner()` startar installeraren och avslutar
   processen direkt — varken `CloseRequested`-hanteraren eller `RunEvent::Exit` körs,

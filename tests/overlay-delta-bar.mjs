@@ -168,5 +168,41 @@ const REFS = {
         sw.text('deltaVal') === sw.api.DASH_D, JSON.stringify(sw.text('deltaVal')));
 }
 
+/* ── 6. MoTeC-spalten finns bara när en fil är vald ──────────────────────────
+   Spalten visade t.o.m. 0.5.8 sessionens bästa en gång till, alltså samma siffra som
+   spalten bredvid. Nu är den filens varvtid, och `motecMs` är det enda som avgör om
+   den finns. Två saker mäts, och det är den andra som är lätt att tappa: att spalten
+   FÖRSVINNER igen när fältet slutar komma (filen väljs bort i panelen) — en spalt som
+   blir kvar med en gammal tid är värre än ingen spalt.
+   `motecMs` är avsiktligt skilt från `refs.motec`: sista kontrollen visar att spalten
+   står kvar även när MoTeC-källan inte gäller varvet (ut-varv, fel bana). */
+{
+  const h = await open();
+  h.settle(FRAME(-0.20), 30);
+  check('utan motecMs finns ingen MoTeC-spalt', h.el('cellRef').style.display === 'none',
+        `display=${JSON.stringify(h.el('cellRef').style.display)}`);
+
+  h.settle({ ...FRAME(-0.20), motecMs: 136250 }, 30);
+  check('motecMs visar filens varvtid i mittspalten', h.text('tRef') === '02:16.250',
+        JSON.stringify(h.text('tRef')));
+  check('spalten visas när en fil är vald', h.el('cellRef').style.display === '',
+        `display=${JSON.stringify(h.el('cellRef').style.display)}`);
+  check('vänsterspalten visar fortfarande sessionens bästa', h.text('tBest') === '02:18.120',
+        JSON.stringify(h.text('tBest')));
+
+  // Filen bortvald i panelen: motorn slutar skicka fältet. MOTEC_HOLD_MS är 2 s, så
+  // hållningen måste hinna löpa ut — 40 Hz i harnessen betyder 25 ms per tick.
+  h.settle(FRAME(-0.20), 120);
+  check('spalten försvinner när filen väljs bort', h.el('cellRef').style.display === 'none',
+        `display=${JSON.stringify(h.el('cellRef').style.display)}`);
+
+  // Ut-varv/fel bana: `refs.motec` saknas, men filen är fortfarande vald.
+  const out = await open();
+  out.settle({ ...FRAME(null, { best: REFS.best }), motecMs: 136250 }, 30);
+  check('spalten står kvar när MoTeC-källan inte gäller varvet',
+        out.el('cellRef').style.display === '' && out.text('tRef') === '02:16.250',
+        `display=${JSON.stringify(out.el('cellRef').style.display)}, tid ${JSON.stringify(out.text('tRef'))}`);
+}
+
 console.log(failed ? `\n${failed} kontroll(er) misslyckades` : '\nAllt OK');
 process.exit(failed ? 1 : 0);

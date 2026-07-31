@@ -323,6 +323,17 @@ body.maximized .tb-btn .ico-max{display:none;}
   color:var(--faint);line-height:1;padding:4px 7px;border-radius:var(--ui-r-xs);
   border:1px solid var(--ui-hair);transition:color .14s ease,border-color .14s ease,background .14s ease;}
 .lrow.on .lstate{color:var(--green);border-color:rgba(13,230,34,0.32);background:rgba(13,230,34,0.10);}
+/* AV/PÅ per overlay, samma växlare som layoutraderna. Den låg tidigare som en
+   ögonknapp nere i förhandsvisningens verktygsrad, alltså långt från listan där man
+   väljer overlay och en knapp som bara gällde den valda — man fick byta rad för att
+   släcka något. Växlaren i raden gör tillståndet läsbart för ALLA overlays samtidigt
+   och ändringsbart utan att först välja rad.
+   Absolut positionerad som SYSKON till raden av samma skäl som layoutlistans växlare:
+   raden är en <button>, och en <label> med en <input> inuti en knapp är ogiltig HTML.
+   SELEKTORN MÅSTE VARA `.sw.osw` (två klasser) — se §8.4n, `.sw` sätter
+   position:relative och står längre ner i filen. */
+.lrowwrap .lrow.orow{padding-right:64px;}
+.sw.osw{position:absolute;right:10px;top:50%;transform:translateY(-50%);}
 .empty{padding:16px 18px;font-size:12px;color:var(--dim);line-height:1.55;}
 
 /* ── höger detaljpanel ── */
@@ -1272,6 +1283,81 @@ button.act:hover{border-color:var(--ui-edge-hi);
   background:linear-gradient(180deg,rgba(255,255,255,0.12),rgba(255,255,255,0.055));}
 button.act:active{transform:translateY(1px);}
 button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
+/* Två knappar sida vid sida (Om-flikens "ladda ner nu" / "avvakta"). `.act` är
+   fullbredd, så de behöver en rad som delar bredden — och `[hidden]`-regeln MÅSTE stå
+   här: en display-deklaration slår ut webbläsarens inbyggda [hidden]{display:none} och
+   raden hade legat framme hela tiden (§8.4f, samma fel fem gånger nu). */
+.actrow{display:flex;gap:8px;}
+.actrow[hidden]{display:none;}
+.actrow button.act{margin-top:8px;}
+/* Nedladdningen är valet man kom hit för; avvakta är utvägen och ska inte tävla. */
+.actrow .secondary{flex:0 0 auto;width:auto;color:var(--dim);
+  background:linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.02));}
+/* ── referensbiblioteket ─────────────────────────────────────────────────────
+   Listan följer samma regler som resten av panelen: en yta, rader avdelade av EN
+   linje, inga egna kort per rad och ingen yttre skugga. Den VALDA raden markeras i
+   amber — samma signalfärg som aktiv preset och vald box i skärmvyn ("gäller nu").
+   Grönt vore fel: grönt betyder PÅ, och en referens är inte något man slår på utan
+   ett av flera värden. */
+.reftools{display:flex;gap:8px;align-items:center;margin:8px 0 12px;}
+.reftools input[type="search"]{flex:1 1 auto;min-width:0;font:inherit;font-size:var(--ui-fs-sm);
+  color:var(--ink);background:var(--ui-inset);border:1px solid var(--ui-edge);
+  border-radius:var(--ui-r-sm);padding:8px 10px;height:32px;
+  box-shadow:inset 0 1px 3px rgba(0,0,0,0.5);}
+.reftools input[type="search"]::placeholder{color:var(--faint);}
+.reftools input[type="search"]:focus-visible{outline:2px solid var(--ui-focus);outline-offset:1px;}
+.reftools .pb-btn{flex:0 0 auto;height:32px;}
+.reflist{border:1px solid var(--ui-edge-dk);border-radius:var(--ui-r-md);
+  background:rgba(0,0,0,0.16);overflow:hidden;}
+.rfgroup{font-size:var(--ui-fs-xs);font-weight:700;letter-spacing:1px;text-transform:uppercase;
+  color:var(--dim);display:flex;align-items:center;gap:8px;padding:10px 12px 6px;}
+.rfgroup::before{content:"";width:2px;height:11px;background:var(--amber);border-radius:1px;}
+.refwrap{position:relative;}
+.refwrap + .refwrap{border-top:1px solid var(--ui-hair);}
+.refrow{width:100%;appearance:none;background:none;color:var(--ink);font:inherit;cursor:pointer;
+  display:flex;align-items:center;gap:10px;padding:8px 76px 8px 10px;min-height:44px;
+  border:1px solid transparent;text-align:left;transition:background .14s ease;}
+.refrow:hover{background:var(--hover);}
+.refrow:focus-visible{outline:2px solid var(--ui-focus);outline-offset:-2px;}
+.refrow.sel{background:var(--ui-surf-hi);}
+/* Markören är en ruta som ALLTID finns, tänd eller släckt. Ett kryss som dyker upp
+   och försvinner flyttar texten i sidled på varje val. */
+.rfmark{flex:0 0 auto;width:16px;height:16px;border-radius:var(--ui-r-xs);
+  border:1px solid var(--ui-edge);background:var(--ui-inset);
+  display:flex;align-items:center;justify-content:center;}
+.rfmark svg{width:11px;height:11px;stroke:var(--app-bg);fill:none;stroke-width:3;
+  stroke-linecap:round;stroke-linejoin:round;opacity:0;}
+.refrow.sel .rfmark{background:var(--amber);border-color:var(--amber);}
+.refrow.sel .rfmark svg{opacity:1;}
+.rftext{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.rfname{font-size:var(--ui-fs-md);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.rfsub{font-size:var(--ui-fs-xs);color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.refrow.missing .rfname{color:var(--dim);}
+.refrow.missing .rfsub{color:var(--red);}
+/* Knapparna är SYSKON till raden, inte barn: raden är en <button> och en knapp i en
+   knapp är ogiltig HTML (samma sak som layoutlistans meny). */
+.rfbtn{position:absolute;top:50%;transform:translateY(-50%);width:26px;height:26px;
+  display:flex;align-items:center;justify-content:center;appearance:none;background:none;
+  border:1px solid transparent;border-radius:var(--ui-r-sm);color:var(--faint);cursor:pointer;
+  transition:color .14s ease,background .14s ease;}
+.rfbtn:hover{color:var(--ink);background:var(--ctrl-hi);}
+.rfbtn:focus-visible{outline:2px solid var(--ui-focus);outline-offset:1px;}
+.rfbtn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round;}
+.rfedit{right:40px;} .rfdel{right:10px;}
+.rfdel:hover{color:var(--red);}
+/* Redigeringen sker PÅ PLATS, under raden. En dialogruta för tre korta fält hade
+   dolt listan man just letade i (samma skäl som layoutens namnfält i listfoten). */
+.rfform{display:flex;flex-wrap:wrap;gap:8px;padding:0 10px 10px;}
+.rfform[hidden]{display:none;}
+.rfform input{flex:1 1 120px;min-width:0;font:inherit;font-size:var(--ui-fs-sm);color:var(--ink);
+  background:var(--ui-inset);border:1px solid var(--ui-edge);border-radius:var(--ui-r-sm);
+  padding:6px 8px;height:30px;box-shadow:inset 0 1px 3px rgba(0,0,0,0.5);}
+.rfform input:focus-visible{outline:2px solid var(--ui-focus);outline-offset:1px;}
+.rfform button{flex:0 0 auto;height:30px;padding:0 12px;font:inherit;font-size:var(--ui-fs-sm);
+  font-weight:600;color:var(--ink);background:linear-gradient(180deg,rgba(255,255,255,0.075),rgba(255,255,255,0.032));
+  border:1px solid var(--ui-edge);border-radius:var(--ui-r-sm);box-shadow:var(--ui-sheen);cursor:pointer;}
+.rfform button:focus-visible{outline:2px solid var(--ui-focus);outline-offset:1px;}
 /* Sökvägen är data och inte prosa — monospacekänslan kommer av tabular-nums, så
    den blir läsbar utan att bryta typsnittsvalet. */
 .refpath{font-size:var(--ui-fs-sm);font-weight:500;color:var(--dim);margin:8px 0 4px;
@@ -1484,9 +1570,10 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
             <button class="sbtn" id="btnMove" title="Flytta — slår på edit-läge">
               <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3 9 6M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>
             </button>
-            <button class="sbtn" id="btnEye" title="Visa / dölj overlay" aria-pressed="true">
-              <svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="2.7"/></svg>
-            </button>
+            <!-- Här satt av/på som en ögonknapp t.o.m. 0.5.8. Den bor nu som en
+                 växlare i listraden till vänster: den gällde bara den VALDA overlayn,
+                 alltså fick man byta rad för att släcka något, och tillståndet för de
+                 andra syntes inte medan man stod i den här rutan. -->
             <button class="sbtn" id="btnReset" title="Nollställ läge och utseende">
               <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg>
             </button>
@@ -1597,17 +1684,24 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
       <div class="pane" id="pane-referens">
         <div class="titleband">
           <h2>Referensvarv</h2>
-          <p>Ladda ett MoTeC-varv (.ld) så visar delta-overlayn din tidsvinst mot det, alltid jämfört i distans. Motorn väljer automatiskt det snabbaste hela varvet ur filen.</p>
+          <p>Spara flera MoTeC-varv (.ld) och välj vilket delta-overlayn ska jämföra mot, alltid i distans. Motorn tar det snabbaste hela varvet ur filen och använder den bara på rätt bana och aldrig på ut-varvet.</p>
         </div>
         <div class="controls">
           <div class="cards single">
             <div class="card">
-              <h3>MoTeC-referens</h3>
-              <button class="act" id="loadRef">Ladda MoTeC .ld …</button>
-              <!-- Utan detta gick en referens att lägga till men aldrig att ta bort:
-                   den låg kvar i settings.json och gav ett delta även på andra banor. -->
-              <button class="act" id="clearRef" hidden>Ta bort referens</button>
-              <div class="refpath" id="refpath">Ingen referens laddad — delta mot session-bästa.</div>
+              <h3>MoTeC-bibliotek</h3>
+              <button class="act" id="loadRef">Lägg till MoTeC-fil (.ld) …</button>
+              <!-- Sökrutan finns för att biblioteket är tänkt att växa: ett varv per
+                   bana och bil blir snabbt trettio rader, och då är det bana eller bil
+                   man minns — inte filnamnet ACC gav den. -->
+              <div class="reftools">
+                <input type="search" id="refSearch" placeholder="Sök bana, bil eller namn" aria-label="Sök bland sparade referenser">
+                <button class="pb-btn" id="refNone" title="Kör utan referens — delta mot session-bästa">
+                  <span>Ingen referens</span>
+                </button>
+              </div>
+              <div class="reflist" id="refList"></div>
+              <div class="refpath" id="refpath">Ingen referens vald — delta mot session-bästa.</div>
             </div>
           </div>
         </div>
@@ -1626,6 +1720,14 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
             <div class="card">
               <h3>Uppdatering</h3>
               <button class="act" id="checkUpd">Sök uppdatering</button>
+              <!-- Sökningen LADDAR INTE NER. Knappen hette "sök uppdatering" men
+                   installerade allt i samma klick, alltså startade den en nedladdning
+                   och en omstart av appen mitt i det man höll på med. Fyndet visas i
+                   stället här, och valet är användarens. -->
+              <div class="actrow" id="updActions" hidden>
+                <button class="act" id="updGo">Ladda ner och installera</button>
+                <button class="act secondary" id="updLater">Avvakta</button>
+              </div>
               <div class="refpath" id="updmsg">Hämtar nya versioner från GitHub-releaser när det är konfigurerat.</div>
             </div>
             <div class="card">
@@ -2279,18 +2381,31 @@ function ov(id){ return overlays.find(o => o.id === id); }
 function renderList(){
   const list = $('list'); list.innerHTML = '';
   for (const o of overlays){
+    const wrap = document.createElement('div');
+    wrap.className = 'lrowwrap';
     const row = document.createElement('button');
-    row.className = 'lrow' + (o.enabled ? ' on' : '') + (o.id === selectedId ? ' sel' : '');
-    // Brickan säger SYNLIGHET. En overlay som inte ingår i layouten alls är ett
-    // tredje läge och skrivs ut som sådant — annars ser den likadan ut som en man
-    // bara dolt, och ögonknappen här skulle "inte göra något" (den visar en overlay
-    // som ändå inte har någon plats i layouten).
-    row.innerHTML = `<span class="ltitle"></span><span class="lstate">` +
-      `${o.member === false ? 'utanför' : (o.enabled ? 'på' : 'av')}</span>`;
+    row.className = 'lrow orow' + (o.enabled ? ' on' : '') + (o.id === selectedId ? ' sel' : '');
+    /* Brickan säger inte längre av/på — det gör växlaren till höger. Kvar är det ENDA
+       den kunde säga som växlaren inte kan: att overlayn står utanför den aktiva
+       layouten. Den är påslagen och syns ändå (layouten bestämmer bara vid
+       aktivering), men nästa gång man klickar på layouten släcks den — och det är
+       värt en markering. */
+    row.innerHTML = '<span class="ltitle"></span>' +
+      (o.member === false ? '<span class="lstate">utanför</span>' : '');
     row.querySelector('.ltitle').textContent = o.title;
     if (o.member === false) row.title = o.title + ' — ingår inte i den aktiva layouten (lägg till under Layout)';
     row.addEventListener('click', () => select(o.id));
-    list.appendChild(row);
+
+    const sw = document.createElement('label');
+    sw.className = 'sw osw';
+    sw.innerHTML = '<input type="checkbox"><span class="track"></span><span class="knob"></span>';
+    const swi = sw.querySelector('input');
+    swi.checked = !!o.enabled;
+    swi.setAttribute('aria-label', o.title + ' — visa overlayn');
+    swi.addEventListener('change', () => setVisible(o.id, swi.checked));
+
+    wrap.appendChild(row); wrap.appendChild(sw);
+    list.appendChild(wrap);
   }
 }
 
@@ -2304,8 +2419,6 @@ function select(id){
   $('opacity').value = o.opacity; $('opacityVal').textContent = Math.round(o.opacity * 100) + '%';
   $('aotSwitch').querySelector('input').checked = o.always_on_top;
   setState($('aotState'), o.always_on_top);
-  $('btnEye').classList.toggle('active', o.enabled);
-  $('btnEye').setAttribute('aria-pressed', String(o.enabled));
   renderOptions(o);
   // Efter renderOptions: de generiska reglagen finns först då, och deras värden
   // sattes programmatiskt (inget `input`-event att haka på).
@@ -2962,13 +3075,6 @@ $('btnMove').addEventListener('click', async () => {
   try { await invoke('set_edit_mode', { edit: editMode }); }
   catch(e){ toast('Kunde inte växla edit-läge: ' + errMsg(e), true); }
 });
-// Visa/dölj går genom SAMMA funktion som Layout-flikens ögonknapp. Två vägar till
-// samma tillstånd glider isär — och den ena skulle ha glömt att tona ner boxen i
-// skärmvyn, vilket är enda stället man ser att overlayn är dold men kvar i layouten.
-$('btnEye').addEventListener('click', () => {
-  const o = ov(selectedId); if (!o) return;
-  setVisible(o.id, !o.enabled);
-});
 $('btnReset').addEventListener('click', async () => {
   if (!selectedId) return;
   try { await invoke('reset_overlay', { id: selectedId }); await loadOverlays(); toast('Nollställd.'); }
@@ -3008,31 +3114,174 @@ $('aotSwitch').querySelector('input').addEventListener('change', async e => {
   catch(err){ toast('set_always_on_top: ' + errMsg(err), true); }
 });
 
-/* ── referens (MoTeC) ── */
-const NO_REF = 'Ingen referens laddad — delta mot session-bästa.';
-function showRef(path){
-  $('refpath').textContent = path || NO_REF;
-  $('clearRef').hidden = !path;
+/* ── referensbiblioteket (MoTeC) ─────────────────────────────────────────────
+   Flera sparade .ld-filer, EN vald. Rust äger listan, läser .ld-huvudet och
+   validerar; panelen ritar och skickar val. Samma arbetsfördelning som presets och
+   layouter — och samma skäl: valet ska betyda samma sak för motorn som för panelen,
+   och en jämförelse av sökvägar på två ställen glider isär.
+
+   Filerna KOPIERAS inte in i appen. De ligger kvar där ACC lade dem, så en post kan
+   peka på något som flyttats; en sådan rad visas som SAKNAD i stället för att städas
+   bort tyst. Sökvägen är hela spåret av vad man valt, och en rad som försvinner av
+   sig själv är omöjlig att förstå. */
+const NO_REF = 'Ingen referens vald — delta mot session-bästa.';
+let refs = [], refEditId = null, refQuery = '';
+
+const rfMatch = (r, q) =>
+  !q || [r.label, r.track, r.car, r.path].some(v => (v || '').toLowerCase().includes(q));
+
+function renderRefs(){
+  const box = $('refList');
+  box.innerHTML = '';
+  const active = refs.find(r => r.active);
+  $('refpath').textContent = active ? active.path : NO_REF;
+
+  if (!refs.length){
+    box.innerHTML = '<div class="empty">Inga sparade referenser än.<br>' +
+      'Lägg till en MoTeC-export (.ld) så jämför delta-overlayn mot den — bana och bil ' +
+      'fylls i ur filen och går att ändra.</div>';
+    return;
+  }
+  const q = refQuery.trim().toLowerCase();
+  const hits = refs.filter(r => rfMatch(r, q));
+  if (!hits.length){
+    box.innerHTML = '<div class="empty">Ingen sparad referens matchar sökningen.</div>';
+    return;
+  }
+  /* GRUPPERAT PÅ BANA. Det är den enda indelning som alltid är relevant: en referens
+     som inte är inspelad på banan man kör används inte alls (motorn hoppar över den,
+     §8.8b), så "vilka har jag för Spa" är den fråga man ställer. Bilen står i
+     underraden — man har sällan så många per bana att den behöver en egen nivå.
+     Poster utan bana hamnar sist: de har inte mindre värde, men de går inte att
+     sortera in bland de andra. */
+  const groups = new Map();
+  for (const r of hits){
+    const key = (r.track || '').trim() || '￿';       // sorteras sist
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  }
+  const keys = [...groups.keys()].sort((a, b) => a.localeCompare(b, 'sv'));
+  for (const key of keys){
+    const head = document.createElement('div');
+    head.className = 'rfgroup';
+    head.textContent = key === '￿' ? 'Utan bana' : key;
+    box.appendChild(head);
+    const rows = groups.get(key).sort((a, b) =>
+      (a.car || '').localeCompare(b.car || '', 'sv') || a.label.localeCompare(b.label, 'sv'));
+    for (const r of rows) box.appendChild(refRow(r));
+  }
 }
-// Visa vad som FAKTISKT är laddat vid start. Utan detta stod det "ingen referens"
-// trots att en låg sparad i settings.json — vilket är precis varför ett oväntat
-// MoTeC-delta kunde dyka upp utan att man förstod varför.
-(async () => {
-  try { showRef((await invoke('get_globals'))?.reference_ld || ''); } catch {}
-})();
+
+function refRow(r){
+  const wrap = document.createElement('div');
+  wrap.className = 'refwrap';
+
+  const row = document.createElement('button');
+  row.className = 'refrow' + (r.active ? ' sel' : '') + (r.missing ? ' missing' : '');
+  row.innerHTML = '<span class="rfmark"><svg viewBox="0 0 12 12" aria-hidden="true">' +
+    '<path d="m2.5 6.2 2.4 2.4L9.6 3.9"/></svg></span>' +
+    '<span class="rftext"><span class="rfname"></span><span class="rfsub"></span></span>';
+  row.querySelector('.rfname').textContent = r.label;
+  const file = r.path.split(/[\\/]/).pop();
+  row.querySelector('.rfsub').textContent = r.missing
+    ? 'Filen hittas inte: ' + r.path
+    : [r.car, file].filter(Boolean).join(' · ');
+  row.setAttribute('aria-pressed', String(!!r.active));
+  row.title = r.path;
+  /* Ett klick på den VALDA raden kopplar bort den. Det är samma handling sedd från
+     andra hållet, och alternativet vore en extra knapp för något man gör sällan.
+     Knappen "Ingen referens" finns kvar ovanför listan för den som letar efter en
+     uttrycklig väg. */
+  row.addEventListener('click', () => selectRef(r.active ? '' : r.id));
+
+  const edit = document.createElement('button');
+  edit.className = 'rfbtn rfedit';
+  edit.title = 'Ändra namn, bana och bil';
+  edit.setAttribute('aria-label', r.label + ' — ändra namn, bana och bil');
+  edit.innerHTML = '<svg viewBox="0 0 24 24"><path d="M4 20h4L20 8l-4-4L4 16v4Z"/><path d="M14 6l4 4"/></svg>';
+  edit.addEventListener('click', e => {
+    e.stopPropagation();
+    refEditId = refEditId === r.id ? null : r.id;
+    renderRefs();
+    const f = document.querySelector('.rfform input'); if (f) f.focus();
+  });
+
+  const del = document.createElement('button');
+  del.className = 'rfbtn rfdel';
+  del.title = 'Ta bort ur biblioteket (filen på disk rörs inte)';
+  del.setAttribute('aria-label', r.label + ' — ta bort ur biblioteket');
+  del.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  del.addEventListener('click', e => { e.stopPropagation(); removeRef(r); });
+
+  wrap.appendChild(row); wrap.appendChild(edit); wrap.appendChild(del);
+  if (refEditId === r.id) wrap.appendChild(refForm(r));
+  return wrap;
+}
+
+/* Namn, bana och bil är användarens text. De fylls ur .ld-huvudet när filen läggs
+   till, men ACC:s egna namn ("ferrari_296_gt3") är inte det man kallar bilen — och
+   BANAN i huvudet är den motorn jämför mot, inte den här texten. Att ändra fälten
+   här påverkar alltså bara sorteringen och igenkänningen, aldrig deltat. */
+function refForm(r){
+  const form = document.createElement('form');
+  form.className = 'rfform';
+  form.innerHTML =
+    '<input type="text" name="label" maxlength="64" placeholder="Namn" aria-label="Namn">' +
+    '<input type="text" name="track" maxlength="64" placeholder="Bana (valfritt)" aria-label="Bana">' +
+    '<input type="text" name="car" maxlength="64" placeholder="Bil (valfritt)" aria-label="Bil">' +
+    '<button type="submit">Spara</button>';
+  form.label.value = r.label; form.track.value = r.track || ''; form.car.value = r.car || '';
+  form.addEventListener('click', e => e.stopPropagation());
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    try {
+      refs = await invoke('update_reference', { id: r.id, label: form.label.value,
+                                                track: form.track.value, car: form.car.value });
+      refEditId = null; renderRefs();
+    } catch(err){ toast('Kunde inte spara: ' + errMsg(err), true); }
+  });
+  form.addEventListener('keydown', e => {
+    if (e.key === 'Escape'){ e.stopPropagation(); refEditId = null; renderRefs(); }
+  });
+  return form;
+}
+
+async function loadRefs(){
+  try { refs = await invoke('list_references'); }
+  catch { refs = []; }
+  renderRefs();
+}
+async function selectRef(id){
+  try { refs = await invoke('select_reference', { id }); }
+  catch(err){ return toast('Kunde inte välja referensen: ' + errMsg(err), true); }
+  renderRefs();
+  toast(id ? 'Referens vald.' : 'Referensen bortkopplad — delta mot session-bästa.');
+}
+async function removeRef(r){
+  try { refs = await invoke('remove_reference', { id: r.id }); }
+  catch(err){ return toast('Kunde inte ta bort: ' + errMsg(err), true); }
+  if (refEditId === r.id) refEditId = null;
+  renderRefs();
+  toast(`«${r.label}» borttagen ur biblioteket.`);
+}
 
 $('loadRef').addEventListener('click', async () => {
   try {
     const path = await T.dialog.open({ multiple: false, filters: [{ name: 'MoTeC', extensions: ['ld'] }] });
     if (!path) return;
-    await invoke('set_reference', { path });
-    showRef(path);
-  } catch(err){ $('refpath').textContent = 'Kunde inte öppna filen: ' + errMsg(err); }
+    // add_reference VÄLJER filen på köpet: man öppnar filväljaren för att man vill
+    // köra mot det varvet, och ett extra klick i listan efteråt hade bara varit ett
+    // steg att glömma.
+    refs = await invoke('add_reference', { path });
+    refQuery = ''; $('refSearch').value = '';
+    renderRefs();
+    toast('Referensen tillagd och vald.');
+  } catch(err){ toast('Kunde inte lägga till filen: ' + errMsg(err), true); }
 });
-$('clearRef').addEventListener('click', async () => {
-  try { await invoke('set_reference', { path: '' }); showRef(''); }
-  catch(err){ toast('Kunde inte ta bort referensen: ' + errMsg(err), true); }
-});
+$('refNone').addEventListener('click', () => selectRef(''));
+$('refSearch').addEventListener('input', e => { refQuery = e.target.value; renderRefs(); });
+
+loadRefs();
 
 /* ── kortkommando (växla race/edit) ──────────────────────────────────────────
    Kombinationen registreras GLOBALT i Windows, alltså kan den vara upptagen av ett
@@ -3115,9 +3364,22 @@ if ($('hkSet')) $('hkSet').addEventListener('click', () => {
 });
 if ($('hkReset')) $('hkReset').addEventListener('click', () => hkApply(HK_DEFAULT));
 
-/* ── uppdatering ── */
+/* ── uppdatering ──
+   ATT SÖKA OCH ATT INSTALLERA ÄR TVÅ HANDLINGAR. Knappen gjorde tidigare båda i ett
+   klick: hittades en version laddades den ner direkt och appen startade om sig själv
+   — mitt i en session, utan att någon frågat. Nu rapporterar sökningen bara, och
+   `updFound` bär fyndet tills användaren väljer.
+   Nedladdningen är fortfarande ETT klick bort, och `prepare_update` ligger kvar på
+   samma ställe: plugin:et gör `process::exit(0)` så fort installeraren är i gång,
+   vilket går förbi appens vanliga avslutsväg där positioner sparas (§8.8e). */
+let updFound = null;
+function updShowFound(upd){
+  updFound = upd || null;
+  $('updActions').hidden = !updFound;
+}
 $('checkUpd').addEventListener('click', async () => {
   const m = $('updmsg'); m.textContent = 'Söker …';
+  updShowFound(null);
   try {
     if (!T || !T.updater) throw new Error('updater-plugin saknas i detta bygge');
     const upd = await Promise.race([
@@ -3128,18 +3390,34 @@ $('checkUpd').addEventListener('click', async () => {
     // och den här texten får aldrig komma från två olika ställen.
     updSetResult(upd);
     if (!upd){ m.textContent = 'Du har senaste versionen.'; return; }
-    m.textContent = `Ny version ${upd.version} — laddar ner …`;
-    // Spara läge och stäng motorn INNAN installeraren startar: plugin:et gör
-    // process::exit(0) så fort installeraren är i gång, vilket går förbi appens
-    // vanliga avslutsväg (positioner sparas där).
-    try { await invoke('prepare_update'); } catch {}
-    await upd.downloadAndInstall();
-    m.textContent = 'Klart — starta om appen.';
+    updShowFound(upd);
+    m.textContent = `Ny version ${upd.version} finns (du kör v${appVersion || '?'}). `
+                  + 'Ladda ner nu, eller avvakta — appen startar om när installationen körs.';
   } catch(err){
     // Ett enda svepande "inte konfigurerat än" dolde tidigare ALLA fel — inklusive
     // ett riktigt installationsfel. Visa vad som faktiskt hände.
     m.textContent = 'Uppdatering misslyckades: ' + errMsg(err);
   }
+});
+$('updGo').addEventListener('click', async () => {
+  const upd = updFound; if (!upd) return;
+  const m = $('updmsg');
+  updShowFound(null);
+  m.textContent = `Laddar ner v${upd.version} …`;
+  try {
+    // Spara läge och stäng motorn INNAN installeraren startar (se ovan).
+    try { await invoke('prepare_update'); } catch {}
+    await upd.downloadAndInstall();
+    m.textContent = 'Klart — starta om appen.';
+  } catch(err){
+    m.textContent = 'Uppdatering misslyckades: ' + errMsg(err);
+    // Fyndet är fortfarande giltigt: ett nät som glappade ska inte kräva en ny sökning.
+    updShowFound(upd);
+  }
+});
+$('updLater').addEventListener('click', () => {
+  updShowFound(null);
+  $('updmsg').textContent = 'Uppdateringen väntar. Sök igen när du vill installera den.';
 });
 
 /* ── motorstatus via WS ── */
@@ -4051,10 +4329,13 @@ function renderLayoutList(){
     row.querySelector('.ltitle').textContent = l.name;
     row.addEventListener('click', () => { if (!l.active) activateLayout(l.id); });
 
-    /* Växlaren äger av/på. Att slå PÅ aktiverar layouten (samma väg som ett klick på
-       raden), att slå AV lämnar `active_layout` tomt — overlays står kvar som de är,
-       det är bara bindningen som släpper. Miniatyren och namnet räcker som beskrivning
-       av raden; tillståndet bor i växlaren, inte i en bricka bredvid den. */
+    /* Växlaren äger av/på, och den betyder samma sak åt båda hållen: PÅ skriver ut
+       layouten på skärmen (samma väg som ett klick på raden), AV släcker allt den tände
+       och lämnar `active_layout` tomt. Att slå av lämnade tidigare kvar exakt samma
+       bild på skärmen — växlaren såg då ut att inte fungera, vilket är precis vad som
+       rapporterades. Lägena finns kvar; de kommer tillbaka när layouten aktiveras igen.
+       Miniatyren och namnet räcker som beskrivning av raden; tillståndet bor i
+       växlaren, inte i en bricka bredvid den. */
     const sw = document.createElement('label');
     sw.className = 'sw lsw';
     sw.innerHTML = '<input type="checkbox"><span class="track"></span><span class="knob"></span>';
@@ -4111,7 +4392,7 @@ async function activateLayout(id){
   await loadOverlays();
   await loadLayouts();
   renderLayoutTab();
-  if (id) toast('Layout aktiverad.');
+  toast(id ? 'Layout aktiverad.' : 'Ingen layout aktiv — alla overlays släckta.');
 }
 
 async function dupLayout(l){
@@ -4218,44 +4499,37 @@ async function layApplyPreset(o, p){
    med ögonknappen i Overlays-fliken kastade ut den ur layouten, och att tända den
    igen la in den i den layout som råkade vara aktiv då. Att bygga en layout och
    sedan släcka något en stund gick alltså inte. */
+/* + och × i Layout-fliken. `set_member` drar med sig av/på i Rust, och det är
+   avsiktligt åt BÅDA hållen: att lägga till en overlay i layouten är att vilja se den
+   (annars får man en box i skärmvyn som inte motsvarar något på skärmen), och att ta
+   bort den är att vilja bli av med den (annars ligger den kvar över spelet med × redan
+   klickat). Motsatt riktning gäller inte — `set_enabled` rör aldrig medlemskapet. */
 async function layAdd(id){
   try { await invoke('set_member', { id, member: true }); }
   catch(err){ toast('Kunde inte lägga till overlayn: ' + errMsg(err), true); return; }
-  const o = ov(id); if (o) o.member = true;
-  /* Att lägga till en overlay i layouten är att vilja SE den. Var den dold sedan
-     tidigare tändes den inte av medlemskapet ensamt, och resultatet var en box i
-     vyn som inte motsvarade något på skärmen — den vanligaste förvirringen i
-     fliken. Ögonknappen finns kvar för att dölja den igen utan att ta bort den. */
-  if (o && !o.enabled){ await setVisible(id, true); return; }
+  const o = ov(id); if (o){ o.member = true; o.enabled = true; }
   renderList(); renderLayoutTab(); loadLayouts();
 }
 async function layRemove(id){
   try { await invoke('set_member', { id, member: false }); }
   catch(err){ toast('Kunde inte ta bort overlayn: ' + errMsg(err), true); return; }
-  const o = ov(id); if (o) o.member = false;
+  const o = ov(id); if (o){ o.member = false; o.enabled = false; }
   renderList(); renderLayoutTab(); loadLayouts();
 }
-// Visa/dölj utan att röra medlemskapet. Samma väg som ögonknappen i Overlays-fliken,
-// så de två flikarna aldrig kan säga olika saker om samma overlay.
+/* Visa/dölj EN overlay, utan att röra medlemskapet. Samma väg för växlaren i
+   Overlays-listan och ögonknappen i Layout-fliken, så de två flikarna aldrig kan säga
+   olika saker om samma overlay.
+
+   Att tända något som står UTANFÖR den aktiva layouten lägger inte längre till det i
+   layouten (det gjorde det t.o.m. 0.5.8, med en toast). Det är undantaget från "layouten
+   bestämmer": man vill se overlayn NU, inte skriva om den layout man byggt. Nästa
+   aktivering av layouten släcker den igen — därför bär raden en "utanför"-markering. */
 async function setVisible(id, on){
   const o = ov(id);
-  /* Att VISA något som inte ingår i layouten kan inte lämna det osynligt — då gör
-     knappen ingenting och det ser trasigt ut. Den lägger därför till overlayn i
-     layouten på köpet, och säger det. Motsatsen (dölja → ta bort) är precis det
-     som inte får hända, och den vägen finns inte: `layRemove` är enda stället som
-     tar bort medlemskap. */
-  if (on && o && !o.member){
-    await layAdd(id);
-    toast('Overlayn lades till i layouten.');
-  }
   if (o) o.enabled = on;
   renderList(); renderLayoutTab();
   try { await invoke('set_enabled', { id, enabled: on }); }
   catch(err){ toast('Kunde inte visa/dölja: ' + errMsg(err), true); }
-  if (selectedId === id){
-    $('btnEye').classList.toggle('active', on);
-    $('btnEye').setAttribute('aria-pressed', String(on));
-  }
   loadLayouts();
 }
 

@@ -265,15 +265,23 @@ let _osHidden = (INIT && INIT.osHidden === true) ? true : null;
    Utan Tauri (OBS, webbläsare) finns ingen av/på-knapp; då är den alltid på. */
 let _enabled = !(INIT && INIT.enabled === false);
 
-/** Skalet talar om att overlayn slagits av eller på. Exporterad för testerna. */
+/** Skalet talar om att overlayn slagits av eller på. Exporterad för testerna.
+ *
+ *  Kör ALLTID om beslutet, även när värdet är oförändrat. Skälet är att eventet inte
+ *  bara betyder "värdet ändrades" utan "skalet har just rört fönstret": en
+ *  layoutaktivering skickar `enabled` för varje overlay i registret, och med grinden
+ *  PÅ måste den som redan var påslagen ändå döljas igen. Den tidigare snabbutgången
+ *  (`if (next === _enabled) return`) gjorde att fönstret blev kvar synligt över
+ *  skrivbordet med spelet stängt — och inte gick att få bort, eftersom nästa
+ *  layoutklick skickade samma oförändrade värde. */
 export function setEnabled(v) {
-  const next = v !== false;
-  if (next === _enabled) return;
-  _enabled = next;
+  _enabled = v !== false;
   // Skalet har precis visat eller dolt fönstret själv, så vår bokföring över vad
   // GRINDEN har gjort är inte längre giltig. Nollställ den innan vi räknar om.
   _osHidden = null;
-  if (_enabled) _applyOsVisibility(_gateHidden === true);
+  // force: bokföringen är nollställd, alltså finns inget "vi dolde det" att luta sig
+  // mot — men beslutet är ändå vårt att skriva ut (se _applyOsVisibility).
+  if (_enabled) _applyOsVisibility(_gateHidden === true, true);
 }
 
 /* Dölj även OS-FÖNSTRET, inte bara innehållet.
@@ -283,7 +291,7 @@ export function setEnabled(v) {
    eftersom overlayn ändå är osynlig i det läget syns ingen skillnad.
    CSS-dölningen ligger kvar som första försvar: den verkar direkt, medan
    fönsteranropet är async. */
-function _applyOsVisibility(hidden) {
+function _applyOsVisibility(hidden, force = false) {
   /* En AVSTÄNGD overlay ägs HELT av skalet — grinden får varken dölja eller visa den.
      Utan detta återställde grinden fönstret vid varje återanslutning: att tabba ut ur
      ACC stallar det delade minnet (connected:false → grinden döljer), och när man
@@ -295,12 +303,17 @@ function _applyOsVisibility(hidden) {
   // Edit-läget hanteras i _applyGate (både fönster och CSS); här är `hidden` redan
   // det slutgiltiga beslutet.
   const want = hidden;
-  if (want === _osHidden) return;
+  if (!force && want === _osHidden) return;
   // Visa BARA fönster vi själva har dolt. Utan det anropades show() på första
   // anslutna ramen, och en AVSTÄNGD overlay (som Rust skapar dold) hade då dykt upp
   // på skärmen. Overlayns synlighet är skalets beslut; grinden får bara låna den
   // tillfälligt.
-  if (!want && _osHidden !== true) { _osHidden = want; return; }
+  // `force` är undantaget och kommer BARA från setEnabled, alltså från skalet självt:
+  // då är overlayn påslagen (kontrollerat ovan) och grinden är det enda som kan vilja
+  // hålla den dold — så beslutet här ÄR det slutgiltiga. Med grinden på ropar skalet
+  // aldrig show() själv (lib.rs:apply_visibility), och utan den här vägen hade en
+  // påslagen overlay då aldrig kommit fram när ACC ansluter.
+  if (!want && _osHidden !== true && !force) { _osHidden = want; return; }
   _osHidden = want;
   try {
     const T = globalThis.__TAURI__;

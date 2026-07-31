@@ -377,5 +377,38 @@ const hideCount = (from = 0) => writes.slice(from).filter((w) => w.value === 'hi
   timers.restore();
 }
 
+/* ── 12. Skalet rör fönstret utan att av/på ÄNDRAS ────────────────────────
+   Rapporterat (0.5.8): med "Endast när ACC kör" på och spelet stängt dök overlays upp
+   när man aktiverade en layout — och gick inte att få bort igen. Två saker gick fel
+   samtidigt, och båda är fixade på var sitt ställe:
+
+     • lib.rs ropade show() på fönstret trots att grinden var på (nu: aldrig, se
+       apply_visibility);
+     • bus.js hoppade ur setEnabled när värdet var OFÖRÄNDRAT, alltså gjorde ingenting
+       åt fönstret skalet just visat — och nästa layoutklick skickade samma oförändrade
+       värde, så det gick inte att ångra heller.
+
+   `activate_layout` skickar `enabled` för VARJE overlay i registret, alltså också för
+   dem som redan var på. Det är precis det fallet som mäts här. */
+{
+  const { WsBus, setEnabled } = await loadBus(true, { enabled: true, osHidden: true });
+  const bus = new WsBus();
+  bus._emit({ connected: false });                   // ACC kör inte: grinden döljer
+  winCalls.length = 0;
+
+  setEnabled(true);                                  // layoutaktivering, oförändrat värde
+  check('oförändrat enabled med grinden på döljer fönstret igen',
+        winCalls.includes('hide') && !winCalls.includes('show'),
+        winCalls.join(',') || 'inga anrop');
+
+  // Och åt andra hållet: med ACC igång ska samma event ge tillbaka fönstret. Skalet
+  // visar det inte själv när grinden är på, så det MÅSTE ske här.
+  bus._emit({ connected: true });
+  winCalls.length = 0;
+  setEnabled(true);
+  check('oförändrat enabled med ACC igång visar fönstret',
+        winCalls[winCalls.length - 1] === 'show', winCalls.join(',') || 'inga anrop');
+}
+
 console.log(failed ? `\n${failed} kontroll(er) misslyckades` : '\nAllt OK');
 process.exit(failed ? 1 : 0);
