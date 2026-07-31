@@ -23,6 +23,7 @@ from . import http_static
 from .frame import Frame
 from .delta import Reference
 from .laps import LapRecorder
+from .state import SessionState
 from .sources.mock import MockSource
 from .sources.acc import AccSource
 from .sources.acc_broadcast import AccBroadcast, find_config
@@ -52,6 +53,11 @@ def parse_args():
 # entries är statisk; skicka om den så här ofta även när den inte ändrats, så en
 # klient som ansluter mitt i loppet (ny OBS-flik) inte blir utan förarnamn.
 ENTRIES_RESEND_S = 5.0
+
+# Varvhistoriken följer samma kontrakt (frame.py): skickas vid ändring — alltså en
+# gång per varv — plus en omsändning så här ofta, så en OBS-flik som öppnas mitt i
+# loppet får hela loggen och inte bara varven som kommer efter den.
+LAPS_RESEND_S = 5.0
 
 # Varför en referens inte används loggas EN gång per skäl. Utan det är det osynligt
 # varför deltat plötsligt kommer från ACC i stället för filen man valt.
@@ -163,6 +169,12 @@ async def run():
     # RIKTIGA ACC-ramar: mock-telemetri får aldrig blandas in i en referens som
     # overlays sedan jämför äkta körning mot (samma regel som §8.6e).
     laps = LapRecorder()
+    # Sessionens identitet + varvhistoriken (varvtidsloggen). Matas med VARJE ram, till
+    # skillnad från `laps` ovan: regeln "mock får aldrig hamna i en referens" gäller
+    # KURVOR som äkta körning jämförs mot. En logg med mock-tider medan mock-läget är
+    # på är ärlig — och enda sättet loggen går att se utan spelet. Byter källan töms
+    # listan så de två aldrig står bredvid varandra (state.py).
+    state = SessionState()
 
     root = Path(args.root)
     if root.exists():
@@ -229,6 +241,7 @@ async def run():
         period = 1.0 / args.hz
         last_cfg_check = 0.0
         last_entries_sent = 0.0
+        last_laps_sent = 0.0
         acc_errs = 0
         while True:
             t = time.perf_counter()
@@ -299,6 +312,16 @@ async def run():
             # panelen tar bort spalten i samma sekund utan att overlayn behöver veta
             # något om filhantering.
             frame.motecMs = ref.total_ms()
+
+            # Varvhistoriken. Skickas vid ändring (en gång per varv) plus en
+            # omsändning var LAPS_RESEND_S, precis som `entries`. Att skicka listan
+            # varje ram hade varit gratis att skriva och dyrt att köra: den ändras en
+            # gång per två minuter.
+            state.update(frame)
+            if state.laps_dirty or t - last_laps_sent > LAPS_RESEND_S:
+                frame.laps = state.history()
+                last_laps_sent = t
+                state.mark_laps_sent()
 
             # Broadcasting läggs PÅ ramen, den ersätter inget. Samma inkapsling som
             # ACC-läsningen: en bugg här får inte ta ner motorn (§8.6).

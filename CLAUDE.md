@@ -15,7 +15,7 @@
 > X" i §7).
 ## 1. Vad projektet är
 Modulärt overlay-paket för **Assetto Corsa Competizione (ACC)**.
-Version 0.5.9.
+Version 0.5.10.
 - **Funktionellt** som **Race Element**: lätt, rensat, praktiskt, ingen FPS-förlust.
 - **Visuellt** som **RaceLab**: mörkt, polerat, animerat, premium.
 - Kvalitetsribban är hög och användaren är detaljpetig ner till pixelnivå.
@@ -608,10 +608,25 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
 | 2 | Delta-graf + minisektorer + hörnkarta | **ej byggd** | hörnkarta/kurvnummer/graf är **banberoende, ritas live** — hårdkoda ALDRIG kurvform |
 | 3 | Inputs-HUD (växel/fart/ratt/pedaler) | delvis (inputs-trace KLAR & kopplad) | ratt-vinkel + växel/fart-modul återstår |
 | 4 | Inputs-trace (gas/broms + staplar) | KLAR, kopplad på bussen | ABS=gult trace, TC=blått; Canvas rullande; tidsfönster 2–10 s valbart; spökspår mot VALD delta-källa (§8.8f) |
-| 5 | Laptime log | **ej byggd** | röd rail, rubriker i amber, delta grön/röd |
+| 5 | **Laptime log** | KLAR (rader+historik), kopplad på bussen | 6 varv + löpande, guldstreck på bästa, depåvarv nedtonade; sektorer väntar på fältskörden (§5c) |
 
 **Nästa naturliga bygge:** en overlay i taget, helt klar (funktion+look+animation) innan nästa.
 Mät referensbilder pixel-exakt FÖRST; bekräfta struktur i EN avstämning innan kod.
+
+### 5c. Varvtidsloggens radantal är FAST
+Sex varvrader plus en löpande, räknade ur standardhöjden (§4). Det ser ut som en
+självklar option att göra ställbar och är det inte: `contentHeight` i registret är
+STATISK, och Layout-flikens skärmvy ritar boxen ur den. Ett ställbart radantal ändrar
+den ritade höjden utan att talet följer med, alltså en box som ljuger om hur mycket
+plats overlayn tar. Vill man ändå ha det finns delta-barens väg (§5b): bygg fönstret
+för det största läget och låt färre rader lämna tom yta — men då är dödytan tillbaka,
+och den är dyr (§4).
+
+Kolumnen DELTA är **ofärgad när man jämför mot sessionens bästa**. Varje varv utom det
+bästa är långsammare än det bästa per definition, så tecknet kan inte variera — och en
+färg som aldrig växlar säger ingenting, den gör bara kolumnen till en vägg av rött över
+spelet. I läget "föregående varv" VÄXLAR tecknet, och där är grönt/rött rätt. Samma
+regel som §4: färg är betydelse, inte dekoration.
 
 ### 5b. Delta-barens tre spalter
 Vänster = **sessionens bästa** (ditt), mitten = **den valda MoTeC-filens varvtid**,
@@ -647,6 +662,10 @@ engine/acc_engine/         motorn: __main__, bus, http_static, frame, delta, lap
                            sources/{mock,acc,acc_broadcast}
 engine/acc_engine/laps.py  spelar in varv ur ramarna → förra/bästa varvet som
                            fullvärdiga referenser (delta + pedalkurva), §8.8f
+engine/acc_engine/state.py sessionens identitet + VARVHISTORIKEN (ramens `laps`).
+                           Skild från laps.py: den kastar varv som inte duger som
+                           referens, loggen ska visa dem ändå. Äger också
+                           varvgränsregeln som båda använder (§8.8h)
 engine/acc_test.py         delade minnet mot riktiga ACC (kör med spelet igång)
 engine/broadcast_test.py   Broadcasting mot riktiga ACC (kör med spelet igång)
 engine/build_sidecar.py    PyInstaller → src-tauri/binaries/acc-engine-<triple>.exe
@@ -656,6 +675,8 @@ src-tauri/src/lib.rs       fönstermanager, kommandon, sidecar+Job Object, hotke
 src-tauri/tauri.conf.json  control-fönster, updater, externalBin, bundle.resources
 tests/panel-layout.mjs     layout-flikens geometri + driftblocket + hjulskrollen,
                            mätt i headless Chrome över CDP
+tests/session_state.py     varvhistoriken: None=oförändrad mot []=tömd (§8.8h)
+tests/overlay-laptime-log.mjs  varvlistan i overlayn, mot trasiga HTML-kopior
 tests/mock_toggle.py       mock-data av/på i drift, via engine.config.json
 tests/overlay-window-fit.mjs  ryms overlayn + sin skugga i fönstret? (Chrome, HTTP)
 tests/                     regressionstester — läs tests/README.md FÖRST, den
@@ -716,6 +737,18 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   skroll. Att panelen inte kastar något fel under uppstart ingår i mätningen — den låg
   tidigare tyst nog att ett kastat undantag i titelraden inte syntes.
 
+- **Varvhistoriken och varvtidsloggen, i tre lager.** `tests/session_state.py`
+  (35 kontroller) mäter kontraktet, vad som inte får in i listan och de delade
+  varvgränsreglerna; fyra medvetet trasiga varianter är körda och samtliga föll.
+  `tests/overlay-laptime-log.mjs` (33) mäter overlayn mot fyra trasiga HTML-kopior,
+  som alla föll. `overlay-window-fit` mäter loggen vid 0,6/1,0/1,6 och utan INIT
+  (320×200 i ett fönster på 360×246), och `overlay-options` kontroll 15–16 att alla
+  sex färgalternativ styr en token overlayn faktiskt läser. Utseendet är dessutom
+  RENDERAT och granskat i Chrome i båda jämförelselägena — det var så färgvalet i
+  delta-kolumnen (§5c) rättades.
+  **Den fjärde trasiga varianten hittade ett hål i harnessen:** `textContent` var en
+  vanlig egenskap och loggades inte, så kontrollen "skriver inget när inget ändrats"
+  passerade på en overlay utan ändringskontroll. `makeEl` loggar nu textskrivningar.
 - **Layout-flikens geometri mätt i Chrome** (`tests/panel-layout.mjs`, 1440×900 mot en
   Tauri-stubb): skärmvyn har skärmens proportioner och fyller rutan, varje box ligger och
   mäter exakt som overlayns INNEHÅLL gör (olika mått, skala, padding och position per
@@ -768,6 +801,17 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   står kvar när MoTeC-KÄLLAN inte gäller varvet. Kört mot 0.5.8 — fem kontroller föll.
 
 ### Kvar att verifiera — läs detta först om du tar över
+- **Varvtidsloggen mot riktig ACC.** Allt är mätt mot syntetiska ramar och mock.
+  Fyra saker: att varv faktiskt bokförs när du passerar mållinjen (loggen ska fyllas
+  varv för varv), att ut- och in-varv märks som depåvarv, att listan TÖMS när du byter
+  session (träning → kval) och när du byter bana, och att en OBS-källa som öppnas mitt
+  i loppet får hela historiken inom 5 s. Den sista är den enda vägen att kontrollera
+  omsändningen.
+- **`engine_smoke.py` och `mock_toggle.py` kördes INTE** i samband med 0.5.10: den
+  installerade appen låg igång och höll port 8777, så testets egen motor kunde inte
+  binda och testet mätte den andra motorn i stället (34 fält i stället för 35). Kör dem
+  med appen stängd. Att testet inte MÄRKER att det pratar med fel motor är i sig värt
+  att åtgärda.
 - **Layoutväxlaren i drift, med grinden i BÅDA lägena.** Det var den rapporterade buggen
   (0.5.8): med "Endast när ACC kör" på och spelet stängt dök overlays upp när man
   aktiverade en layout, och gick inte att få bort. Fixen sitter på två ställen (skalet
@@ -2060,6 +2104,39 @@ sig långsammast, alltså i kurvorna där kurvan har mest form.
 Spikskyddet (§8.8) delas av båda referenssorterna genom `delta.lap_delta()`. Det är den
 sortens regel som blir fel i den andra kopian.
 
+### 8.8h Varvhistoriken: `null` är OFÖRÄNDRAD, `[]` är TÖMD
+Alla fält i ramen beskriver NUET. Varvtidsloggen behöver HISTORIK, och en lista går
+inte att skicka 40 gånger i sekunden — den ändras en gång per två minuter. `laps`
+följer därför samma kontrakt som `entries` (§8.6d): skickas vid ändring plus en
+omsändning var 5:e sekund, så en OBS-flik som öppnas mitt i loppet får hela loggen.
+
+**Men det finns en TREDJE betydelse som `entries` inte har, och den är hela fällan:**
+`[]` betyder TÖMD — ny session, ny bana, eller byte mellan mock och riktig körning.
+En konsument som latchar `null` (som den måste) och behandlar `[]` som "inget nytt"
+visar förra sessionens varv resten av kvällen. Felet syns inte förrän någon kör två
+sessioner i rad, alltså inte i en enda testkörning. `Array.isArray(f.laps)` skiljer
+dem åt; en sanningskontroll gör det inte.
+
+**Historiken bor i `state.py` och inte i `laps.py`, och det är inte en smaksak.**
+`LapRecorder._finish()` KASTAR varv som inte duger som referenskurva — depån berörd,
+täcker inte 90 % av banan, orimlig tid. Ett in-varv har en riktig varvtid och hör
+hemma i loggen, märkt. Historiken kan alltså inte vara en biprodukt av inspelningen.
+Två följder:
+- **`SessionState.update()` körs på VARJE ram, även mock.** Regeln "mock får aldrig
+  hamna i en referens" (§8.6e) gäller KURVOR som äkta körning jämförs mot; en logg med
+  mock-tider medan mock-läget är på är ärlig, och enda sättet overlayn går att designa
+  utan spelet. Blandning förhindras i stället genom att listan TÖMS vid källbyte —
+  och bara vid källbyte: en kort ACC-tapp mitt i ett varv får inte kasta loggen.
+- **Motorn skickar `{n, ms, pit}` och räknar inte ut bästa varvet eller deltat.** Båda
+  hör till overlayn, precis som `refs` (§8.8f): reglaget "jämför mot" väljer mellan
+  sessionens bästa och föregående varv, och motorn ska inte veta något om panelens
+  inställningar.
+
+`lap_transition()` och `resolve_lap_ms()` bor i `state.py` och importeras av `laps.py`.
+De fanns i två kopior — samma sorts regel som `delta.lap_delta()`, alltså en som blir
+fel i den andra kopian. Importen går bara åt ett håll: `state.py` känner inte till
+`laps.py`.
+
 ### 8.8g Kortkommandot går att byta — tre saker som då slutar hålla
 Ctrl+Alt+Space registreras GLOBALT i Windows och kan vara upptagen av ett annat program.
 Det var hela skälet att göra den utbytbar (Inställningar-fliken), och bytet drog med sig
@@ -2108,8 +2185,8 @@ Handlern tar **ett** argument (`ws`), inte `(ws, path)`.
 
 ## 9. Så verifierar du utan att gissa
 Testerna ligger i `tests/` — **`tests/README.md` är sanningskällan** för vad varje test
-bevakar och hur man visar att det biter. `pnpm test` kör de sex
-overlay-testerna; de sex Python-testerna körs var för sig från repo-roten.
+bevakar och hur man visar att det biter. `pnpm test` kör de sju
+overlay-testerna; de sju Python-testerna körs var för sig från repo-roten.
 `pnpm test:panel` kör de två testerna med ett yttre beroende (Chrome): panelens
 layouttest och `overlay-window-fit`. De bor i ett eget CI-JOBB som inte gatar releasen — bygget behöver ingen
 webbläsare, och en releasepipeline som faller på att en runner saknar en är fel sorts

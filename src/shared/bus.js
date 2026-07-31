@@ -32,6 +32,8 @@
 //              så ligger spöket i linje med det aktiva spåret, trots att trace-axeln
 //              är TID och referensen är indexerad på POSITION.
 //
+//   laps       array|null   varvhistorik [{n, ms, pit}, …], äldst först. SE NEDAN.
+//
 // Broadcasting (ACC:s UDP-API, andra bilar). Alla null när det är av:
 //   cars       array|null   per bil {i, spline, pos, laps, loc, kmh, deltaMs, bestMs …}
 //   entries    obj|null     carIndex → {num, name, team, cls}. SE NEDAN.
@@ -42,6 +44,13 @@
 // 5:e sekund (så en OBS-flik som öppnas mitt i loppet också får den). `null` betyder
 // alltså OFÖRÄNDRAD, inte BORTA — latcha senaste värdet, precis som HOLD_MS-mönstret
 // i §8.5. `cars` skickas varje ram.
+//
+// VIKTIGT om `laps`: samma kontrakt som `entries` — men med en TREDJE betydelse som
+// är lätt att missa. `null` = oförändrad, och `[]` = TÖMD (ny session, ny bana, eller
+// byte mellan mock och riktig körning). En overlay som latchar `null` måste alltså
+// behandla `[]` som "rensa", annars ligger förra sessionens varv kvar på skärmen.
+// Bästa varvet och deltat mellan raderna räknas ut av OVERLAYN ur listan — motorn
+// levererar varven och väljer inte hur de jämförs (samma regel som `refs`).
 
 export const WS_URL = 'ws://127.0.0.1:8777';
 

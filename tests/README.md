@@ -8,6 +8,7 @@ här står vad testet mäter och hur man visar att det biter.
 ```
 node tests/overlay-delta-bar.mjs      # flicker i delta-baren (kärnan)
 node tests/overlay-inputs-trace.mjs   # canvas-traces: Hz-tak, tidsbaserad utjämning
+node tests/overlay-laptime-log.mjs    # varvlistan: null=oförändrad mot []=tömd
 node tests/overlay-loop.mjs           # renderloopens takt under jitter
 node tests/overlay-gate.mjs           # synk-grinden: blinkar overlayn?
 node tests/overlay-options.mjs        # typade alternativ, före första paint
@@ -17,12 +18,13 @@ node tests/overlay-window-fit.mjs     # ryms overlayn + skuggan i fönstret? (Ch
 python tests/acc_source.py            # "ingen ny data" != frånkopplad, ut-varv
 python tests/delta_source.py          # vilken referens deltat kommer från
 python tests/lap_recorder.py          # motorns egna varvinspelningar (förra/bästa)
+python tests/session_state.py         # sessionens varvhistorik (varvtidsloggen)
 python tests/engine_smoke.py          # motorn: ramschema, takt, portkonflikt
 python tests/motec_reference.py       # MoTeC-delta mot en riktig .ld
 python tests/broadcast_protocol.py    # Broadcasting-UDP mot en falsk ACC-server
 python tests/mock_toggle.py           # mock-data av/på i drift (engine.config.json)
 ```
-`pnpm test` kör de sex overlay-testerna. `pnpm test:panel` kör de två som behöver en
+`pnpm test` kör de sju overlay-testerna. `pnpm test:panel` kör de två som behöver en
 webbläsare (panel-layout och overlay-window-fit). Python-testerna körs **från
 repo-roten**.
 
@@ -119,6 +121,36 @@ Utjämningskontrollen räknar RENDERINGAR, inte väggklockstid. Ett Hz-tak gör 
 ackumulerad `dt` inte landar jämnt på en godtycklig tidpunkt, och den artefakten såg ut
 som en bugg utan att vara det. Signaturen för den gamla per-frame-lerpen är i stället att
 samma antal renderingar alltid ger samma värde, hur lång tid de än tog.
+
+## overlay-laptime-log.mjs
+Varvtidsloggen: rätt varv på rätt rad, och rätt sak när listan TÖMS. Tre saker som
+inte syns om man tittar på overlayn:
+
+- **`laps: null` mot `laps: []`.** Motorn skickar listan bara när den ändrats, så
+  overlayn måste latcha `null` — men `[]` betyder TÖMD och måste slå igenom.
+- **Jämförelsen.** Reglaget `compare` byter vad delta-kolumnen betyder, och visar
+  overlayn fel jämförelse ser siffrorna precis lika rimliga ut. Varje läge har därför
+  helt skilda värden i testramen. Samma sorts kontroll som `delta-source` i
+  `overlay-delta-bar.mjs`.
+- **Att ingenting skrivs när ingenting ändrats.** Listan ändras en gång per varv medan
+  loopen går 10 ggr/s.
+
+Argumentet får vara en git-revision **eller en sökväg till en HTML-fil**. Filvägen
+finns för att overlayn är ny: det går inte att köra mot "före fixen", så tänderna
+bevisas mot medvetet trasiga KOPIOR i stället för genom att redigera originalet.
+```
+node tests/overlay-laptime-log.mjs /tmp/trasig.html
+```
+Fyra varianter är körda och samtliga föll: `[]` behandlat som oförändrat (3 kontroller
+föll), äldst överst (18), textskrivning utan ändringskontroll (1), och
+`compare`-reglaget ignorerat (3).
+
+**Den sista av dem hittade ett hål i HARNESSEN.** Varianten utan ändringskontroll
+passerade först, eftersom `textContent` var en vanlig egenskap på det fejkade
+elementet och alltså inte loggades — kontrollen mätte ingenting. `makeEl` loggar nu
+textskrivningar (`type: 'text'`, utan `key` så attributfilter inte råkar matcha). Det
+är exakt den slappa stubb som beskrivs högst upp, och den hade legat kvar om testet
+inte körts mot en trasig variant.
 
 ## overlay-loop.mjs
 Bevakar `bus.js:startLoop` — den delade renderloopen (§8.5). Detta test bevakar en
@@ -230,6 +262,28 @@ Varje sådan regel körs mot en MEDVETET TRASIG variant av inspelaren, definiera
 testet (`UtanDepakoll`, `UtanTackningskrav`). Utan det visar kontrollen bara att koden
 gör som koden gör; med den ser man att just den regeln är det som stoppar det dåliga
 varvet. Samma grepp som `naivLoop` i `overlay-loop.mjs`.
+
+## session_state.py
+Varvhistoriken bakom varvtidsloggen (`acc_engine/state.py`). Skild från
+`lap_recorder.py` av samma skäl som modulerna är skilda: den senare spelar in KURVOR
+och kastar varv som inte duger som referens, medan loggen ska visa varvet ändå — ett
+in-varv har en riktig varvtid. Kontrollerna faller i tre grupper:
+
+- **Kontraktet.** `None` = oförändrad, `[]` = TÖMD. Det är den halva som är lätt att
+  bryta, för felet syns först när någon kör två sessioner i rad: behandlas `[]` som
+  "inget nytt" ligger förra sessionens varv kvar på skärmen. Testet mäter både att
+  tömningen sker och att den FLAGGAS för sändning — och att en tömning av en redan
+  tom lista inte flaggar något.
+- **Vad som INTE ska in.** Sentinelvärden, orimliga tider, och mock-varv i samma lista
+  som riktiga. Det sista har en egen regel: en kort ACC-tapp mitt i ett varv får inte
+  tömma något, bara ett faktiskt KÄLLBYTE gör det.
+- **Delade regler.** `lap_transition` och `resolve_lap_ms` bor här och används av
+  `laps.py` — de fanns i två kopior, vilket är precis den sortens regel som blir fel i
+  den andra (samma familj som `delta.lap_delta()`).
+
+Overlayn och modulen är nya, så det finns ingen revision "före fixen". Tänderna
+bevisas därför mot fyra MEDVETET TRASIGA varianter inne i testet (`UtanDepakoll`,
+`UtanNollstallning`, `UtanRimlighetskontroll`), samma grepp som `lap_recorder.py`.
 
 ## engine_smoke.py
 Startar motorn som subprocess och prenumererar på bussen. Utöver ramschema och takt

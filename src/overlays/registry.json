@@ -257,6 +257,106 @@
           "options": {}
         }
       ]
+    },
+    {
+      "id": "laptime-log",
+      "title": "Laptime Log",
+      "desc": "De sex senaste varvtiderna med löpande varv. Guldstreck på sessionens bästa, depåvarv nedtonade.",
+      "url": "overlays/laptime-log/index.html",
+      "baseWidth": 360,
+      "baseHeight": 246,
+      "contentWidth": 320,
+      "contentHeight": 200,
+      "padLeft": 20,
+      "padTop": 12,
+      "defaultX": 8,
+      "defaultY": 300,
+      "defaultScale": 1.0,
+      "hz": 10,
+      "channels": [
+        "laps",
+        "curLapMs",
+        "completedLaps"
+      ],
+      "options": [
+        {
+          "id": "compare",
+          "type": "enum",
+          "label": "Jämför mot",
+          "default": "best",
+          "values": [
+            { "value": "best", "label": "Sessionens bästa varv" },
+            { "value": "previous", "label": "Föregående varv" }
+          ]
+        },
+        {
+          "id": "delta-column",
+          "label": "Delta-kolumn",
+          "default": true
+        },
+        {
+          "id": "current-lap",
+          "label": "Löpande varv",
+          "default": true
+        },
+        {
+          "id": "col-green",
+          "type": "color",
+          "label": "Snabbare",
+          "default": "#0DE622"
+        },
+        {
+          "id": "col-red",
+          "type": "color",
+          "label": "Långsammare",
+          "default": "#FF3B3B"
+        },
+        {
+          "id": "col-amber",
+          "type": "color",
+          "label": "Rubrik & bästa varv",
+          "default": "#FBBF24"
+        },
+        {
+          "id": "col-bar",
+          "type": "color",
+          "label": "Panelyta",
+          "default": "#060708e6",
+          "alpha": true,
+          "gradient": true
+        },
+        {
+          "id": "col-divider",
+          "type": "color",
+          "label": "Avdelare",
+          "default": "#ffffff12",
+          "alpha": true
+        },
+        {
+          "id": "col-shadow",
+          "type": "color",
+          "label": "Skugga",
+          "default": "#0000008c",
+          "alpha": true
+        }
+      ],
+      "presets": [
+        {
+          "id": "slot-1",
+          "label": "Preset 1",
+          "options": {}
+        },
+        {
+          "id": "slot-2",
+          "label": "Preset 2",
+          "options": {}
+        },
+        {
+          "id": "slot-3",
+          "label": "Preset 3",
+          "options": {}
+        }
+      ]
     }
   ]
 }

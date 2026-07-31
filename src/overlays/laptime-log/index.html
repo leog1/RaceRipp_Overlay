@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Laptime Log</title>
+<link rel="stylesheet" href="../../shared/tokens.css">
+<style>
+/* Overlay-specifik geometri (palett kommer från tokens.css).
+
+   HÖJDEN ÄR STANDARDEN (--overlay-h = 200 vid skala 1,0): overlays ska se ut som en
+   uppsattning, inte som olika program. Raderna ar darfor rakhade UR den hojden och
+   inte tvartom:
+
+     rubrik              20
+     6 varvrader      6x25 = 150
+     aktuellt varv       30   (inkl. 1 px avdelare)
+                      ------
+                        200
+
+   RADANTALET AR FAST med flit. En radantalsoption hade andrat den ritade hojden,
+   och `contentHeight` i registry.json ar statisk — boxen i Layout-flikens skarmvy
+   hade da ljugit om hur mycket plats overlayn tar (CLAUDE.md §4). */
+:root{
+  --ui-scale:1;                   /* användarens skala; sätts av kontrollpanelen */
+  --w:320px; --h:200px;
+  --c-lap:44px; --c-time:120px; --c-delta:92px;   /* 44+120+92 + 2x14 gap + 2x18 pad = 320 */
+  --gap:14px; --pad:18px;
+  --row-h:25px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{width:100%;height:100%;overflow:hidden;background:transparent;}
+body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased;}
+
+/* Marginalen till fonsterkanten SKALAR med overlayn: talen kommer ur registry.json
+   (padLeft/padTop) via __OVERLAY_INIT__, och slagskuggan ligger inne i det
+   transformerade #ui och vaxer alltsa med skalan. Fallbacken galler i OBS och i
+   webblasaren, dar ingen INIT finns — och `--ui-scale` MASTE ha ett varde i CSS,
+   annars ar hela calc() ogiltig och innehallet hamnar i fonstrets horn (§8.4m). */
+#ui{position:absolute;top:calc(var(--pad-t,12px) * var(--ui-scale));
+  left:calc(var(--pad-l,20px) * var(--ui-scale));
+  transform:scale(var(--ui-scale));transform-origin:top left;
+  opacity:0;transition:opacity .3s ease;will-change:transform,opacity;}
+#ui.ready{opacity:var(--ui-opacity,1);}
+
+.log{width:var(--w);height:var(--h);display:flex;flex-direction:column;overflow:hidden;
+  background:var(--bar);border-radius:14px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.04),
+             0 2px 6px var(--shadow-soft),0 14px 30px var(--shadow-mid);
+  backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;}
+
+/* Ett rutnät, tre kolumner, samma i rubrik och rader — det är det som gör att
+   siffrorna står i lodräta linjer i stället för att sicksacka. */
+.grid{display:grid;grid-template-columns:var(--c-lap) var(--c-time) var(--c-delta);
+  column-gap:var(--gap);padding:0 var(--pad);align-items:center;}
+
+/* TABELLRUBRIK I AMBER: §4 listar uttryckligen tabellrubriker bland amberns
+   användningar, tillsammans med guldstreck och växelsiffran. */
+.head{flex:0 0 auto;height:20px;font-size:9.5px;font-weight:700;letter-spacing:1.4px;
+  text-transform:uppercase;color:var(--amber);}
+.head .t{justify-self:start;} .head .n,.head .d{justify-self:end;}
+
+.rows{flex:0 0 auto;}
+.row{position:relative;height:var(--row-h);}
+.row .n{justify-self:end;font-size:12px;font-weight:600;color:var(--dim);}
+.row .t{justify-self:start;font-size:15px;font-weight:600;color:var(--ink);letter-spacing:0.2px;}
+.row .d{justify-self:end;font-size:13.5px;font-weight:600;color:var(--dim);}
+.row .d.up{color:var(--green);} .row .d.down{color:var(--red);}
+/* Depåvarv: kördes, hör hemma i loggen, men är inte en tid man jämför sig med. */
+.row.pit .n,.row.pit .t{color:var(--faint);}
+.row.pit .d{color:var(--faint);}
+/* Bästa varvet: samma guldstreck som delta-barens bästa-spalt. Pseudoelement så de
+   inte tar plats i layouten — raden ska förbli exakt --row-h hög.
+   Strecken börjar och slutar vid TEXTBLOCKET (--pad) och inte vid panelkanten: går
+   de utanför läser de som en ram runt raden i stället för som en markering av den.
+   Ordet i delta-kolumnen är däremot NEUTRALT — strecken bär redan färgen, och en
+   amber text bredvid dem hade gjort tre amberfält av en enda upplysning (§4b). */
+.row.best::before,.row.best::after{content:"";position:absolute;
+  left:var(--pad);right:var(--pad);height:2px;background:var(--amber);}
+.row.best::before{top:0;} .row.best::after{bottom:0;}
+
+/* Aktuellt varv. Avdelaren är en LINJE i behållarens egen kulör, inte ett nytt
+   lager — samma regel som panelens stack (§4b). */
+.cur{flex:0 0 auto;height:30px;border-top:1px solid var(--divider);
+  grid-template-columns:var(--c-lap) 1fr;}
+.cur[hidden]{display:none;}
+.cur .n{justify-self:end;font-size:12px;font-weight:600;color:var(--dim);}
+/* EGET KOMPOSITORLAGER (translateZ). Det här är overlayns ENDA element som skrivs
+   om per frame; utan lagergräns ritas panelytan, kanten, radien och slagskuggan om
+   vid varje tiondel (§8.5g). translateZ och inte will-change:transform — det senare
+   låser rasterskalan, och #ui skalas av användaren. */
+.cur .t{justify-self:start;font-size:16px;font-weight:600;color:var(--ink);
+  letter-spacing:0.2px;transform:translateZ(0);}
+
+.faint{color:var(--faint)!important;}
+
+/* edit-läge */
+.edit-mode #ui{outline:2px dashed var(--amber);outline-offset:10px;border-radius:8px;cursor:move;}
+.edit-badge{position:fixed;top:10px;left:10px;display:none;gap:8px;padding:7px 12px;border-radius:8px;
+  background:var(--bar);color:var(--amber);font:700 12px/1 var(--font);letter-spacing:1.5px;
+  text-transform:uppercase;z-index:99;}
+.edit-mode .edit-badge{display:flex;}
+</style>
+</head>
+<body>
+  <div class="edit-badge">● Edit mode</div>
+  <div id="ui">
+    <div class="log">
+      <div class="head grid"><span class="n">Lap</span><span class="t">Time</span><span class="d">Delta</span></div>
+      <!-- Raderna står i märkspråket och byggs inte i JS. Antalet är fast (se
+           CSS-huvudet), så det finns inget att generera — och overlays som skriver
+           i DOM:en men aldrig bygger den är enklare att mäta frame för frame. -->
+      <div class="rows">
+        <div class="row grid" id="r0"><span class="n" id="n0"></span><span class="t" id="t0"></span><span class="d" id="d0"></span></div>
+        <div class="row grid" id="r1"><span class="n" id="n1"></span><span class="t" id="t1"></span><span class="d" id="d1"></span></div>
+        <div class="row grid" id="r2"><span class="n" id="n2"></span><span class="t" id="t2"></span><span class="d" id="d2"></span></div>
+        <div class="row grid" id="r3"><span class="n" id="n3"></span><span class="t" id="t3"></span><span class="d" id="d3"></span></div>
+        <div class="row grid" id="r4"><span class="n" id="n4"></span><span class="t" id="t4"></span><span class="d" id="d4"></span></div>
+        <div class="row grid" id="r5"><span class="n" id="n5"></span><span class="t" id="t5"></span><span class="d" id="d5"></span></div>
+      </div>
+      <div class="cur grid" id="cur"><span class="n" id="curN"></span><span class="t" id="curT"></span></div>
+    </div>
+  </div>
+
+<script type="module">
+import { WsBus, wireShell, fontsReady, startLoop } from '../../shared/bus.js';
+
+/* Radantalet är fast (se CSS-huvudet). Raderna byggs EN gång och återanvänds —
+   overlayn skriver bara textContent och klasser, aldrig ny DOM. */
+const ROWS = 6;
+
+/* Platshållare med SAMMA teckenantal som ett riktigt värde. Byter en siffra plats
+   mot ett streck ska bredden inte röra sig (§8.5) — med tabular-nums räcker det att
+   längden stämmer, till skillnad från delta-baren där platshållaren har färre
+   tecken och därför behövde egna cellbredder. */
+const DASH_T = '––:––.–––';   // ––:––.–––
+const DASH_C = '–:––.–';                     // –:––.–
+
+/* Hur länge den löpande varvtiden får hållas efter senaste ram som bar den. Motorn
+   skickar enstaka ramar utan `curLapMs` (ACC:s sentinelvärden mellan varv), och utan
+   latch växlar raden till platshållare i ett par frames och tillbaka = flicker. */
+const HOLD_MS = 700;
+
+function fmtLap(ms){
+  ms = Math.max(0, Math.round(ms));
+  const m = (ms / 60000) | 0, s = ((ms % 60000) / 1000) | 0, mm = ms % 1000;
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(mm).padStart(3,'0')}`;
+}
+/* Löpande tid i TIONDELAR. Millisekunder på en klocka som tickar är brus, och 10 Hz
+   (registrets `hz`) är exakt en tiondel per frame. */
+function fmtRunning(ms){
+  ms = Math.max(0, Math.round(ms));
+  const m = (ms / 60000) | 0, s = ((ms % 60000) / 1000) | 0, d = ((ms % 1000) / 100) | 0;
+  return `${m}:${String(s).padStart(2,'0')}.${d}`;
+}
+/* ASCII-minus och inte U+2212: delta-baren skriver sina tecken likadant, och två
+   overlays som visar samma sorts tal ska inte sätta dem olika. */
+function fmtDelta(ms){
+  const s = ms / 1000;
+  return (s < 0 ? '-' : '+') + Math.abs(s).toFixed(2);
+}
+
+/* ---- DOM: slås upp en gång, byggs aldrig ----
+   Varje rad bär en cache av senast skrivna värden. DOM rörs bara vid ÄNDRING —
+   loopen går 10 ggr/s och listan ändras en gång per varv. */
+const $ = id => document.getElementById(id);
+const rows = [];
+for (let i = 0; i < ROWS; i++){
+  rows.push({ r: $('r'+i), n: $('n'+i), t: $('t'+i), d: $('d'+i),
+              ln:null, lt:null, ld:null, lc:null, lp:null, lb:null });
+}
+const curEl = $('cur'), curN = $('curN'), curT = $('curT');
+
+/* ---- tillstånd, matat av bussen ---- */
+const state = { laps: [], curMs: null, curN: null, curAt: -Infinity };
+let lastCurFaint = null;
+
+/* Reglaget "jämför mot". Motorn skickar varven och väljer INTE hur de jämförs —
+   samma regel som `refs` och delta-källan (§8.8f): valet hör till overlayn, så två
+   overlays kan visa olika saker om samma varv. */
+const CMP_DEFAULT = 'best';
+let cmp = CMP_DEFAULT;
+let showDelta = true;
+
+const bus = new WsBus();
+bus.subscribe(f => {
+  const now = performance.now();
+  /* KONTRAKTET FÖR `laps` (frame.py): null = OFÖRÄNDRAD, [] = TÖMD. Skillnaden är
+     hela poängen — en tom lista måste slå igenom, annars ligger förra sessionens
+     varv kvar på skärmen efter ett sessionsbyte. `Array.isArray` skiljer dem åt;
+     en sanningskontroll hade behandlat [] som "inget nytt". */
+  if (Array.isArray(f.laps)) state.laps = f.laps;
+  if (typeof f.curLapMs === 'number'){ state.curMs = f.curLapMs; state.curAt = now; }
+  if (typeof f.completedLaps === 'number') state.curN = f.completedLaps + 1;
+});
+
+/* Snabbaste varvet i historiken. Depåvarv räknas inte: ett in-varv med tankstopp är
+   ingen tid man mäter sig mot, och skulle det mot förmodan bli minimum hade
+   guldstrecket hamnat på fel rad. */
+function bestIndex(laps){
+  let bi = -1;
+  for (let i = 0; i < laps.length; i++){
+    const e = laps[i];
+    if (!e || e.pit || typeof e.ms !== 'number' || !isFinite(e.ms)) continue;
+    if (bi < 0 || e.ms < laps[bi].ms) bi = i;
+  }
+  return bi;
+}
+
+function render(now = performance.now()){
+  const laps = state.laps;
+  const bi = bestIndex(laps);
+  const bestMs = bi >= 0 ? laps[bi].ms : null;
+
+  /* Nyast överst: den senast körda tiden ska alltid stå på samma rad, annars måste
+     man leta efter den i ögonvrån. Fönstret är de sex senaste varven. */
+  const first = Math.max(0, laps.length - ROWS);
+  for (let i = 0; i < ROWS; i++){
+    const idx = laps.length - 1 - i;          // ROWS rader, nyast först
+    const e = idx >= first ? laps[idx] : null;
+    const c = rows[i];
+
+    const nTxt = e ? String(e.n) : '';
+    const tTxt = e ? fmtLap(e.ms) : '';
+    let dTxt = '', dCls = '';
+    if (e && showDelta){
+      if (e.pit){
+        dTxt = 'PIT';
+      } else if (cmp === 'best'){
+        /* INGEN FÄRG här, och det är ett medvetet val. Varje varv utom det bästa är
+           långsammare än det bästa — per definition. Tecknet kan alltså inte
+           variera, och en färg som aldrig växlar säger ingenting; den gör bara
+           kolumnen till en vägg av rött över spelet (§4: färg = betydelse, inte
+           dekoration). Magnituden står i siffran, och guldstrecken säger vilken rad
+           som är referensen. I 'previous' nedan VÄXLAR tecknet, och där bär färgen
+           riktig information. */
+        if (idx === bi){ dTxt = 'BEST'; }
+        else if (bestMs != null){ dTxt = fmtDelta(e.ms - bestMs); }
+      } else {
+        // Mot FÖREGÅENDE varv. Referensen hämtas ur hela historiken och inte ur de
+        // synliga raderna — annars hade den understa raden tappat sitt delta bara
+        // för att jämförelsevarvet skrollat ur fönstret.
+        const p = idx > 0 ? laps[idx - 1] : null;
+        if (p && typeof p.ms === 'number'){
+          dTxt = fmtDelta(e.ms - p.ms);
+          dCls = e.ms < p.ms ? 'up' : e.ms > p.ms ? 'down' : '';
+        }
+      }
+    }
+    const pit = !!(e && e.pit), best = !!(e && idx === bi);
+
+    if (c.ln !== nTxt){ c.n.textContent = nTxt; c.ln = nTxt; }
+    if (c.lt !== tTxt){ c.t.textContent = tTxt; c.lt = tTxt; }
+    if (c.ld !== dTxt){ c.d.textContent = dTxt; c.ld = dTxt; }
+    if (c.lc !== dCls){
+      c.d.classList.toggle('up', dCls === 'up');
+      c.d.classList.toggle('down', dCls === 'down');
+      c.lc = dCls;
+    }
+    if (c.lp !== pit){ c.r.classList.toggle('pit', pit); c.lp = pit; }
+    if (c.lb !== best){ c.r.classList.toggle('best', best); c.lb = best; }
+  }
+
+  // Löpande varv. Enda elementet som ändras per frame.
+  const live = (now - state.curAt) < HOLD_MS && state.curMs != null;
+  const cn = state.curN != null ? String(state.curN) : '';
+  const ct = live ? fmtRunning(state.curMs) : DASH_C;
+  if (curN.textContent !== cn) curN.textContent = cn;
+  if (curT.textContent !== ct) curT.textContent = ct;
+  if (lastCurFaint !== !live){ lastCurFaint = !live; curT.classList.toggle('faint', !live); }
+}
+
+/* Ett steg i renderloopen. Takten och deadline-mönstret ligger i bus.js:startLoop
+   (§8.5) — skriv aldrig en egen rAF-loop här. Overlayn har ingen utjämning: en
+   varvtid är ett tal som byts, inte ett värde som glider. */
+function frame(_dt, now){ render(now); }
+
+wireShell(({scale, opacity}) => {
+  if (typeof scale === 'number') document.documentElement.style.setProperty('--ui-scale', String(scale));
+  if (typeof opacity === 'number') document.documentElement.style.setProperty('--ui-opacity', String(opacity));
+}, (opt, val) => {
+  if (opt === 'compare'){
+    cmp = (typeof val === 'string' && val) ? val : CMP_DEFAULT;
+    // Tvinga en omskrivning: delta-cellerna cachas per rad, och bytet ändrar bara
+    // vad de BETYDER — utan detta står gamla siffror kvar tills nästa varv.
+    for (const c of rows){ c.ld = null; c.lc = null; }
+  }
+  if (opt === 'delta-column'){
+    showDelta = val !== false;
+    for (const c of rows){ c.ld = null; c.lc = null; }
+  }
+  if (opt === 'current-lap') curEl.hidden = val === false;
+});
+
+// Rita FÖRST, visa sedan. fontsReady väntar in Montserrat men aldrig i evighet.
+fontsReady().then(() => {
+  render();
+  document.getElementById('ui').classList.add('ready');
+  startLoop(frame);
+});
+</script>
+</body>
+</html>

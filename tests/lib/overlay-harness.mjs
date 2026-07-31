@@ -49,7 +49,6 @@ function makeEl(id, log, byId) {
   const el = {
     id,
     children: [],
-    textContent: '',
     attrs: {},
     // Layoutmått: overlays räknar canvasstorlek ur dem, och 0 ger division med noll.
     clientWidth: 600,
@@ -102,6 +101,18 @@ function makeEl(id, log, byId) {
     },
   };
   Object.defineProperty(el, 'innerHTML', { set() { el.children.length = 0; }, get: () => '' });
+  /* textContent LOGGAS, den är inte bara en egenskap. Skälet är att en overlay som
+     skriver samma text om och om igen ser identisk ut i DOM:en men kostar arbete
+     varje frame — och utan loggpost går det inte att mäta. En medvetet trasig
+     variant av varvtidsloggen (utan ändringskontroll) PASSERADE testet innan det
+     här fanns, alltså exakt den slappa stubb §9 varnar för.
+     Posten saknar `key` med flit: filter som söker attribut eller stilar
+     (`{el:'arc', key:'d'}`) ska inte råka matcha den. */
+  let text = '';
+  Object.defineProperty(el, 'textContent', {
+    get: () => text,
+    set(v) { text = v; log.push({ el: id, type: 'text', value: v }); },
+  });
   return el;
 }
 

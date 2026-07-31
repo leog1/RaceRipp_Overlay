@@ -57,6 +57,9 @@ const WEB = join(ROOT, 'src');
 const SKUGGA = {
   'delta-bar':    { l: 34.3, t: 17.2, r: 24.3, b: 51.4 },
   'inputs-trace': { l: 30.0, t: 20.0, r: 30.0, b: 40.0 },
+  // Skuggan är `0 2px 6px` + `0 14px 30px`: en blur på 30 når 15 px åt varje håll,
+  // och offseten 14 flyttar räckvidden nedåt (14+15 ned, 15−14 upp).
+  'laptime-log':  { l: 15.0, t:  3.0, r: 15.0, b: 29.0 },
 };
 const SKALOR = [0.6, 1.0, 1.6];
 
@@ -179,6 +182,19 @@ const MATNINGSRAM = {
   position: 0.5, throttle: 1, brake: 0, gear: 4, speedKph: 180, rpm: 7000,
   refs: { best:  { delta: -0.5, totalMs: 138120, throttle: 1, brake: 0, src: 'lap' },
           motec: { delta: 0.25, totalMs: 136250, throttle: 1, brake: 0, src: 'motec' } },
+  /* Varvtidsloggen mäts FULL: sex rader plus den löpande. Ett tresiffrigt varvnummer
+     och ett tvåsiffrigt delta är de bredaste värdena kolumnerna kan visa — samma
+     regel som delta-barens tre spalter (§5b), och samma familj som pedalsiffran som
+     bara blev för bred vid "100" (§8.4g). */
+  completedLaps: 108,
+  laps: [
+    { n: 103, ms: 141880, pit: true  },
+    { n: 104, ms: 138904, pit: false },
+    { n: 105, ms: 138120, pit: false },
+    { n: 106, ms: 139880, pit: false },
+    { n: 107, ms: 148360, pit: false },
+    { n: 108, ms: 138337, pit: false },
+  ],
 };
 let cdp, initScript = null;
 try {

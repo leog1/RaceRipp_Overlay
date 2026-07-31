@@ -22,6 +22,11 @@ import numpy as np
 
 from .frame import Frame
 from .delta import lap_delta
+# Varvgränsen och den auktoritativa varvtiden bor i state.py och delas med
+# varvhistoriken. Reglerna fanns i två kopior, och det är precis den sortens regel
+# som blir fel i den andra kopian (samma skäl som lap_delta ovan delas av båda
+# referenssorterna). Importen går ÅT DETTA HÅLL: state.py känner inte till laps.py.
+from .state import lap_transition, resolve_lap_ms, MIN_LAP_S, MAX_LAP_S, LAP_MS_TOLERANCE  # noqa: F401
 
 # Minsta positionssteg mellan två sparade sampel: 1/2000 varv. Vid 40 Hz och en
 # varvtid på 2 minuter kommer det ~4800 ramar per varv, och de flesta ligger så nära
@@ -38,14 +43,8 @@ POS_STEP = 1.0 / 2000.0
 MIN_COVERAGE = 0.90
 # Minsta antal punkter. Ett varv med under 200 sampel är inte ett varv.
 MIN_SAMPLES = 200
-# Rimlighetsintervall för en varvtid (s). Skyddar mot ACC:s sentinelvärden och mot
-# att en paus i det delade minnet räknas som ett långsamt varv.
-MIN_LAP_S, MAX_LAP_S = 20.0, 1200.0
-# Hur mycket ACC:s egen varvtid får skilja sig från vår egen mätning innan vi
-# misstror den. Vid mållinjen kan `last_time` ligga ett par ramar efter, och då är
-# värdet FÖRRA varvets — vilket hade gjort ett bra varv till "sessionens bästa" på
-# fel grunder.
-LAP_MS_TOLERANCE = 2000
+# MIN_LAP_S / MAX_LAP_S / LAP_MS_TOLERANCE importeras från state.py (se toppen) och
+# ligger kvar i den här modulens namnrymd — de har flyttat, inte försvunnit.
 
 
 class LapCurve:
@@ -125,17 +124,15 @@ class LapRecorder:
             self._track = f.trackId
 
         laps = int(f.completedLaps or 0)
-        if self._laps is None:
-            self._laps = laps
-        elif laps < self._laps:
+        tr = lap_transition(self._laps, laps)
+        if tr == "reset":
             # Varvräknaren gick BAKÅT: ny session, omstart, eller tillbaka till boxen
             # i en ny session. Sessionens bästa är då inte längre sessionens bästa.
             self.reset()
-            self._laps = laps
-        elif laps > self._laps:
+        elif tr == "completed":
             self._finish(f)             # mållinjen passerad: bufferten är ett varv
-            self._laps = laps
             self._reset_buffer()
+        self._laps = laps
 
         # Depåkontakt förbrukar varvet som referens. Samma regel som ut-varvet i
         # acc.py: har depån berörts under varvet som körs NU är det inte jämförbart.
@@ -169,15 +166,11 @@ class LapRecorder:
         if float(pos[-1] - pos[0]) < MIN_COVERAGE:
             return
 
-        own_ms = int(round(float(t[-1] - t[0]) * 1000))
-        # ACC:s `last_time` är den auktoritativa varvtiden — men bara om den ser ut
-        # att gälla DET varv vi just spelade in. Vid mållinjen kan den ligga ett par
-        # ramar efter och alltså vara förra varvets tid, och den hade då kunnat göra
-        # ett medelvarv till "sessionens bästa".
-        lap_ms = own_ms
-        if f.lastLapMs and abs(int(f.lastLapMs) - own_ms) <= LAP_MS_TOLERANCE:
-            lap_ms = int(f.lastLapMs)
-        if not (MIN_LAP_S <= lap_ms / 1000.0 <= MAX_LAP_S):
+        # Auktoritativ varvtid: ACC:s `last_time` när den ser ut att gälla DET varv
+        # vi just spelade in, annars vår egen mätning. Regeln delas med
+        # varvhistoriken (state.resolve_lap_ms) — den var en av två kopior.
+        lap_ms = resolve_lap_ms(int(round(float(t[-1] - t[0]) * 1000)), f.lastLapMs)
+        if lap_ms is None:
             return
 
         # Monotont och unikt i position, precis som Reference.load gör med .ld-datan:

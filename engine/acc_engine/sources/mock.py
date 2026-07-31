@@ -38,10 +38,39 @@ def _seg_at(lst, t):
 def _clamp01(v): return 0.0 if v < 0 else 1.0 if v > 1 else v
 
 
+# ── Varv ────────────────────────────────────────────────────────────────────────
+# Mocken kör ett "varv" per LOOP-sekunder men RAPPORTERAR trovärdiga varvtider. Utan
+# varv som faktiskt tickar går varvtidsloggen varken att designa, demonstrera i
+# panelens förhandsvisning eller visa i OBS utan spelet — samma skäl som spökspåren
+# och de tre referenskällorna redan finns här.
+#
+# Mocken bygger INTE listan själv: den matar `SessionState` som alla andra ramar
+# gör (__main__), så mock-läget provkör den riktiga vägen i stället för en genväg
+# bredvid den.
+MOCK_BASE_MS = 138_120
+MOCK_PIT_EVERY = 6                 # vart sjätte varv är ett depåvarv
+MOCK_PIT_EXTRA_MS = 21_400
+
+
+def _mock_pit(n: int) -> bool:
+    return n >= 1 and n % MOCK_PIT_EVERY == 3
+
+
+def _mock_lap_ms(n: int) -> int:
+    """Varvtid för mock-varv n. DETERMINISTISK med flit: en preview som laddas om
+    ska visa samma logg, inte nya siffror varje gång."""
+    ms = MOCK_BASE_MS + int(1850 * (0.5 + 0.5 * math.sin(n * 2.399 + 0.7)))
+    return ms + MOCK_PIT_EXTRA_MS if _mock_pit(n) else ms
+
+
 class MockSource(Source):
     name = "mock"
     def __init__(self):
         self._t0 = time.perf_counter()
+        # Löpande bästa varv. Räknas fram varv för varv och inte som min() över hela
+        # historiken varje ram — mocken kan köra i timmar i en OBS-rigg.
+        self._done = 0
+        self._best = None
 
     def read(self) -> Frame:
         now = time.perf_counter() - self._t0
@@ -75,10 +104,27 @@ class MockSource(Source):
             "best": _ref_entry(now, 0.35, delta, 138120, "lap"),
             "motec": _ref_entry(now, 0.20, delta - 0.22, 136250, "motec"),
         }
+        # Varvbokföring. `done` = avslutade varv, `cur_n` = varvet som körs.
+        done = int(now // LOOP)
+        frac = (now % LOOP) / LOOP
+        if done != self._done:
+            for i in range(self._done + 1, done + 1):
+                ms = _mock_lap_ms(i)
+                if self._best is None or ms < self._best:
+                    self._best = ms
+            self._done = done
+        cur_n = done + 1
+        in_pit = _mock_pit(cur_n) and frac < 0.08
+
         return Frame(connected=False, throttle=throttle, brake=brake, clutch=clutch, abs=abs_, tc=tc,
                      gear=gear, speedKph=80+throttle*180, rpm=int(3000+throttle*4500), steer=0.35*math.sin(now*0.6),
-                     delta=delta, sessionBestMs=138120, lastLapMs=138322, driverName="John Smith",
-                     position=(now % LOOP)/LOOP,
+                     delta=delta,
+                     sessionBestMs=self._best if self._best is not None else MOCK_BASE_MS,
+                     lastLapMs=_mock_lap_ms(done) if done >= 1 else None,
+                     curLapMs=int(frac * _mock_lap_ms(cur_n)),
+                     completedLaps=done, inPitLane=in_pit, trackId="Spa",
+                     driverName="John Smith",
+                     position=frac,
                      deltaSource="motec", refThrottle=ref_th, refBrake=ref_br, refs=refs)
 
 

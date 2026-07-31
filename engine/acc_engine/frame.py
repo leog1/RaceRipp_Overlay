@@ -61,6 +61,28 @@ class Frame:
     # (OBS-källor och äldre overlays läser dem).
     refs: Optional[dict] = None
 
+    # ── Varvhistorik (varvtidsloggen) ───────────────────────────────────────────
+    # [{"n": varvnummer, "ms": varvtid, "pit": depån berörd}, …] — äldst först.
+    #
+    # KONTRAKTET ÄR SAMMA SOM `entries`, MED EN SKILLNAD SOM ÄR LÄTT ATT MISSA:
+    #   None  = OFÖRÄNDRAD. Listan skickas bara när den ändrats, plus en omsändning
+    #           med jämna mellanrum (LAPS_RESEND_S i __main__) så en OBS-flik som
+    #           öppnas mitt i loppet också får historiken. En konsument måste latcha
+    #           senaste värdet, precis som HOLD_MS-mönstret i §8.5.
+    #   []    = TÖMD. Ny session, ny bana, eller byte mellan mock och riktig körning.
+    #           Behandlas den som "oförändrad" ligger FÖRRA sessionens varv kvar på
+    #           skärmen — ett fel som inte syns förrän någon kör två sessioner i rad.
+    #
+    # Vad som INTE ligger här: bästa varvet och deltat mellan raderna. Båda räknas ut
+    # ur listan, och de hör till overlayn — reglaget "jämför mot" väljer mellan
+    # sessionens bästa och föregående varv, och motorn ska inte behöva veta något om
+    # panelens inställningar (samma regel som `refs` ovan).
+    #
+    # Historiken byggs av `state.SessionState` och inte av `laps.LapRecorder`: den
+    # senare KASTAR varv som inte duger som referenskurva (depå berörd, för dålig
+    # täckning), medan ett in-varv har en riktig varvtid och hör hemma i loggen.
+    laps: Optional[list] = None
+
     # ── Broadcasting (andra bilar). Alla None när Broadcasting är av, så inga
     # befintliga overlays påverkas — de läser bara de fält de deklarerat.
     cars: Optional[list] = None      # per bil: {i, spline, pos, laps, loc, kmh, …}
