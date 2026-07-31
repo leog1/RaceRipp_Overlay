@@ -89,7 +89,7 @@ const server = createServer((req, res) => {
 const port = await new Promise(ok => server.listen(0, '127.0.0.1', () => ok(server.address().port)));
 
 // ── CDP ────────────────────────────────────────────────────────────────────────
-let chromeErr = '';
+let chromeErr = '', chromeExit = null;
 const profil = mkdtempSync(join(tmpdir(), 'simmatrix-fit-'));
 const dbg = 9500 + (process.pid % 400);
 const chrome = spawn(findChrome(), [
@@ -100,10 +100,19 @@ const chrome = spawn(findChrome(), [
   '--disable-renderer-backgrounding', 'about:blank',
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
 chrome.stderr.on('data', d => { chromeErr += d; });
+chrome.on('exit', (code, sig) => { chromeExit = `kod ${code} signal ${sig}`; });
+
+/* Se motsvarande konstant i panel-layout.mjs: 45 s för att en KALL CI-runner startar
+   Chrome mot en tom profil långsammare än en utvecklingsmaskin, och tio sekunder
+   räckte inte. Väntan mäts i väggklocka, inte i antal varv — varje varv gör en
+   `fetch` som kan ta godtyckligt lång tid att ge upp. */
+const CHROME_WAIT_MS = 45_000;
 
 async function connect(){
   let target = null;
-  for (let i = 0; i < 100; i++){
+  const t0 = Date.now();
+  while (Date.now() - t0 < CHROME_WAIT_MS){
+    if (chromeExit) break;                 // dog Chrome finns inget att vänta på
     try {
       const list = await (await fetch(`http://127.0.0.1:${dbg}/json/list`)).json();
       target = list.find(t => t.type === 'page' && t.webSocketDebuggerUrl);
@@ -111,7 +120,10 @@ async function connect(){
     if (target) break;
     await new Promise(r => setTimeout(r, 100));
   }
-  if (!target) throw new Error('Chrome svarade inte med någon sidflik. stderr: ' + (chromeErr || '(tomt)'));
+  if (!target) throw new Error(`Chrome svarade inte med någon sidflik efter ` +
+    `${Math.round((Date.now() - t0) / 1000)} s. chrome: ` +
+    `${chromeExit ? 'avslutade med ' + chromeExit : 'kör fortfarande'} | ` +
+    `stderr: ${chromeErr.trim() || '(tomt)'}`);
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((ok, no) => { ws.onopen = ok; ws.onerror = () => no(new Error('DevTools-socketen gick inte att öppna')); });
   let id = 0;

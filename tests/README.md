@@ -299,6 +299,17 @@ Två saker som gjorde testet trubbigt innan de rättades, och som är lätta att
 
 Kräver Chrome. Se listan högst upp för hur den pekas ut.
 
+**Väntan på Chrome är 45 s, inte 10.** Båda Chrome-testerna föll en gång i CI med
+*"Chrome svarade inte med någon sidflik"* medan Chrome KÖRDE och inte hade skrivit ett
+ord på stderr: en kall runner startar Chrome mot en tom profil betydligt långsammare än
+en utvecklingsmaskin, och tio sekunder räckte inte. Väntan mäts i väggklocka och inte i
+antal varv (varje varv gör en `fetch` som kan ta godtyckligt lång tid att ge upp), och
+den bryts direkt om Chrome-processen dör — då finns det inget att vänta på, och felet
+ska komma på en sekund med processens stderr i meddelandet i stället för efter 45.
+**Sänk inte tillbaka fönstret.** Det kostar ingenting när allt fungerar (loopen bryter
+på första svaret) och är enda skillnaden mellan ett grönt bygge och ett rött som inte
+säger varför.
+
 ## overlay-window-fit.mjs
 **Bevakar:** att varje overlay ryms i sitt fönster MED sin slagskugga, vid skala 0,6 /
 1,0 / 1,6 — och att `contentWidth`/`contentHeight` i registret är sanna. Ett

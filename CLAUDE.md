@@ -1967,6 +1967,13 @@ hoppar över sig själv. Två regler som gäller allt testarbete här:
   kontext som ser ut som en panel som aldrig laddade. Och headless-Chrome stryper timers
   i fönster den anser ligga i bakgrunden, vilket gör en uppstart bakom en timer flakig;
   `--disable-background-timer-throttling` (plus de två syskonflaggorna) tar bort det.
+  En tredje, från v0.5.6:s första releasebygge: **en KALL CI-runner startar Chrome
+  långsammare än din maskin gör.** Testet föll med "Chrome svarade inte med någon
+  sidflik" medan Chrome KÖRDE och inte hade skrivit ett ord på stderr — tio sekunders
+  väntan räckte helt enkelt inte mot en tom profil på en kall disk. Fönstret är nu 45 s,
+  mätt i väggklocka och inte i antal varv (varje varv gör en `fetch` som kan ta
+  godtyckligt lång tid att ge upp), och det bryts direkt om processen dör. Väntan kostar
+  ingenting när allt fungerar; sänk den inte tillbaka.
 - **Appen:** skärmdump med `System.Drawing.Graphics.CopyFromScreen`, och stäng
   panelen med `WM_CLOSE` till rätt hwnd (appens `MainWindow` kan vara ett
   overlay-fönster, så enumerera fönster och matcha på titeln "Control").

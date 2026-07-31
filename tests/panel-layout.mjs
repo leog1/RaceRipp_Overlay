@@ -194,13 +194,28 @@ if (typeof WebSocket === 'undefined'){
   throw new Error(`Node ${process.version} saknar global WebSocket (finns från v21). ` +
                   'CDP-klienten här bygger på den — kör testet med Node 22 eller senare.');
 }
+/* Hur länge vi väntar på att Chrome ska svara på felsökningsporten.
+   45 s och inte 10: en KALL CI-runner startar Chrome mot en tom profil betydligt
+   långsammare än en utvecklingsmaskin med varm disk-cache, och v0.5.6:s första
+   releasebygge föll på precis det — Chrome KÖRDE, hade inte skrivit ett ord på
+   stderr, och hann bara inte upp inom tio sekunder.
+   Väntan mäts i VÄGGKLOCKA och inte i antal varv: varje varv gör en `fetch` som kan
+   ta godtyckligt lång tid att ge upp, så "100 varv à 100 ms" var i praktiken ett
+   okänt tidsfönster. Väntan är dessutom ren kostnad bara när något ÄR trasigt — går
+   det bra bryter loopen på första svaret. */
+const CHROME_WAIT_MS = 45_000;
+
 async function connect(port){
   // Filtrera på type:'page'. /json/list listar ÄVEN bakgrundssidor och
   // tjänstearbetare för det som ligger i profilen, och de kommer först — ansluter
   // man till en sådan får man en fungerande men helt tom kontext, vilket ser ut som
   // att panelen aldrig laddade.
   let target = null;
-  for (let i = 0; i < 100; i++){
+  const t0 = Date.now();
+  while (Date.now() - t0 < CHROME_WAIT_MS){
+    // Dog Chrome finns det inget att vänta på. Utan den här raden satt testet kvar
+    // hela fönstret och rapporterade "svarade inte" om något som redan var borta.
+    if (chromeExit) break;
     try {
       const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
       target = list.find(t => t.type === 'page' && t.webSocketDebuggerUrl);
@@ -208,7 +223,8 @@ async function connect(port){
     if (target) break;
     await new Promise(r => setTimeout(r, 100));
   }
-  if (!target) throw new Error('Chrome svarade inte med någon sidflik på felsökningsporten. ' + chromeDiag());
+  if (!target) throw new Error(`Chrome svarade inte med någon sidflik på felsökningsporten ` +
+                               `efter ${Math.round((Date.now() - t0) / 1000)} s. ` + chromeDiag());
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((ok, no) => {
     ws.onopen = ok;
