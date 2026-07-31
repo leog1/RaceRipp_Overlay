@@ -34,11 +34,14 @@
  *   - ta bort clampAxis-anropen i moveTo          → 4 kontroller i 14 faller
  *   - ta bort keepAllInside ur marginalreglaget   → 1 kontroll i 14 faller
  *   - sätt .ok på versionsraden innan svaret      → 1 kontroll i 15 faller
+ *   - låt layoutväxlaren alltid skicka l.id        → 1 kontroll i 16 faller
+ *   - låt presetetiketten alltid säga "Eget"       → 2 kontroller i 17 faller
+ *   - läs preview-katalogen i loadStageBgs         → kontroll 18 faller
  *   - strunta i paddingen i placeBox (bara scale)  → 3 kontroller i 12 faller
  *   - låt stageFramesWanted strunta i fliken       → kontroll 12 (rivet) faller
  *   - lägg tillbaka den gamla skrollloopen (läs    → 2 kontroller i 13 faller
  *     scrollTop som sanning, ge upp vid kanten)
- * Alla tolv är körda och föll. Kontroll 2 är därför medvetet räknad ur BEHÅLLAREN
+ * Alla femton är körda och föll. Kontroll 2 är därför medvetet räknad ur BEHÅLLAREN
  * och inte ur panelens `stageK`: en kontroll som hämtar omräkningsfaktorn ur koden
  * den granskar stämmer alltid mot sig själv och kan inte falla.
  */
@@ -130,7 +133,19 @@ window.__PANEL_TEST__ = { calls: [] };
       case 'get_globals':  return { hide_until_connected: false, preview_background: '',
                                     hotkey: 'Ctrl+Alt+Space', reference_ld: '' };
       case 'list_backgrounds': return [];
-      case 'list_presets': return [];
+      // Presetlistan ar densamma for alla overlays i fixturen: kontroll 17 mater att
+      // Layout-flikens valjare hittar den som MATCHAR nuvarande varden, och da maste
+      // minst en preset kunna matcha och minst en inte gora det.
+      case 'list_presets': return [
+        { id: 'natt', label: 'Natt', builtin: true, opacity: 0.9, options: {} },
+        { id: 'dag',  label: 'Dag',  builtin: false, opacity: 0.5, options: {} },
+        { id: 'tom',  label: '', builtin: true, empty: true },
+      ];
+      case 'apply_preset': {
+        const pr = { natt: { opacity: 0.9 }, dag: { opacity: 0.5 } }[args.preset];
+        if (d && pr) Object.assign(d, pr);
+        return null;
+      }
       case 'list_layouts': return layouts.map(l => ({ ...l, slots: l.active ? slotsOf() : l.slots }));
       case 'set_position': if (d){ d.x = args.x; d.y = args.y; } return null;
       case 'set_scale':    if (d) d.scale = args.scale; return null;
@@ -644,15 +659,18 @@ try {
   // 10. Layoutlistan: aktiv layout markerad, och att klicka en annan aktiverar den.
   console.log('10 layoutlistan och aktiveringen');
   const lista = await cdp.eval(`
-    return { rader: [...document.querySelectorAll('#layList .lrow')].map(r => ({
-               namn: r.querySelector('.ltitle').textContent,
-               bricka: r.querySelector('.lstate').textContent,
-               aktiv: r.classList.contains('on'),
-               miniatyr: r.querySelectorAll('.lthumb rect').length })),
+    return { rader: [...document.querySelectorAll('#layList .lrowwrap')].map(w => ({
+               namn: w.querySelector('.ltitle').textContent,
+               // Brickan "aktiv" ar BORTTAGEN — tillstandet bor i vaxlaren, se kontroll 16.
+               bricka: !!w.querySelector('.lstate'),
+               pa: !!w.querySelector('.lsw input')?.checked,
+               aktiv: w.querySelector('.lrow').classList.contains('on'),
+               miniatyr: w.querySelectorAll('.lthumb rect').length })),
              namnrad: document.getElementById('layName').textContent };
   `);
   lika(lista.rader.length, 1, 'antal layouter');
-  sant(lista.rader[0].aktiv && lista.rader[0].bricka === 'aktiv', 'den aktiva layouten ska vara markerad');
+  sant(lista.rader[0].aktiv && lista.rader[0].pa, 'den aktiva layouten ska vara markerad och pasla');
+  sant(!lista.rader[0].bricka, 'den gamla "aktiv"-brickan ska vara borta, inte dold');
   lika(lista.rader[0].miniatyr, 2, 'miniatyren ska rita en rektangel per overlay i layouten');
   lika(lista.namnrad, 'Race', 'banderollen ska namnge den aktiva layouten');
 
@@ -873,8 +891,86 @@ try {
   sant(ver.nyare.klass.includes('new'), 'finns en nyare version ska pricken bli amber');
   sant(ver.nyare.text.includes('0.9.9'), 'och texten ska säga VILKEN den nya versionen är');
 
-  // 16. Inget fel kastades under hela mätningen.
-  console.log('16 inga fel kastades under körningen');
+  /* 16. Layoutens AV/PA. Har satt t.o.m. 0.5.6 en bricka med texten "aktiv". En
+         bricka BESKRIVER ett tillstand, den erbjuder det inte: man fick gissa att
+         raden var klickbar, och enda synliga vagen att STANGA AV en layout lag i
+         trepunktsmenyn. Vaxlaren sager bada sakerna pa en gang. Det matta ar att den
+         gar hela vagen till activate_layout at BADA hallen — att slaa av ska skicka
+         tom strang, alltsa "ingen aktiv layout", och inte bara sla av kryssrutan. */
+  console.log('16 layouten slas av och pa med en vaxlare');
+  const vaxel = await cdp.eval(`
+    document.querySelector('.nav[data-sec="layout"]').click();
+    await new Promise(r => setTimeout(r, 300));
+    const inp = document.querySelector('#layList .lrowwrap .lsw input');
+    if (!inp) throw new Error('ingen vaxlare i layoutraden');
+    inp.checked = false; inp.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 260));
+    const av = window.__PANEL_TEST__.calls.filter(c => c.cmd === 'activate_layout').pop();
+    const inp2 = document.querySelector('#layList .lrowwrap .lsw input');
+    inp2.checked = true; inp2.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 260));
+    const pa = window.__PANEL_TEST__.calls.filter(c => c.cmd === 'activate_layout').pop();
+    return { av, pa, kryss: !!document.querySelector('#layList .lrowwrap .lsw input').checked,
+             meny: (() => {
+               document.querySelector('#layList .lmenu').click();
+               return [...document.querySelectorAll('.pop .popitem .nm')].map(e => e.textContent);
+             })() };
+  `);
+  lika(vaxel.av?.args, { id: '' }, 'att sla AV ska skicka en tom layout-id, alltsa ingen aktiv');
+  lika(vaxel.pa?.args, { id: 'race' }, 'att sla PA ska aktivera just den layouten');
+  sant(vaxel.kryss, 'vaxlaren ska sta kvar i pa-lage efteat');
+  sant(!vaxel.meny.some(t => /aktivera/i.test(t)),
+       'menyn ska INTE ha kvar Aktivera/Inaktivera — tva vagar till samma val ar brus (' +
+       vaxel.meny.join(', ') + ')');
+  await cdp.eval(`document.body.click(); await new Promise(r => setTimeout(r, 120));`);
+
+  /* 17. PRESET per overlay i Layout-fliken. Den fanns bara i Overlays-fliken, och att
+         bygga en nattlayout krävde alltså: välj overlay dar, klicka chip, gå tillbaka,
+         upprepa. Tre saker mats, och den forsta ar den som tyst kan bli fel:
+         etiketten RAKNAS UT ur nuvarande varden (samma regel som presetchipsen), sa en
+         overlay vars varden rakar matcha en preset ska saga det utan att man oppnat
+         menyn — och en som inte matchar far inte pasta att den gor det. */
+  console.log('17 presetvaljare per overlay i layout-fliken');
+  const pre = await cdp.eval(`
+    const et = (id) => document.querySelector('#lgrp-' + id + ' .dd-btn .ddv').textContent;
+    // Fixturen: inputs-trace har opacity 0.9 = presetten "Natt"; delta-bar har 1.0.
+    const start = { deltaBar: et('delta-bar'), inputs: et('inputs-trace') };
+    const btn = document.querySelector('#lgrp-delta-bar .dd-btn');
+    btn.click();
+    await new Promise(r => setTimeout(r, 120));
+    const rader = [...document.querySelectorAll('.pop .popitem .nm')].map(e => e.textContent);
+    [...document.querySelectorAll('.pop .popitem')].find(i => i.textContent.includes('Dag')).click();
+    await new Promise(r => setTimeout(r, 300));
+    return { start, rader,
+             anrop: window.__PANEL_TEST__.calls.filter(c => c.cmd === 'apply_preset').pop(),
+             efter: et('delta-bar') };
+  `);
+  lika(pre.start.inputs, 'Natt', 'en overlay vars varden matchar en preset ska sagas matcha den');
+  lika(pre.start.deltaBar, 'Eget utseende', 'en som inte matchar far inte pasta att den gor det');
+  lika(pre.rader, ['Natt', 'Dag'], 'menyn ska lista presetsen men INTE de tomma platserna');
+  lika(pre.anrop?.args, { id: 'delta-bar', preset: 'dag' }, 'valet ska ga via apply_preset');
+  lika(pre.efter, 'Dag', 'etiketten ska folja med det nya utseendet');
+
+  /* 18. Skarmvyns bakgrund har en EGEN katalog. Bilderna hor inte ihop med previewns
+         — den ena ar narbilder man bedomer en overlay MOT, den andra cockpitvyer man
+         placerar overlays i forhallande till. Delade de mapp blev bada listorna
+         dubbelt sa langa och till halften fel. Det matta ar att knappen fragar efter
+         RATT katalog; att Rust valjer mapp av strangen tacks av ett eget Rust-test. */
+  console.log('18 skarmvyn har en egen bakgrundskatalog');
+  const stbg = await cdp.eval(`
+    document.getElementById('btnStageBg').click();
+    await new Promise(r => setTimeout(r, 200));
+    const anrop = window.__PANEL_TEST__.calls.filter(c => c.cmd === 'list_backgrounds').pop();
+    const oppen = !!document.querySelector('.pop');
+    document.body.click();
+    await new Promise(r => setTimeout(r, 120));
+    return { anrop, oppen };
+  `);
+  lika(stbg.anrop?.args, { kind: 'stage' }, 'skarmvyns valjare ska lasa stage-katalogen');
+  sant(stbg.oppen, 'menyn skulle oppnats');
+
+  // 19. Inget fel kastades under hela mätningen.
+  console.log('19 inga fel kastades under körningen');
   lika(await cdp.eval(`return window.__PANEL_TEST__.errors;`), [], 'fel under körningen');
 
 } finally {

@@ -478,6 +478,12 @@ struct Settings {
     // Bara ett namn, ingen sökväg — se get_background.
     #[serde(default = "default_preview_bg")]
     preview_background: String,
+    // Filnamnet på LAYOUT-flikens skärmvy-bakgrund. Egen katalog och eget fält, se
+    // bg_folder(): previewns bilder är närbilder man bedömer en overlay MOT, den här
+    // är en cockpitvy man placerar overlays i förhållande till. Samma regler i övrigt
+    // — bara ett namn, ingen sökväg, och tom sträng är ett aktivt val (ingen bild).
+    #[serde(default = "default_stage_bg")]
+    stage_background: String,
     // Kortkommandot som växlar race/edit. Lagras som TEXT och inte som ett
     // strukturerat värde: global-hotkey parsar exakt den här formen
     // ("Ctrl+Alt+Space", "Ctrl+Shift+F7"), och panelen bygger samma sträng ur
@@ -502,12 +508,20 @@ fn default_preview_bg() -> String {
     "spa.webp".into()
 }
 
+// Skärmvyn visar en cockpit som standard av samma skäl: man placerar overlays i
+// förhållande till det man SER — rattens överkant, spegelraden, mitten av rutan —
+// och en svart rektangel säger ingenting om det.
+fn default_stage_bg() -> String {
+    "cockpit.webp".into()
+}
+
 fn default_settings() -> Settings {
     let mut s = Settings::default();
     // `#[serde(default = …)]` gäller bara vid INLÄSNING av en fil. En helt ny
     // installation har ingen fil alls och går den här vägen, så bakgrunden måste
     // sättas här också — annars fick bara uppgraderande användare den.
     s.preview_background = default_preview_bg();
+    s.stage_background = default_stage_bg();
     s.hotkey = default_hotkey();
     // Samma sak som raderna ovan: `Settings::default()` ger `false` för en bool, och
     // en ny installation hade alltså startat med mock-data avstängt — alltså en app
@@ -1648,15 +1662,24 @@ fn prepare_update(app: AppHandle) {
     stop_engine();
 }
 
-// ── Bakgrunder till förhandsvisningen ───────────────────────────────────────
-// Två kataloger, och skillnaden mellan dem spelar roll:
+// ── Bakgrunder ──────────────────────────────────────────────────────────────
+// TVÅ ANVÄNDNINGAR, och de har VAR SIN katalog: förhandsvisningen i Overlays-fliken
+// (`preview`) och skärmvyn i Layout-fliken (`stage`). Bilderna hör inte ihop —
+// previewn vill ha en närbild på asfalt eller kerb att bedöma en overlay MOT, medan
+// skärmvyn vill ha en cockpitvy där man känner igen rattens överkant och spegelraden.
+// En delad katalog hade gjort båda listorna dubbelt så långa och till hälften fel.
 //
-//   1. INBYGGDA  — följer med utgåvan. Ligger i `resource_dir()/web/shared/
-//      preview-backgrounds` (i dev: repots `src/shared/preview-backgrounds`).
-//      Skrivs över vid varje uppdatering.
-//   2. EGNA      — `app_config_dir()/preview-backgrounds`. Överlever uppdateringar.
+// Inom varje användning finns två kataloger, och skillnaden mellan dem spelar roll:
+//
+//   1. INBYGGDA  — följer med utgåvan. Ligger i `resource_dir()/web/shared/<mapp>`
+//      (i dev: repots `src/shared/<mapp>`). Skrivs över vid varje uppdatering.
+//   2. EGNA      — `app_config_dir()/<mapp>`. Överlever uppdateringar.
 //      Det är HIT man lägger sina egna bilder; katalogen skapas vid start så den
 //      alltid finns att öppna.
+//
+// `kind` kommer från IPC:n och får därför BARA välja mellan de två kända mapparna —
+// aldrig peka ut en katalog. Okänt värde faller tillbaka på previewns mapp i stället
+// för att bli ett fel: det är ett äldre panelbygge som inte skickar fältet.
 //
 // Bilderna lämnas ut som data-URL och INTE som en vanlig sökväg. Skälet är att den
 // paketerade appen läser sitt webbinnehåll ur ett inbäddat arkiv i exe:n, inte från
@@ -1675,21 +1698,32 @@ struct BackgroundInfo {
     custom: bool,
 }
 
-fn bundled_bg_dir(app: &AppHandle) -> Option<std::path::PathBuf> {
+// Enda stället som översätter `kind` till en mapp. En sträng från IPC:n får aldrig
+// bli en sökväg — den väljer bara mellan två konstanter.
+fn bg_folder(kind: Option<&str>) -> &'static str {
+    match kind {
+        Some("stage") => "stage-backgrounds",
+        _ => "preview-backgrounds",
+    }
+}
+
+fn bundled_bg_dir(app: &AppHandle, kind: Option<&str>) -> Option<std::path::PathBuf> {
+    let folder = bg_folder(kind);
     if let Ok(d) = app.path().resource_dir() {
-        let p = d.join("web/shared/preview-backgrounds");
+        let p = d.join("web/shared").join(folder);
         if p.is_dir() {
             return Some(p);
         }
     }
     // Dev: resource_dir pekar på target/debug, där web/ inte finns.
     let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../src/shared/preview-backgrounds");
+        .join("../src/shared")
+        .join(folder);
     if p.is_dir() { Some(p) } else { None }
 }
 
-fn custom_bg_dir(app: &AppHandle) -> Option<std::path::PathBuf> {
-    let d = app.path().app_config_dir().ok()?.join("preview-backgrounds");
+fn custom_bg_dir(app: &AppHandle, kind: Option<&str>) -> Option<std::path::PathBuf> {
+    let d = app.path().app_config_dir().ok()?.join(bg_folder(kind));
     let _ = std::fs::create_dir_all(&d);
     Some(d)
 }
@@ -1725,9 +1759,10 @@ fn bg_label(stem: &str) -> String {
 }
 
 #[tauri::command]
-fn list_backgrounds(app: AppHandle) -> Vec<BackgroundInfo> {
+fn list_backgrounds(app: AppHandle, kind: Option<String>) -> Vec<BackgroundInfo> {
+    let k = kind.as_deref();
     let mut out: Vec<BackgroundInfo> = Vec::new();
-    for (dir, custom) in [(bundled_bg_dir(&app), false), (custom_bg_dir(&app), true)] {
+    for (dir, custom) in [(bundled_bg_dir(&app, k), false), (custom_bg_dir(&app, k), true)] {
         let Some(dir) = dir else { continue };
         let Ok(rd) = std::fs::read_dir(&dir) else { continue };
         for e in rd.flatten() {
@@ -1751,13 +1786,14 @@ fn list_backgrounds(app: AppHandle) -> Vec<BackgroundInfo> {
 }
 
 #[tauri::command]
-fn get_background(app: AppHandle, id: String) -> Result<String, String> {
+fn get_background(app: AppHandle, id: String, kind: Option<String>) -> Result<String, String> {
     if !is_safe_bg_name(&id) {
         return Err("ogiltigt filnamn".into());
     }
+    let k = kind.as_deref();
     let name = std::path::Path::new(&id);
     // Egna filer först, så att en egen bild med samma namn vinner (som i listan).
-    for dir in [custom_bg_dir(&app), bundled_bg_dir(&app)].into_iter().flatten() {
+    for dir in [custom_bg_dir(&app, k), bundled_bg_dir(&app, k)].into_iter().flatten() {
         let p = dir.join(name);
         if !p.is_file() || !is_bg_file(&p) {
             continue;
@@ -1786,8 +1822,8 @@ fn get_background(app: AppHandle, id: String) -> Result<String, String> {
 // Öppnar katalogen för egna bakgrunder i Utforskaren. Utan den måste man leta upp
 // %APPDATA%\com.accoverlay.app\ för hand, och då används funktionen inte.
 #[tauri::command]
-fn open_background_dir(app: AppHandle) -> Result<(), String> {
-    let dir = custom_bg_dir(&app).ok_or("hittar ingen katalog")?;
+fn open_background_dir(app: AppHandle, kind: Option<String>) -> Result<(), String> {
+    let dir = custom_bg_dir(&app, kind.as_deref()).ok_or("hittar ingen katalog")?;
     #[cfg(windows)]
     {
         std::process::Command::new("explorer")
@@ -1824,6 +1860,7 @@ struct GlobalsPayload {
     reference_ld: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     preview_background: String,
+    stage_background: String,
     // Panelen visar kombinationen på två ställen (Inställningar och Om) och får den
     // härifrån — en hårdkodad text i HTML:en hade ljugit så fort någon bytt den.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -1842,6 +1879,7 @@ fn get_globals(state: State<Mutex<Settings>>) -> GlobalsPayload {
         hide_until_connected: s.hide_until_connected,
         reference_ld: s.reference_ld.clone(),
         preview_background: s.preview_background.clone(),
+        stage_background: s.stage_background.clone(),
         hotkey: s.hotkey.clone(),
         mock_enabled: Some(s.mock_enabled),
     }
@@ -1853,6 +1891,16 @@ fn get_globals(state: State<Mutex<Settings>>) -> GlobalsPayload {
 fn set_preview_background(app: AppHandle, state: State<Mutex<Settings>>, id: String) {
     let mut s = state.lock().unwrap();
     s.preview_background = id;
+    save_settings(&app, &mut s);
+}
+
+// Layout-flikens skärmvy. Eget kommando och inte ett `kind`-argument på det ovan:
+// de skriver till två olika fält, och ett kommando som väljer fält efter en sträng
+// från IPC:n är ett steg närmare att kunna skriva fel fält.
+#[tauri::command]
+fn set_stage_background(app: AppHandle, state: State<Mutex<Settings>>, id: String) {
+    let mut s = state.lock().unwrap();
+    s.stage_background = id;
     save_settings(&app, &mut s);
 }
 
@@ -1871,6 +1919,7 @@ fn set_hide_until_connected(app: AppHandle, state: State<Mutex<Settings>>, value
         hide_until_connected: value,
         reference_ld: String::new(),
         preview_background: String::new(),
+        stage_background: String::new(),
         hotkey: String::new(),
         mock_enabled: None,
     });
@@ -1940,7 +1989,8 @@ pub fn run() {
             list_backgrounds,
             get_background,
             open_background_dir,
-            set_preview_background
+            set_preview_background,
+            set_stage_background
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -2314,10 +2364,27 @@ mod tests {
     // här ger ingen kompileringsvarning — bara en preview utan bakgrund.
     #[test]
     fn standardbakgrunden_finns_i_repot() {
-        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../src/shared/preview-backgrounds")
-            .join(default_preview_bg());
-        assert!(p.is_file(), "saknas: {}", p.display());
+        for (folder, name) in [("preview-backgrounds", default_preview_bg()),
+                               ("stage-backgrounds", default_stage_bg())] {
+            let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../src/shared")
+                .join(folder)
+                .join(&name);
+            assert!(p.is_file(), "saknas: {}", p.display());
+        }
+    }
+
+    // `kind` kommer från IPC:n och får bara VÄLJA mellan två kända mappar. Testet är
+    // en säkerhetsgräns och inte formatpolis: hade strängen kunnat bli en sökväg vore
+    // get_background en väg att läsa vilken fil som helst på disken.
+    #[test]
+    fn bakgrundens_kind_kan_bara_valja_mellan_tva_mappar() {
+        assert_eq!(bg_folder(Some("stage")), "stage-backgrounds");
+        assert_eq!(bg_folder(Some("preview")), "preview-backgrounds");
+        assert_eq!(bg_folder(None), "preview-backgrounds", "utelämnat fält = previewns mapp");
+        for skrap in ["", "..", "../../secrets", "Stage", "stage/../..", r"C:\Windows"] {
+            assert_eq!(bg_folder(Some(skrap)), "preview-backgrounds", "{skrap}");
+        }
     }
 
     // ── Gradienter ──────────────────────────────────────────────────────────

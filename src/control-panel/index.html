@@ -221,13 +221,18 @@ body.maximized .tb-btn .ico-max{display:none;}
   stroke-linecap:round;stroke-linejoin:round;}
 .nav:hover{color:var(--ink);background-color:var(--hover);}
 .nav:focus-visible{outline:2px solid var(--ui-focus);outline-offset:-2px;}
-/* Aktiv flik: tonad brandyta och ikonen i den ljusa tinten. Här satt tidigare en
-   3 px röd stapel i vänsterkanten som animerades i höjdled. Den var fin men bar
-   färgen på ett ställe blicken inte tittar (kanten) medan brickan själv bara blev
-   marginellt ljusare — så på en skärmdump gick det inte att se vilken flik som var
-   vald. Nu bär BRICKAN tillståndet, vilket är det som pekas på och klickas. */
-.nav[aria-selected="true"]{color:var(--ui-brand-lt);background-image:var(--ui-brand-fill);}
-.nav[aria-selected="true"]:hover{color:var(--ui-brand-lt);}
+/* Aktiv flik: tonad AMBER-yta och ikonen i amber. Här satt tidigare en 3 px röd
+   stapel i vänsterkanten som animerades i höjdled. Den var fin men bar färgen på ett
+   ställe blicken inte tittar (kanten) medan brickan själv bara blev marginellt
+   ljusare — så på en skärmdump gick det inte att se vilken flik som var vald. Nu bär
+   BRICKAN tillståndet, vilket är det som pekas på och klickas.
+   Färgen var brandröd t.o.m. 0.5.6. Rött identifierar APPEN (brandbaren, ordbilden),
+   och en röd bricka i listen lästes som en tredje varumärkesmarkör i stället för som
+   ett val. Amber är panelens signalfärg för "gäller nu" — samma som vald box i
+   skärmvyn, snapp-hjälplinjen, fokusringen och aktiv preset. Grönt vore fel: grönt
+   betyder PÅ, och en flik är inget man slår på. */
+.nav[aria-selected="true"]{color:var(--amber);background-image:var(--ui-sel-fill);}
+.nav[aria-selected="true"]:hover{color:var(--amber);}
 /* Tooltip. Ligger utanför listen, alltså ovanpå overlay-listan till höger — därför
    z-index:5 på .rail. pointer-events:none så den aldrig kan komma i vägen för en
    knapp den råkar täcka, och visibility i övergången så den inte går att träffa
@@ -701,10 +706,17 @@ body.maximized .tb-btn .ico-max{display:none;}
    något extra lager som kan hamna över rutnätet.
    Vasken är stark med flit (0,62): rutnätet, boxarna och hjälplinjerna är det man
    arbetar med, och bilden ska bara ge dem ett sammanhang. Blir den ljusare måste
-   rutnätets opaciteter upp igen, och då tävlar de två om samma uppmärksamhet. */
+   rutnätets opaciteter upp igen, och då tävlar de två om samma uppmärksamhet.
+
+   Bilden är VALBAR sedan 0.5.7 (samma sorts väljare som previewn, men egen katalog)
+   och kommer därför som en data-URL i `--st-bg`, satt av showStageBg. Den ligger kvar
+   i samma `background`-shorthand som vasken — inget eget lager, som kan hamna över
+   rutnätet. `none` är giltigt i ett background-lager och betyder "ingen bild", vilket
+   är precis vad valet "Ingen bakgrund" ska ge. Fallbacken finns för lägen utan
+   Rust-sida (testets stubb, en webbläsare): då blir vyn den gamla mörka rutan. */
 .st-screen{position:relative;flex:0 0 auto;box-sizing:content-box;
   background:linear-gradient(rgba(4,6,6,0.62),rgba(4,6,6,0.62)),
-             url(../shared/layout-stage-bg.webp) center/cover no-repeat, #040505;
+             var(--st-bg, none), #040505;
   outline:1px solid var(--ui-edge);box-shadow:var(--ui-recess);}
 
 /* Rutnätet. Linjerna är nästan osynliga och PUNKTERNA i korsningarna bär
@@ -824,12 +836,16 @@ body.maximized .tb-btn .ico-max{display:none;}
    ikonknappar i ett hörn läste den som ett verktyg bland andra, så den bär både
    text och amberfyllning. Amber och inte grönt: grönt betyder "på" i panelen, och
    det här är en handling, inte ett tillstånd. */
-.st-tools .sbtn.primary{width:auto;padding:0 11px 0 9px;gap:6px;
-  background:linear-gradient(180deg,rgba(251,191,36,0.26),rgba(251,191,36,0.12));
-  border-color:rgba(251,191,36,0.48);color:var(--amber);
+/* "Lägg till" bär TEXT men ingen färgfyllning. Den hade amberfyllning t.o.m. 0.5.6,
+   motiverad med att den är flikens vanligaste handling. Motiveringen höll inte:
+   amber är panelens signalfärg för TILLSTÅND ("gäller nu" — vald box, aktiv preset,
+   snapp-hjälplinje, aktiv flik), och en fylld yta i samma kulör läser som något som
+   är PÅSLAGET. Knappen bredvid (`btnLive`) är just en av/på-knapp, så de två satt
+   sida vid sida och sa motsatta saker med samma färg.
+   Texten räcker som skillnad mot de tre ikonknapparna: den är den enda i raden som
+   har ett ord, och den är den enda som ligger efter avdelaren. */
+.st-tools .sbtn.primary{width:auto;padding:0 11px 0 9px;gap:6px;color:var(--ink);
   font-size:var(--ui-fs-xs);font-weight:700;letter-spacing:.9px;text-transform:uppercase;}
-.st-tools .sbtn.primary:hover{background:linear-gradient(180deg,rgba(251,191,36,0.36),rgba(251,191,36,0.18));
-  border-color:rgba(251,191,36,0.62);}
 .st-tools .sbtn.primary svg{width:15px;height:15px;stroke-width:2.4;}
 /* Skärmens mått uppe till vänster. Det är den enda platsen som säger vilken skärm
    koordinaterna gäller — utan den är "x 460" ett tal utan enhet. */
@@ -859,8 +875,19 @@ body.maximized .tb-btn .ico-max{display:none;}
    högerpadding så titeln aldrig hamnar under den. */
 .lrowwrap{position:relative;}
 .lrowwrap + .lrowwrap{margin-top:4px;}
-.lrowwrap .lrow{padding-right:44px;}
+/* Plats för BÅDA syskonen till höger: växlaren (40 px) och menyknappen (26 px).
+   Titeln ellipsas i stället för att krypa in under dem. */
+.lrowwrap .lrow{padding-right:88px;}
 .lrowwrap .lrow + .lrow{margin-top:0;}
+/* AV/PÅ per layout, samma växlare som driftblocket och overlayernas alternativ
+   använder. Här stod tidigare en bricka med texten "aktiv". En bricka BESKRIVER ett
+   tillstånd, den erbjuder det inte — man fick gissa att raden var klickbar, och enda
+   synliga vägen att stänga av en layout låg i trepunktsmenyn. En växlare säger båda
+   sakerna på en gång: vad som gäller, och att det går att ändra.
+   Absolut positionerad av samma skäl som .lmenu: raden är en <button>, och en
+   <label> med en <input> inuti en knapp är ogiltig HTML — klicket hade dessutom
+   räknats som ett radklick. */
+.lsw{position:absolute;right:40px;top:50%;transform:translateY(-50%);}
 .lmenu{position:absolute;right:8px;top:50%;transform:translateY(-50%);
   width:26px;height:26px;display:flex;align-items:center;justify-content:center;
   appearance:none;background:none;border:1px solid transparent;border-radius:var(--ui-r-sm);
@@ -991,11 +1018,26 @@ body.maximized .tb-btn .ico-max{display:none;}
 
    Radien följer --ui-r-lg (8 px, halverad i 0.5.1) och `overflow:hidden` gör att
    gruppens hovryta klipps av behållarens hörn i stället för att sticka ut som en
-   fyrkant i ett runt hörn. */
-.stack{border:1px solid var(--ui-edge-dk);border-radius:var(--ui-r-lg);
-  background:var(--ui-card-wash),var(--ui-card);box-shadow:var(--ui-card-in);
+   fyrkant i ett runt hörn.
+
+   TRE SAKER SOM SKILJER STACKEN FRÅN `.card`, och alla tre är avsiktliga:
+   - **Kanten är halva `--ui-edge-dk`** (0,24 mot 0,45). Ett kort är en liten ruta där
+     konturen hjälper ögat hitta kanten; stacken är den STÖRSTA ytan i vyn, och en
+     nästan svart linje runt hela den läste som en ram ritad ovanpå gränssnittet i
+     stället för som materialets slut. Ytan bärs av sin egen bakgrund och sin vask —
+     kanten behöver bara antyda var den tar slut.
+   - **Ingen `--ui-card-in`.** Den inre topplinjen plus skuggningen i foten gav ett
+     3D-intryck som fungerar på ett kort men blir en synlig "låda" när ytan är flera
+     skärmhöjder lång: högdagern hamnar vid första gruppens rubrik och skuggan
+     ingenstans man ser. Djupet kommer av kanten och vasken (§4b), som överallt annars.
+   - **Avdelaren mellan grupper är `--app-bg`**, alltså panelens egen bakgrundsfärg —
+     samma yta som ligger bakom stacken, presetraden och förhandsvisningen. Linjen
+     läser då som en SPRINGA i materialet i stället för som ännu en kant, vilket är
+     precis vad den ska vara: samma yta, avdelad. */
+.stack{border:1px solid rgba(0,0,0,0.24);border-radius:var(--ui-r-lg);
+  background:var(--ui-card-wash),var(--ui-card);
   overflow:hidden;}
-.grp + .grp{border-top:1px solid var(--ui-edge-dk);}
+.grp + .grp{border-top:1px solid var(--app-bg);}
 .grp[hidden]{display:none;}
 /* Rubrikraden ÄR knappen som fäller ihop gruppen. Hela raden och inte en liten
    chevron: träffytan ska vara det man tittar på, och 40 px hög rad är den enda
@@ -1611,6 +1653,11 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
             <button class="sbtn" id="btnGrid" title="Rutnätets täthet" aria-haspopup="true" aria-expanded="false">
               <svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="1"/><path d="M9.5 3.5v17M15 3.5v17M3.5 9.5h17M3.5 15h17"/></svg>
             </button>
+            <!-- Samma ikon som previewns bakgrundsväljare, för det är samma sorts val
+                 — men EGEN katalog (kind: 'stage'), se loadStageBgs. -->
+            <button class="sbtn" id="btnStageBg" title="Bakgrund" aria-haspopup="true" aria-expanded="false">
+              <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 16 5-5 4 4 3-3 6 6"/><circle cx="9" cy="9.5" r="1.4"/></svg>
+            </button>
             <button class="sbtn" id="btnLive" title="Visa overlayernas innehåll" aria-pressed="true">
               <svg viewBox="0 0 24 24"><path d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>
             </button>
@@ -1857,10 +1904,14 @@ addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
 let backgrounds = [], bgCurrent = '', bgToken = 0;
 const bgCache = new Map();
 
-async function bgDataUrl(id){
-  if (bgCache.has(id)) return bgCache.get(id);
-  const url = await invoke('get_background', { id });
-  bgCache.set(id, url);
+/* `kind` väljer katalog i Rust: 'preview' (Overlays-flikens ruta) eller 'stage'
+   (Layout-flikens skärmvy). Cachen nycklas på BÅDA — en egen fil kan heta samma sak
+   i de två mapparna, och en cache på bara namnet hade lämnat ut fel bild. */
+async function bgDataUrl(id, kind = 'preview'){
+  const key = kind + '/' + id;
+  if (bgCache.has(key)) return bgCache.get(key);
+  const url = await invoke('get_background', { id, kind });
+  bgCache.set(key, url);
   return url;
 }
 
@@ -1870,7 +1921,7 @@ async function showBg(id){
   const my = ++bgToken;                      // hovrar man snabbt kan svaren komma i fel ordning
   if (!id){ el.classList.remove('on'); el.style.backgroundImage = ''; return; }
   try {
-    const url = await bgDataUrl(id);
+    const url = await bgDataUrl(id, 'preview');
     if (my !== bgToken) return;
     el.style.backgroundImage = `url("${url}")`;
     el.classList.add('on');
@@ -1898,7 +1949,7 @@ function openBgMenu(){
     label: 'Öppna mappen …', act: true, title: 'Lägg egna bakgrunder i den här mappen',
     onHover: () => showBg(bgCurrent),                 // sluta förhandsvisa
     onPick: async () => {
-      try { await invoke('open_background_dir'); }
+      try { await invoke('open_background_dir', { kind: 'preview' }); }
       catch(e){ toast('Kunde inte öppna mappen: ' + errMsg(e), true); }
     },
   });
@@ -1919,9 +1970,78 @@ $('btnBg').addEventListener('click', async (e) => {
   openBgMenu();
 });
 
+$('btnStageBg').addEventListener('click', async (e) => {
+  e.stopPropagation();
+  if (openPop && openPop.anchor === $('btnStageBg')) return closePop();
+  // Samma skäl som ovan: en fil man just lagt i mappen ska dyka upp utan omstart.
+  await loadStageBgs();
+  openStageBgMenu();
+});
+
 async function loadBackgrounds(){
-  try { backgrounds = await invoke('list_backgrounds'); }
+  try { backgrounds = await invoke('list_backgrounds', { kind: 'preview' }); }
   catch { backgrounds = []; }
+}
+
+/* ── skärmvyns bakgrund (Layout-fliken) ────────────────────────────
+   Samma mekanik som previewns, med EN skillnad som är hela poängen: en egen katalog
+   (`kind: 'stage'`). Bilderna hör inte ihop — previewns är närbilder man bedömer en
+   overlay MOT, skärmvyns är cockpitvyer man placerar overlays i förhållande till, och
+   en delad mapp hade gjort båda listorna dubbelt så långa och till hälften fel.
+
+   Bilden sätts som CSS-variabel på .st-screen och inte som ett eget lager: vasken
+   ligger i samma `background`-shorthand, och ett extra lager kan hamna ÖVER rutnätet
+   (§4b). Data-URL av samma skäl som previewn — den paketerade appen läser sitt
+   webbinnehåll ur ett arkiv i exe:n, så en fil användaren lagt i mappen finns inte på
+   någon URL webviewen kan hämta. */
+let stageBgs = [], stageBgCurrent = '', stageBgToken = 0;
+
+async function showStageBg(id){
+  const el = $('stScreen'); if (!el) return;
+  const my = ++stageBgToken;
+  if (!id){ el.style.setProperty('--st-bg', 'none'); return; }
+  try {
+    const url = await bgDataUrl(id, 'stage');
+    if (my !== stageBgToken) return;
+    el.style.setProperty('--st-bg', `url("${url}") center/cover no-repeat`);
+  } catch(e){
+    if (my !== stageBgToken) return;
+    el.style.setProperty('--st-bg', 'none');
+    toast('Kunde inte läsa bakgrunden: ' + errMsg(e), true);
+  }
+}
+
+async function pickStageBg(id){
+  stageBgCurrent = id; showStageBg(id);
+  try { await invoke('set_stage_background', { id }); }
+  catch(e){ toast('Kunde inte spara bakgrunden: ' + errMsg(e), true); }
+}
+
+function openStageBgMenu(){
+  const items = [{ label: 'Ingen bakgrund', sel: stageBgCurrent === '',
+                   onHover: () => showStageBg(''), onPick: () => pickStageBg('') }];
+  for (const b of stageBgs)
+    items.push({ label: b.label, tag: b.custom ? 'egen' : '', sel: b.id === stageBgCurrent,
+                 onHover: () => showStageBg(b.id), onPick: () => pickStageBg(b.id) });
+  items.push({ sep: true });
+  items.push({
+    label: 'Öppna mappen …', act: true, title: 'Lägg egna cockpitbilder i den här mappen',
+    onHover: () => showStageBg(stageBgCurrent),
+    onPick: async () => {
+      try { await invoke('open_background_dir', { kind: 'stage' }); }
+      catch(e){ toast('Kunde inte öppna mappen: ' + errMsg(e), true); }
+    },
+  });
+  popMenu($('btnStageBg'), {
+    items, minWidth: 236,
+    onLeave: () => showStageBg(stageBgCurrent),
+    onClose: () => showStageBg(stageBgCurrent),
+  });
+}
+
+async function loadStageBgs(){
+  try { stageBgs = await invoke('list_backgrounds', { kind: 'stage' }); }
+  catch { stageBgs = []; }
 }
 
 /* ── sektionsflikar ── */
@@ -3257,6 +3377,7 @@ async function loadGlobals(){
     // ha stängt av det av sig själv.
     $('mockSwitch').querySelector('input').checked = (g && g.mock_enabled) ?? true;
     bgCurrent = (g && g.preview_background) || '';
+    stageBgCurrent = (g && g.stage_background) || '';
     if (g && g.hotkey) hotkey = g.hotkey;
   } catch {}
   showHotkey();
@@ -3265,6 +3386,11 @@ async function loadGlobals(){
   await loadBackgrounds();
   if (bgCurrent && !backgrounds.some(b => b.id === bgCurrent)) pickBg('');
   else if (bgCurrent) showBg(bgCurrent);
+  // Samma behandling för skärmvyns bakgrund: har användaren tagit bort filen ska det
+  // bli ett tyst nollställt val, inte ett felmeddelande vid varje appstart.
+  await loadStageBgs();
+  if (stageBgCurrent && !stageBgs.some(b => b.id === stageBgCurrent)) pickStageBg('');
+  else if (stageBgCurrent) showStageBg(stageBgCurrent);
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -3869,11 +3995,22 @@ function renderLayoutList(){
     wrap.className = 'lrowwrap';
     const row = document.createElement('button');
     row.className = 'lrow' + (l.active ? ' on sel' : '');
-    row.innerHTML = layThumb(l) +
-      '<span class="ltitle"></span>' +
-      `<span class="lstate">${l.active ? 'aktiv' : `${l.slots.length}`}</span>`;
+    row.innerHTML = layThumb(l) + '<span class="ltitle"></span>';
     row.querySelector('.ltitle').textContent = l.name;
     row.addEventListener('click', () => { if (!l.active) activateLayout(l.id); });
+
+    /* Växlaren äger av/på. Att slå PÅ aktiverar layouten (samma väg som ett klick på
+       raden), att slå AV lämnar `active_layout` tomt — overlays står kvar som de är,
+       det är bara bindningen som släpper. Miniatyren och namnet räcker som beskrivning
+       av raden; tillståndet bor i växlaren, inte i en bricka bredvid den. */
+    const sw = document.createElement('label');
+    sw.className = 'sw lsw';
+    sw.innerHTML = '<input type="checkbox"><span class="track"></span><span class="knob"></span>';
+    const swi = sw.querySelector('input');
+    swi.checked = !!l.active;
+    swi.setAttribute('aria-label', l.name + ' — aktivera layouten');
+    swi.addEventListener('change', () => activateLayout(swi.checked ? l.id : ''));
+
     const menu = document.createElement('button');
     menu.className = 'lmenu';
     menu.title = 'Fler val'; menu.setAttribute('aria-label', l.name + ' — fler val');
@@ -3881,16 +4018,15 @@ function renderLayoutList(){
     menu.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.3"/>' +
       '<circle cx="12" cy="12" r="1.3"/><circle cx="12" cy="19" r="1.3"/></svg>';
     menu.addEventListener('click', e => { e.stopPropagation(); openLayoutMenu(menu, l); });
-    wrap.appendChild(row); wrap.appendChild(menu);
+    wrap.appendChild(row); wrap.appendChild(sw); wrap.appendChild(menu);
     box.appendChild(wrap);
   }
 }
 
 function openLayoutMenu(anchor, l){
+  // Aktivera/Inaktivera låg här tills växlaren i raden fanns. Två vägar till samma
+  // val är brus — och den i raden är den man ser.
   const items = [];
-  items.push(l.active
-    ? { label: 'Inaktivera', onPick: () => activateLayout('') }
-    : { label: 'Aktivera', onPick: () => activateLayout(l.id) });
   items.push({ label: 'Döp om …', onPick: () => renameLayout(l) });
   items.push({ label: 'Duplicera', onPick: () => dupLayout(l) });
   items.push({ sep: true });
@@ -3998,6 +4134,32 @@ async function removeLayout(l){
    dragningen hade tagit fokus från fältet och startat om gruppens hopfällning. */
 const layPos = new Map();
 
+/* Presetväljaren per overlay-grupp. `layPre` håller en repaint-funktion per overlay
+   (etiketten räknas ut ur nuvarande värden, aldrig ur ett lagrat "senast valda") och
+   `layPresets` den senast lästa listan. Listan läses om när en meny öppnas — en
+   preset man just sparat i Overlays-fliken ska synas här utan att appen startas om. */
+const layPre = new Map();
+const layPresets = new Map();
+function layMarkPreset(id){ const f = layPre.get(id); if (f) f(); }
+
+/* Applicera en preset från Layout-fliken. Samma Rust-anrop som chipsen i
+   Overlays-fliken, men efterspelet skiljer: här måste kantmarginalen kontrolleras om
+   (en preset kan bära en SKALA, och en större overlay kan växa ut genom marginalen),
+   och gruppens reglage måste byggas om — de visar annars de värden som gällde före
+   presetten, vilket ser ut som att ingenting hände. */
+async function layApplyPreset(o, p){
+  try { await invoke('apply_preset', { id: o.id, preset: p.id }); }
+  catch(e){ return toast('Kunde inte använda presetten: ' + errMsg(e), true); }
+  if (p.scale != null) o.scale = p.scale;
+  if (p.opacity != null) o.opacity = p.opacity;
+  o.options = { ...(o.options || {}), ...(p.options || {}) };
+  keepInside(o);
+  renderLayoutTab();
+  stageSoon();
+  pushStageState(o);
+  toast(`Utseendet «${p.label}» använt`);
+}
+
 /* MEDLEMSKAP OCH SYNLIGHET ÄR SKILDA ÅT. `set_member` lägger till/tar bort ur
    layouten, `set_enabled` visar/döljer. Det var samma anrop till 0.5.3, och det gav
    ett fel som var lätt att missa men omöjligt att komma runt: att dölja en overlay
@@ -4095,6 +4257,53 @@ function layGroup(o){
   const body = document.createElement('div');
   body.className = 'gbody'; body.id = 'lbody-' + o.id;
 
+  /* PRESET, först i gruppen. En layout handlar om var overlays ligger — men när man
+     bygger en nattlayout vill man byta UTSEENDE på var och en i samma svep, och det
+     gick bara från Overlays-fliken: välj overlay, klicka chip, gå tillbaka, upprepa.
+     Raden ligger överst av samma skäl som presetraden ligger ovanför kortet i
+     Overlays-fliken (§4b): en preset är en genväg till allt som står under den, så
+     den hör ovanför det den skriver.
+     En VÄLJARE och inte chips: layout-fliken har en grupp per overlay, och en rad
+     chips per grupp hade blivit fem sidoskrollande band i en vy vars huvudsak är
+     skärmen ovanför. Väljaren är samma kluster som enum-alternativen (376 px, §4b).
+     Listan läses om när menyn ÖPPNAS och inte när raden byggs: presets sparas i den
+     andra fliken, och en lista som hämtades vid renderingen hade saknat den man just
+     sparade. Det är samma skäl som bakgrundsmenyn läser om sin katalog. */
+  const pre = document.createElement('div');
+  pre.className = 'row';
+  pre.innerHTML = '<span class="rlabel">Preset</span>';
+  const preDd = document.createElement('div'); preDd.className = 'dd';
+  const preBtn = document.createElement('button');
+  preBtn.type = 'button'; preBtn.className = 'dd-btn';
+  preBtn.setAttribute('aria-haspopup', 'listbox');
+  preBtn.setAttribute('aria-expanded', 'false');
+  preBtn.innerHTML = '<span class="ddv">Eget utseende</span>' +
+    '<svg viewBox="0 0 12 12"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>';
+  preDd.appendChild(preBtn); pre.appendChild(preDd); body.appendChild(pre);
+  // Etiketten räknas ut ur NUVARANDE värden, precis som chipsen i Overlays-fliken
+  // (presetMatches). En lagrad "senast valda" hade ljugit så fort man rört ett
+  // reglage efteråt. Den anropas därför också vid varje reglagerörelse i gruppen.
+  const paintPre = () => {
+    const hit = (layPresets.get(o.id) || []).find(p => !p.empty && presetMatches(o, p));
+    preBtn.querySelector('.ddv').textContent = hit ? hit.label : 'Eget utseende';
+  };
+  layPre.set(o.id, paintPre);
+  preBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    let list = [];
+    try { list = await invoke('list_presets', { id: o.id }); } catch {}
+    layPresets.set(o.id, list);
+    const usable = list.filter(p => !p.empty);
+    paintPre();
+    popMenu(preDd, {
+      minWidth: preDd.offsetWidth,
+      items: usable.length
+        ? usable.map(p => ({ label: p.label, tag: p.builtin ? '' : 'egen',
+                             sel: presetMatches(o, p), onPick: () => layApplyPreset(o, p) }))
+        : [{ label: 'Inga presets för den här overlayn', act: true }],
+    });
+  });
+
   // Position. Talfälten är den exakta vägen; skärmvyn är den snabba. Båda skriver
   // samma väg (set_position), så de kan aldrig säga olika saker.
   const pos = document.createElement('div');
@@ -4148,13 +4357,13 @@ function layGroup(o){
   // En större overlay kan växa ut genom kantmarginalen den låg innanför. Att skala
   // är också att placera, så den dras tillbaka — annars gäller gränsen bara medan
   // man drar i boxen.
-  const scaleSend = (v) => { o.scale = v; keepInside(o); stageSoon(); sScale(v); };
+  const scaleSend = (v) => { o.scale = v; keepInside(o); stageSoon(); layMarkPreset(o.id); sScale(v); };
   scaleSend.flush = () => { sScale.flush(); sendPos(o.id).flush(); };
   const sOpacity = throttleIpc(async (v) => {
     try { await invoke('set_opacity', { id: o.id, opacity: v }); }
     catch(err){ toast('Kunde inte spara opaciteten: ' + errMsg(err), true); }
   });
-  const opacitySend = (v) => { o.opacity = v; sOpacity(v); };
+  const opacitySend = (v) => { o.opacity = v; layMarkPreset(o.id); sOpacity(v); };
   opacitySend.flush = () => sOpacity.flush();
   mkSlide('Skala', 0.6, 1.6, 0.05, o.scale, v => v.toFixed(2) + '×', scaleSend);
   mkSlide('Opacitet', 0.2, 1, 0.05, o.opacity, v => Math.round(v * 100) + '%', opacitySend);
@@ -4168,6 +4377,9 @@ function layGroup(o){
       // Är samma overlay vald i Overlays-fliken ska dess kontroller inte ligga
       // kvar med gamla värden — den fliken byggs om när man går dit (se navigeringen).
       toPreview({ kind: 'option', id: o.id, option, value });
+      // Presetetiketten räknas ut ur värdena, så den slocknar av sig själv i samma
+      // sekund man ändrar något som presetten satte.
+      layMarkPreset(o.id);
     },
   });
 
@@ -4312,6 +4524,7 @@ function renderLayoutTab(){
   const stack = $('layStack');
   stack.innerHTML = '';
   layPos.clear();
+  layPre.clear();
   const members = layMembers();
   {
     // Skärmvyn först, och den finns även i en tom layout: måtten och marginalen är
@@ -4358,6 +4571,20 @@ function renderLayoutTab(){
   // Markeringen byggdes bort med stacken — lägg tillbaka den, annars tappar man
   // valet varje gång något i vyn ändras (skala, tillagd overlay, ny marginal).
   if (stagePicked) pickBox(stagePicked);
+  loadLayPresets(members);
+}
+
+/* Presetlistorna till gruppernas väljare. Hämtas EFTER att stacken byggts, en per
+   overlay, och etiketten målas om när svaret kommer: raden får inte vänta på fem
+   IPC-anrop för att dyka upp. Utan den här förladdningen står det "Eget utseende" på
+   en overlay som faktiskt matchar en preset, ända tills man öppnat menyn en gång. */
+async function loadLayPresets(members){
+  for (const o of members){
+    if (layPresets.has(o.id)){ layMarkPreset(o.id); continue; }
+    try { layPresets.set(o.id, await invoke('list_presets', { id: o.id })); }
+    catch { layPresets.set(o.id, []); }
+    layMarkPreset(o.id);
+  }
 }
 
 /* ── skärmvyns verktyg ── */

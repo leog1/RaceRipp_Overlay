@@ -123,6 +123,15 @@
   /* Brandytan under en aktiv flik. Tonad och inte fylld: en helfylld #A41F1F-ruta i
      en 60 px list läser som en varningsknapp, inte som "du är här". */
   --ui-brand-fill: linear-gradient(180deg, rgba(164,31,31,0.30), rgba(164,31,31,0.13));
+  /* Samma recept i AMBER, för "detta är valt just nu". Den aktiva flikbrickan bar
+     tidigare --ui-brand-fill, alltså varumärkets röda — men rött identifierar appen
+     (brandbaren, ordbilden) och en röd bricka i listen läste som en tredje
+     varumärkesmarkör snarare än som ett val. Amber är panelens signalfärg för
+     "gäller nu" (fokusringen, snapp-hjälplinjen, vald box i skärmvyn, aktiv preset),
+     och grönt går inte att använda: grönt betyder PÅ, och en flik är inget man slår
+     på. Håll den svagare än brandfyllningen var — brickan ligger bakom en ikon som
+     ska förbli läsbar. */
+  --ui-sel-fill: linear-gradient(180deg, rgba(251,191,36,0.22), rgba(251,191,36,0.09));
   --sel:       rgba(255,255,255,0.06);   /* vald/aktiv rad eller flik             */
   --hover:     rgba(255,255,255,0.04);   /* hover på rad/flik                     */
   --ctrl-hi:   rgba(255,255,255,0.11);   /* knapp hover                           */

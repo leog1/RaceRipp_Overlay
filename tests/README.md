@@ -273,6 +273,17 @@ ligger här för att de kräver en riktig webbläsare:
   versionens nummer när det finns en, och — det som är lätt att fuska bort — varken
   eller innan kontrollen svarat. Stubbens updater kastar i sitt utgångsläge just för
   att det neutrala tillståndet ska gå att mäta.
+- **Layoutradens av/på-växlare**: att slå AV går hela vägen till `activate_layout` med
+  TOM id (alltså "ingen aktiv"), inte bara till en avbockad ruta — och menyns
+  Aktivera/Inaktivera är borta, för två vägar till samma val är brus.
+- **Presetväljaren per overlay i Layout-fliken**: etiketten räknas ut ur nuvarande
+  värden (en overlay som matchar en preset säger det utan att man öppnat menyn, en som
+  inte matchar får inte påstå det), tomma platser listas inte, och valet går via
+  `apply_preset`. Fixturens presets är därför skrivna så att EN matchar utgångsläget
+  och en inte gör det — en lista där alla matchade hade gjort uträkningen osynlig.
+- **Skärmvyns bakgrund läser sin EGNA katalog** (`kind: 'stage'`). Att Rust bara låter
+  strängen välja mellan två kända mappar täcks av ett eget Rust-test — den här
+  kontrollen mäter att panelen frågar efter rätt av dem.
 - **Boxarnas innehåll**: iframen ritar FÖNSTRET och skjuts upp/vänster med overlayns
   padding × skalan (boxen är innehållet), måttchippen visar innehållets storlek, och
   dokumentet RIVS när man lämnar fliken — döljs det bara lever dess WebSocket vidare

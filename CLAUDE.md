@@ -15,7 +15,7 @@
 > X" i §7).
 ## 1. Vad projektet är
 Modulärt overlay-paket för **Assetto Corsa Competizione (ACC)**.
-Version 0.5.6.
+Version 0.5.7.
 - **Funktionellt** som **Race Element**: lätt, rensat, praktiskt, ingen FPS-förlust.
 - **Visuellt** som **RaceLab**: mörkt, polerat, animerat, premium.
 - Kvalitetsribban är hög och användaren är detaljpetig ner till pixelnivå.
@@ -329,6 +329,17 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
   `--ui-brand`: den sitter fyra gånger i samma stack, och fyra röda markörer upprepar
   ordbildens färg där den inte identifierar något. Lägg alltså inte streck på en
   kortrubrik, och gör inte en grupprubrik amber i TEXTEN.
+- **Stacken (`.stack`) är inte ett kort, och tre saker skiljer dem.** Alla tre är
+  avsiktliga och lätta att "rätta tillbaka":
+  **kanten är halva `--ui-edge-dk`** (0,24) — ett kort är en liten ruta där konturen
+  hjälper ögat, stacken är vyns största yta och en nästan svart linje runt hela den
+  läser som en ram ritad ovanpå gränssnittet; **ingen `--ui-card-in`** — den inre
+  topplinjen plus fotskuggningen ger en fin 3D-känsla på ett kort men blir en synlig
+  "låda" när ytan är flera skärmhöjder lång, med högdagern vid första rubriken och
+  skuggan ingenstans man ser; och **avdelaren mellan grupper är `--app-bg`**, alltså
+  samma färg som ytan bakom stacken, presetraden och previewn — linjen läser då som en
+  SPRINGA i materialet i stället för som ännu en kant, vilket är precis vad den ska
+  vara. Djupet kommer av kant och vask, som överallt annars.
 - **Inställningarna är EN yta indelad i hopfällbara grupper (`.stack` > `.grp`).**
   Här låg fram till 0.5.1 ett enda kort med fyra rubriker rakt i flödet. Det gick isär på
   två sätt: rubrikerna var det enda som skilde grupperna åt (en lista med tolv färgrader
@@ -364,9 +375,13 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
   vid 264 px kolumnbredd, för tvåradiga rader äter listan på golvet 960×600.
   Blocket följer INTE med till Referens/Om/Inställningar — hela kolumnen göms där.
 - **Vänsterlisten är en REN IKONLIST på 60 px.** Namnet
-  kommer i en tooltip vid hover/fokus. Aktiv flik = 40×40 bricka i `--ui-brand-fill`
-  med ikonen i `--ui-brand-lt` (en ljus tint av samma röda — en tint är inte en
-  andra kulör). Etiketterna sprängde listen två gånger (§8.4h), så **ett fliknamn är inte
+  kommer i en tooltip vid hover/fokus. Aktiv flik = 40×40 bricka i `--ui-sel-fill`
+  med ikonen i `--amber`. Brickan var BRANDRÖD t.o.m. 0.5.6; rött identifierar APPEN
+  (brandbaren, ordbilden), och en röd bricka i listen lästes som en tredje
+  varumärkesmarkör i stället för som ett val. Amber är panelens signalfärg för "gäller
+  nu" — samma som vald box i skärmvyn, snapp-hjälplinjen, fokusringen och aktiv preset.
+  Grönt vore fel: grönt betyder PÅ, och en flik är inget man slår på.
+  Etiketterna sprängde listen två gånger (§8.4h), så **ett fliknamn är inte
   längre bundet av listens bredd**.
   Tooltip-spannet (`.nav .tip`) är RIKTIG text i DOM:en, inte ett `title`-attribut:
   det ger knappen dess tillgängliga namn (annars är fem knappar namnlösa för en
@@ -460,12 +475,17 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
     iframes finns bara medan Layout-fliken är framme OCH panelen är synlig, och de
     `about:blank`-navigeras bort i stället för att döljas — `display:none` stoppar rAF
     men inte WebSocketen. Verktygsknappen "visa innehåll" stänger av dem helt.
-  - **Bakgrunden är en cockpitbild** (`src/shared/layout-stage-bg.webp`) med en mörk vask
-    på 62 % ÖVER sig i samma `background`-shorthand — inget extra lager som kan hamna
-    över rutnätet. Man placerar overlays i förhållande till det man SER (rattens
-    överkant, spegelraden, mitten av rutan), och en svart rektangel säger ingenting om
-    det. Blir vasken ljusare måste rutnätets opaciteter upp igen, och då tävlar de två
-    om samma uppmärksamhet.
+  - **Bakgrunden är en cockpitbild** med en mörk vask på 62 % ÖVER sig i samma
+    `background`-shorthand — inget extra lager som kan hamna över rutnätet. Man
+    placerar overlays i förhållande till det man SER (rattens överkant, spegelraden,
+    mitten av rutan), och en svart rektangel säger ingenting om det. Blir vasken
+    ljusare måste rutnätets opaciteter upp igen, och då tävlar de två om samma
+    uppmärksamhet.
+    Bilden är VALBAR, med samma väljare som previewn men en **egen katalog**
+    (`stage-backgrounds`, se §8.5d): previewns bilder är närbilder man bedömer en
+    overlay MOT, den här är en vy man placerar overlays i förhållande till, och en
+    delad mapp hade gjort båda listorna dubbelt så långa och till hälften fel.
+    Den kommer som data-URL i `--st-bg` och ligger kvar i samma shorthand som vasken.
   - **Rutnätets linjer är nästan osynliga; PUNKTERNA i korsningarna bär informationen.**
     Det är punkterna man snappar mot, och ett fullt synligt rutnät tävlar med det man
     flyttar. Mot en fotografisk bakgrund löses linjerna av en mörk skugga UNDER dem, inte
@@ -499,12 +519,32 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
     leta rätt på just dess rad bland flera likadana rubriker var flikens trängsta
     ögonblick, och "ta bort" sitter i den raden. Markeringen fäller inte ut gruppen: ett
     val ska markera, inte flytta runt allt annat.
-  - **"Lägg till" bär text och amberfyllning**, till skillnad från vyns övriga
-    verktygsknappar. Det är flikens vanligaste handling och en tom layout går inte att
-    göra något med förrän man tryckt på den; som en av tre likadana ikoner i ett hörn
-    lästes den som ett verktyg bland andra.
+  - **"Lägg till" bär TEXT men ingen färgfyllning.** Texten räcker för att skilja den
+    från vyns ikonknappar: den är den enda i raden med ett ord och den enda efter
+    avdelaren. Den hade amberfyllning t.o.m. 0.5.6, motiverad med att den är flikens
+    vanligaste handling — men amber är signalfärgen för TILLSTÅND ("gäller nu"), och en
+    fylld amberyta läser som något PÅSLAGET. Knappen intill är just en av/på-knapp, så
+    de två stod sida vid sida och sa motsatta saker med samma färg. Lägg inte tillbaka
+    fyllningen; behöver knappen mer vikt är det placeringen som ska ändras.
   - **Kanten på skärmen är en `outline`, inte en `border`.** Se §8.4l — det är geometri,
     inte kosmetik.
+  - **Layoutlistans rader bär en VÄXLARE, inte en bricka som säger "aktiv".** En
+    bricka beskriver ett tillstånd, den erbjuder det inte: man fick gissa att raden var
+    klickbar, och enda synliga vägen att STÄNGA AV en layout låg i trepunktsmenyn.
+    Växlaren säger båda sakerna på en gång — vad som gäller och att det går att ändra —
+    och menyns Aktivera/Inaktivera är därför borttagen: två vägar till samma val är
+    brus. Den ligger absolut positionerad som syskon till raden av samma skäl som
+    trepunktsknappen: raden är en `<button>`, och en `<label>` med en `<input>` inuti en
+    knapp är ogiltig HTML.
+  - **Varje overlay-grupp har en PRESETVÄLJARE överst.** Presets fanns bara i
+    Overlays-fliken, så att bygga en nattlayout krävde: välj overlay där, klicka chip,
+    gå tillbaka, upprepa. Väljaren och inte chips — en rad chips per grupp hade blivit
+    fem sidoskrollande band i en vy vars huvudsak är skärmen ovanför. Etiketten
+    **räknas ut** ur nuvarande värden (`presetMatches`, samma regel som chipsen) och
+    slocknar alltså av sig själv när man rör ett reglage; listan läses om när menyn
+    öppnas, så en preset man just sparat i den andra fliken syns utan omstart.
+    `apply_preset` kan bära en SKALA, så `keepInside` måste köras efteråt — annars kan
+    presetten trycka ut overlayn genom kantmarginalen.
   Inställningsraderna under vyn är samma `.grp`-mekanik som Overlays-flikens stack, men
   **stängda som standard**: fliken handlar om var något ligger, och fem öppna
   inställningslistor hade begravt skärmvyn. Därför `st[grp.id] === true` och inte
@@ -533,6 +573,8 @@ src/shared/bus.js          WsBus (prenumerera på WS) + wireShell (config/edit/d
 src/shared/fonts/ Montserrat variabel woff2 (latin + latin-ext), SIL OFL 1.1
 src/shared/preview-backgrounds/  inbyggda bakgrunder till panelens preview (§8.5d);
                            användarens egna ligger i app-config-mappen
+src/shared/stage-backgrounds/    dito för LAYOUT-flikens skärmvy — egen katalog med
+                           flit, se §8.5d
 src/overlays/registry.json KATALOG över overlays (kärnan läser denna)
 src/overlays/<id>/index.html  overlay-moduler
 src/control-panel/index.html  kontrollpanelen (live-preview i iframe + layout-flikens
@@ -552,7 +594,6 @@ tests/panel-layout.mjs     layout-flikens geometri + driftblocket + hjulskrollen
                            mätt i headless Chrome över CDP
 tests/mock_toggle.py       mock-data av/på i drift, via engine.config.json
 tests/overlay-window-fit.mjs  ryms overlayn + sin skugga i fönstret? (Chrome, HTTP)
-src/shared/layout-stage-bg.webp  bakgrund bakom layout-flikens skärmvy
 tests/                     regressionstester — läs tests/README.md FÖRST, den
                            förklarar vad varje test bevakar och hur man visar att
                            ett test biter
@@ -622,13 +663,18 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   skärmvyn och stacken ligger på samma x och bredd utan vågrät skroll, att DÖLJA lämnar
   boxen kvar nedtonad och rör aldrig medlemskapet medan × går genom `set_member`, och
   layoutlistan markerar den aktiva. Panelen kastade inget fel.
+  Sedan 0.5.7 mäter det dessutom layoutradens av/på-växlare (att slå AV skickar tom
+  layout-id, alltså "ingen aktiv", och att menyns Aktivera/Inaktivera är borta),
+  Layout-flikens presetväljare (etiketten räknas ut ur nuvarande värden, tomma
+  platser listas inte, valet går via `apply_preset`) och att skärmvyns
+  bakgrundsväljare läser `kind: 'stage'`.
   Sedan 0.5.6 mäter samma test också att KANTMARGINALEN är en gräns (dragning förbi
   kanten stannar, ett för stort tal i positionsfältet klampas, en bredare marginal drar
   in det som hamnat utanför — med snappningen AV, annars mäts snappningen i stället),
   att den globala huvudströmbrytaren är borta, och att titelradens versionsrad är
   neutral före första svaret, grön utan uppdatering och amber med den nya versionens
   nummer.
-  Elva medvetet trasiga varianter är körda och samtliga föll (se filens huvud).
+  Femton medvetet trasiga varianter är körda och samtliga föll (se filens huvud).
 - **Att varje overlay ryms i sitt fönster MED sin slagskugga**
   (`tests/overlay-window-fit.mjs`, Chrome över HTTP, skala 0,6/1,0/1,6 plus ett pass helt
   utan `__OVERLAY_INIT__`): innehållet mäter det `contentWidth`/`contentHeight` säger, och
@@ -1456,7 +1502,7 @@ Två saker till:
   tvingades bara OS-synligheten på i edit-läge medan `visibility:hidden` låg kvar —
   man fick ett synligt men **tomt** fönster att sikta på när overlayn skulle dras på
   plats. `_applyGate` nollställer nu `hidden` i edit-läge.
-### 8.5d Förhandsvisningens bakgrunder måste gå via data-URL
+### 8.5d Bakgrunderna måste gå via data-URL — och de är TVÅ uppsättningar
 Panelen kan visa en banbild bakom overlayn. Det uppenbara vore att peka en
 `<img>`/CSS-bakgrund på `../shared/preview-backgrounds/spa.webp` — och det fungerar
 för de INBYGGDA bilderna. Men kravet var att man ska kunna **lägga till egna bilder i
@@ -1473,11 +1519,18 @@ egna, i dev som i release, utan att öppna asset-protokollet. Kostnaden är base
 IPC:n, vilket är oväsentligt när det sker vid ett klick — panelen cachar dessutom per
 filnamn.
 
-- Två kataloger: inbyggda i `resource_dir()/web/shared/preview-backgrounds` (dev:
-  repots `src/shared/preview-backgrounds`), egna i
-  `%APPDATA%\com.accoverlay.app\preview-backgrounds`. **Egna vinner vid namnkrock**,
-  och bara den katalogen överlever en uppdatering — installeraren skriver över den
-  andra.
+- **TVÅ ANVÄNDNINGAR med var sin mapp:** `preview` (Overlays-flikens ruta) och
+  `stage` (Layout-flikens skärmvy). Bilderna hör inte ihop — previewns är närbilder
+  man bedömer en overlay MOT, skärmvyns är cockpitvyer man placerar overlays i
+  förhållande till — och en delad katalog hade gjort båda listorna dubbelt så långa och
+  till hälften fel. Kommandona tar därför ett `kind`, men `bg_folder()` är enda stället
+  som översätter det, och det VÄLJER mellan två konstanter i stället för att bygga en
+  sökväg: strängen kommer från IPC:n. Okänt värde faller tillbaka på `preview` (ett
+  äldre panelbygge skickar inte fältet). Ett Rust-test bevakar precis det.
+- Två kataloger PER användning: inbyggda i `resource_dir()/web/shared/<mapp>` (dev:
+  repots `src/shared/<mapp>`), egna i `%APPDATA%\com.accoverlay.app\<mapp>`.
+  **Egna vinner vid namnkrock**, och bara den katalogen överlever en uppdatering —
+  installeraren skriver över den andra.
 - `get_background` tar ett FILNAMN, aldrig en sökväg. Utan kontrollen hade `../../..`
   i id:t lämnat ut vilken fil som helst på disken till webviewen.
 - Listan läses om varje gång menyn öppnas. Det är hela poängen med "lägg en fil i
