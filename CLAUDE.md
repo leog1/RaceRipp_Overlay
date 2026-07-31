@@ -15,7 +15,7 @@
 > X" i §7).
 ## 1. Vad projektet är
 Modulärt overlay-paket för **Assetto Corsa Competizione (ACC)**.
-Version 0.5.4.
+Version 0.5.5.
 - **Funktionellt** som **Race Element**: lätt, rensat, praktiskt, ingen FPS-förlust.
 - **Visuellt** som **RaceLab**: mörkt, polerat, animerat, premium.
 - Kvalitetsribban är hög och användaren är detaljpetig ner till pixelnivå.
@@ -32,6 +32,14 @@ WebSocket (8777)   →  motorn publicerar; overlays PRENUMERERAR (anropar aldrig
 HTTP (8078)        →  motorn serverar overlay-filerna som OBS browser source
 Overlays (webb)    →  HTML/CSS/SVG/Canvas; en modul per overlay
 ```
+**Globala reglage bor i panelens DRIFTBLOCK** (mittkolumnens fot, syns i både
+Overlays- och Layout-fliken): huvudströmbrytaren, "Endast när ACC kör" och mock-data.
+De tre hör inte till någon overlay och därför inte till någon flik — de avgör om något
+syns på skärmen alls, och en av dem gick tidigare bara att nå från Overlays-fliken.
+Mock-valet är motorns och når den via `engine.config.json` (samma väg som
+referensvarvet, se §8.6g): motorn är en egen PROCESS och lyssnar inte på Tauris
+eventbuss.
+
 **Kärnkrav:** ny overlay = ny modul + en rad i `registry.json`, **utan att röra kärnan**.
 Overlays är "dumma renderare": DATA från WebSocket, CONFIG (skala/opacitet) från Rust-events.
 
@@ -93,9 +101,11 @@ hur stora de är och hur de ser ut. Tre regler som hänger ihop och som var för
 lätta att bryta:
 - **MEDLEMSKAP OCH SYNLIGHET ÄR TVÅ SAKER.** `member` = ingår i layouten (`set_member`,
   alltså Layout-flikens `+` och `×`); `enabled` = visas just nu (`set_enabled`, alltså
-  ögonknappen, som finns på båda flikarna). Fönstret visas när BÅDA är sanna —
-  `OverlayState::visible()` är enda stället som avgör det, så de två inte kan glida isär
-  på det ena ställe någon glömmer. De var samma fält t.o.m. 0.5.3, och följden var
+  ögonknappen, som finns på båda flikarna). Ovanför båda ligger
+  **huvudströmbrytaren** (`overlays_on`, driftblocket i panelens mittkolumn), som är
+  GLOBAL och därför inte bor i en overlay. Fönstret visas när ALLA TRE är sanna —
+  `OverlayState::visible(master)` är enda stället som avgör det, så de inte kan glida
+  isär på det ena ställe någon glömmer. De var samma fält t.o.m. 0.5.3, och följden var
   omöjlig att komma runt: att dölja en overlay en stund kastade ut den ur layouten man
   byggt, och att tända den igen la in den i den layout som råkade vara aktiv då.
   `sync_active_layout` speglar därför MEDLEMMAR (inte påslagna), och en layout får
@@ -104,6 +114,14 @@ lätta att bryta:
   säger det; motsatsen (dölja → ta bort) finns inte som väg.
   Migreringen: `member` är `Option<bool>` och `is_member()` faller tillbaka på
   `enabled`, vilket ger exakt det gamla beteendet på en fil skriven före 0.5.4.
+  **Att LÄGGA TILL i layouten tänder också det som var dolt** (`layAdd` → `setVisible`).
+  Utan det gav "Lägg till" en box i skärmvyn som inte motsvarade något på skärmen, och
+  Overlays-fliken såg ut att äga av/på ensam. Motsatsen finns fortfarande inte: att
+  dölja tar aldrig bort medlemskapet.
+- **Huvudströmbrytaren skriver ALDRIG till `enabled` eller `member`.** Den ligger
+  ovanpå dem just för att "släck allt" ska kunna ångras till exakt den uppsättning man
+  hade. Att i stället släcka varje overlay för sig hade förstört den informationen —
+  vilket var enda vägen före 0.5.5.
 - **Exakt EN layout är aktiv, och den är LIVE-BUNDEN.** `save_settings` kör
   `sync_active_layout`, som speglar det gällande läget in i den aktiva layouten vid varje
   sparning. Det finns alltså inget spara-steg, och — viktigare — ingen andra sanning:
@@ -329,6 +347,16 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
 - **Grönt betyder "på"** (PÅ-brickan, påslagna växlare). Därför är
   fokusringen amber och reglagens fyllnad neutralt vit — ett halvdraget reglage är
   inget tillstånd.
+- **Mittkolumnen är EN yta: lista + driftblock.** Kanten och vasken sitter på
+  `.midcol`, listorna byts ut i den, och driftblocket (huvudströmbrytare, "Endast när
+  ACC kör", mock-data) står kvar i både Overlays- och Layout-fliken. Separationen mot
+  listan är EN linje, ingen egen kant och ingen skugga — annars läser kolumnen som två
+  staplade paneler. Raderna är titel + en KORT underrad: texterna får inte radbrytas
+  vid 264 px kolumnbredd, för tre tvåradiga rader äter listan på golvet 960×600.
+  Undertexten på huvudströmbrytaren byter lydelse med läget (den är det enda stället
+  panelen kan säga att en tom skärm inte är overlayns fel), och de två raderna under
+  tonas när strömbrytaren är av: de kan inte göra något då.
+  Blocket följer INTE med till Referens/Om/Inställningar — hela kolumnen göms där.
 - **Vänsterlisten är en REN IKONLIST på 60 px.** Namnet
   kommer i en tooltip vid hover/fokus. Aktiv flik = 40×40 bricka i `--ui-brand-fill`
   med ikonen i `--ui-brand-lt` (en ljus tint av samma röda — en tint är inte en
@@ -404,12 +432,19 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
   UNDER panelen (`--ui-stage`) med hårfin ljus kant, samma marginal, samma verktygsblock
   i hörnet (`.sbtn`). Skillnaden är höjden: 46 % i stället för previewns 38,2 %, för här
   BEDÖMER man inte, man arbetar. Reglerna:
-  - **Boxarna är proportionella rutor, inte riktiga overlays.** En riktig overlay är ett
-    eget dokument med egen renderloop och egen WebSocket, och fem sådana i panelen hade
-    varit fem loopar som tickar medan man kör — previewn fick rivas ur av exakt det
-    skälet (§8.5f), och den är EN. Boxarna är i gengäld exakta: `content × skala` mot
-    skärmens logiska storlek — INNEHÅLLET, inte fönstret (§4). En dold medlem ritas
-    streckad och nedtonad: platsen är reserverad, rutan syns bara inte just nu.
+  - **Boxarna är MÅTT som dessutom ritar overlayn.** Rektangeln är exakt:
+    `content × skala` mot skärmens logiska storlek — INNEHÅLLET, inte fönstret (§4) —
+    och måttet står kvar i en chip uppe till vänster, för det är det som gör vyn till
+    ett verktyg och inte en skärmdump. Inuti ritas overlayn i en iframe, skalad med
+    `overlayns skala × vyns skala` och förskjuten med overlayns padding (iframen bär
+    FÖNSTRET, boxen är innehållet). En dold medlem ritas streckad och nedtonad: platsen
+    är reserverad, rutan syns bara inte just nu; är huvudströmbrytaren av tonas alla.
+    **Kostnaden hålls borta av MONTERINGEN, inte av att låta bli.** En riktig overlay är
+    ett eget dokument med egen renderloop och egen WebSocket, och fem sådana som tickar
+    medan man kör är precis vad previewn en gång fick rivas ur för (§8.5f). Därför:
+    iframes finns bara medan Layout-fliken är framme OCH panelen är synlig, och de
+    `about:blank`-navigeras bort i stället för att döljas — `display:none` stoppar rAF
+    men inte WebSocketen. Verktygsknappen "visa innehåll" stänger av dem helt.
   - **Bakgrunden är en cockpitbild** (`src/shared/layout-stage-bg.webp`) med en mörk vask
     på 62 % ÖVER sig i samma `background`-shorthand — inget extra lager som kan hamna
     över rutnätet. Man placerar overlays i förhållande till det man SER (rattens
@@ -487,7 +522,9 @@ engine/verify_sidecar.py kontrollerar att den byggda sidecarn innehåller allt (
 engine/ldparser.py         GPL, gitignorerad, hämtas lokalt
 src-tauri/src/lib.rs       fönstermanager, kommandon, sidecar+Job Object, hotkey, settings
 src-tauri/tauri.conf.json  control-fönster, updater, externalBin, bundle.resources
-tests/panel-layout.mjs     layout-flikens geometri, mätt i headless Chrome över CDP
+tests/panel-layout.mjs     layout-flikens geometri + driftblocket + hjulskrollen,
+                           mätt i headless Chrome över CDP
+tests/mock_toggle.py       mock-data av/på i drift, via engine.config.json
 tests/overlay-window-fit.mjs  ryms overlayn + sin skugga i fönstret? (Chrome, HTTP)
 src/shared/layout-stage-bg.webp  bakgrund bakom layout-flikens skärmvy
 tests/                     regressionstester — läs tests/README.md FÖRST, den
@@ -573,6 +610,19 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   båda föll.
 
 ### Kvar att verifiera — läs detta först om du tar över
+- **De tre driftreglagen i den riktiga appen.** Rustsidan och panelen är mätta, men
+  ingenting av det är sett i drift: att huvudströmbrytaren släcker ALLA fönster och att
+  de kommer tillbaka med samma uppsättning (inte med allt påslaget), att en overlay som
+  var avstängd INTE tänds av den, och att valet står kvar efter omstart. Prova samtidigt
+  att slå av mock-data medan ACC är stängt — overlays ska bli tomma men fönstren ligga
+  kvar, och motorloggen säga `[engine] mock-data av`. Att valet gäller redan vid start
+  (Rust skriver `engine.config.json` innan motorn startar) är också otestat skarpt.
+- **Skärmvyns live-innehåll medan ACC kör.** Boxarna kör riktiga overlays i iframes.
+  Monteringsreglerna är mätta i Chrome (bara i fliken, bara när panelen syns), men
+  CPU-kostnaden med spelet igång är inte mätt. Titta på FPS med Layout-fliken framme och
+  ACC i bakgrunden; känns det, stäng av innehållet med ögonknappen i skärmvyns
+  verktygsrad och jämför. Det är också enda stället där en overlay ritas utan
+  `__OVERLAY_INIT__` i ANTAL — går något sönder syns det som fem trasiga rutor, inte en.
 - **HELA layout-fliken i den riktiga appen.** Ingenting av den är sett utanför Chrome.
   Sakerna nedan är av den sorten stubben per definition inte kan bevisa:
   - **Att dra en box FLYTTAR det riktiga fönstret.** Panelen skickar `set_position`
@@ -1063,27 +1113,42 @@ Två saker som hör ihop med det:
 - **En generell CSS-parser är fel svar.** Den vore både större och farligare än
   mönstret; poängen är att mängden tillåtna strängar är LITEN och känd.
 
-### 8.4k En rAF-loop som aldrig dör syns inte — men den håller i allt annat
+### 8.4k Utjämnad skroll: loopen måste äga sin position, och `dt` kan vara NEGATIVT
 Skrollen i inställningslistan jämnas ut för hand (`smoothWheel`): hjulet sätter ett
-målvärde och en rAF-loop glider dit. Två saker fick loopen att leva vidare i evighet
-efter att rörelsen tog slut, och SYMPTOMET var inte skroll:
+målvärde och en rAF-loop glider dit. Tre fällor, och de hänger ihop — den tredje
+uppstod som FIX på de två första.
 
-- `scrollTop` snappar till heltal i den behållaren (mätt), så de sista pixlarna av en
-  exponentiell utjämning avrundas bort: steget blir 0,4 px, `scrollTop` står kvar, och
-  nästa frame räknar exakt samma sak igen. Loopen måste därför flytta **minst en pixel
-  per frame** och ge upp när `scrollTop` inte ändrades trots det.
-- Målet kan ligga utanför den verkliga maxskrollen (`scrollHeight - clientHeight` är
-  inte exakt samma tal), så skillnaden mot målet nådde aldrig under tröskeln. Klampa
-  målet mot maxvärdet i VARJE frame, inte bara när hjulet rullar.
+- **Loopen får inte läsa tillbaka `scrollTop` som sanning.** Värdet snappar till heltal
+  i den behållaren (mätt) och webbläsaren klampar dessutom mot sin egen kant, som inte
+  är exakt `scrollHeight - clientHeight`. En loop som räknar vidare på det avlästa
+  värdet ser en frame utan synlig rörelse och drar slutsatsen "kanten är nådd". Håll en
+  egen `pos` som flyttal, skriv den till `scrollTop`, och läs tillbaka BARA för att
+  upptäcka två saker: att någon annan skrollat (skrollist, tangentbord) och att
+  webbläsaren klampade.
+- **Ger loopen upp får den inte lämna kvar sträcka i `target`.** Nästa hjulsnäpp
+  synkar om från `scrollTop`, och den redan beställda sträckan försvinner. Symptomet är
+  att listan känns trög I ÄNDARNA — man snurrar och de första snäppen "gör inget" —
+  och det var precis vad som rapporterades. Mätt före fixen: fem snabba snäpp uppåt från
+  botten flyttade 300 px i stället för 500.
+- **`dt` KAN BLI NEGATIVT.** rAF:s tidsstämpel är FRAMENS starttid och kan ligga före
+  den `performance.now()` som hjulhändelsen just satte. Då blir
+  `1 - Math.exp(-dt/TAU)` negativt, positionen tar ett kliv BAKÅT förbi kanten,
+  webbläsaren klampar, och klamp-kontrollen ovan läser det som den verkliga kanten och
+  avbryter med målet nollställt. Ett av fem snäpp försvann ungefär var tionde försök —
+  bara i ändarna, eftersom det är där det finns en klampning att snubbla på.
+  **Klampa `dt` nedåt mot noll**, inte bara uppåt. (Samma familj som "första framet har
+  `dt ≈ 0`", som en gång dödade loopen direkt vid start.)
 
-Det som gjorde felet dyrt att förstå: en levande loop drar `scrollTop` tillbaka mot sitt
-mål, så listan hoppade tillbaka när man drog i skrollisten, och dess `scroll`-event
-stängde varje meny man öppnade (menyerna stänger vid skroll, §4b). Buggen såg alltså ut
-som "menyerna går inte att öppna".
+Det som gjorde den ursprungliga buggen dyr att förstå: en loop som lever vidare drar
+`scrollTop` tillbaka mot sitt mål, så listan hoppade tillbaka när man drog i
+skrollisten, och dess `scroll`-event stängde varje meny man öppnade (menyerna stänger
+vid skroll, §4b). Buggen såg alltså ut som "menyerna går inte att öppna".
 
-Och: **första framet har `dt ≈ 0`.** En "flyttade den sig?"-kontroll utan måttet med sig
-dödade därför loopen direkt vid start — mätbart bara genom att driva loopen för hand
-(§9).
+Mätvägen: `tests/panel-layout.mjs` kontroll 13 skickar RIKTIGA hjulhändelser över CDP
+(`Input.dispatchMouseEvent`) — ett syntetiskt `new WheelEvent` skrollar ingenting och
+mäter ingenting. Lägg in en kort paus mellan snäppen: Chromium slår ihop hjulhändelser
+som landar i samma frame, och då mäter man webbläsarens hopslagning i stället för
+loopen.
 
 ### 8.4l En koordinatyta får inte ha en `border`
 Layout-flikens skärmvy är en KOORDINATYTA: boxarna positioneras med `left:x*k` mot
@@ -1517,6 +1582,24 @@ Byte-layouten är skriven mot Kunos publika dokumentation. Den är körd mot rik
 `tests/broadcast_protocol.py` (falsk UDP-server) testar parsern mot vår förståelse;
 `engine/broadcast_test.py` med spelet igång testar förståelsen mot verkligheten. Kör
 den i ett riktigt race innan du litar på entry list-flödet. Se §7.
+
+### 8.6g `engine.config.json` är ett HELT tillstånd, inte en ström av ändringar
+Panelen når motorn på exakt ett sätt: Rust skriver `engine.config.json` i
+app-config-mappen och motorn pollar den en gång i sekunden. Motorn är en egen PROCESS —
+Tauris eventbuss finns inte där, och det är hela skälet till att vägen ser ut så här.
+
+Filen bär numera två saker: `reference_ld` och `mock`. Två regler:
+- **Skriv alltid ALLA fält.** `set_reference` skrev tidigare bara sitt eget, och en
+  sådan skrivning nollställer det andra i motorn. Därför finns `write_engine_config(app,
+  &settings)`, som serialiserar hela tillståndet; kommandona rör bara `Settings`.
+- **Skriv filen vid START, före `start_engine`.** Valet gäller annars inte över en
+  omstart: motorn börjar med sina egna standardvärden (mock PÅ) tills något ändras i
+  panelen, vilket ser ut som att inställningen inte sparas.
+
+Mock av betyder `Frame(connected=False)` UTAN telemetri — inte att bussen tystnar. En
+overlay skiljer på "ingen data" och "motorn borta" (§8.6e), och en stängd buss hade
+sett ut som en krasch. `tests/mock_toggle.py` mäter hela kedjan, inklusive att motorn
+läser om filen NÄR den ändras.
 
 ### 8.7 ACC:s MoTeC-export har INGEN distanskanal
 55 kanaler, noll med "dist" i namnet. `delta.py` integrerar därför **farten** till

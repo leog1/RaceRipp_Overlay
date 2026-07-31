@@ -12,7 +12,7 @@ node tests/overlay-loop.mjs           # renderloopens takt under jitter
 node tests/overlay-gate.mjs           # synk-grinden: blinkar overlayn?
 node tests/overlay-options.mjs        # typade alternativ, före första paint
 node tests/overlay-preview.mjs        # previewn får aldrig fönstrets skala
-node tests/panel-layout.mjs           # layout-flikens geometri (kräver Chrome)
+node tests/panel-layout.mjs           # layout-fliken, driftblocket, hjulskrollen (Chrome)
 node tests/overlay-window-fit.mjs     # ryms overlayn + skuggan i fönstret? (Chrome)
 python tests/acc_source.py            # "ingen ny data" != frånkopplad, ut-varv
 python tests/delta_source.py          # vilken referens deltat kommer från
@@ -20,6 +20,7 @@ python tests/lap_recorder.py          # motorns egna varvinspelningar (förra/b�
 python tests/engine_smoke.py          # motorn: ramschema, takt, portkonflikt
 python tests/motec_reference.py       # MoTeC-delta mot en riktig .ld
 python tests/broadcast_protocol.py    # Broadcasting-UDP mot en falsk ACC-server
+python tests/mock_toggle.py           # mock-data av/på i drift (engine.config.json)
 ```
 `pnpm test` kör de sex overlay-testerna. `pnpm test:panel` kör de två som behöver en
 webbläsare (panel-layout och overlay-window-fit). Python-testerna körs **från
@@ -255,6 +256,23 @@ stacken linjerar utan vågrät skroll, och — viktigast — att **dölja inte �
 ögat skriver `set_enabled` och boxen ligger kvar nedtonad, × skriver `set_member`
 (CLAUDE.md §2).
 
+Sedan 0.5.5 mäter samma test tre saker till, och de två sista har inget med geometri
+att göra — de ligger här för att de kräver en riktig webbläsare:
+- **Driftblocket** (huvudströmbrytare, ACC-grind, mock-data) finns i BÅDA flikarna och
+  inte i de andra, huvudströmbrytaren går hela vägen till `set_overlays_on`, och
+  skärmvyn tonas när den är av. Innan blocket fanns låg ACC-grinden i overlay-listans
+  fot och gick alltså inte att nå från Layout-fliken.
+- **Boxarnas innehåll**: iframen ritar FÖNSTRET och skjuts upp/vänster med overlayns
+  padding × skalan (boxen är innehållet), måttchippen visar innehållets storlek, och
+  dokumentet RIVS när man lämnar fliken — döljs det bara lever dess WebSocket vidare
+  mitt i ett lopp (CLAUDE.md §8.5f).
+- **Hjulskrollen i inställningslistan** (§8.4k): fem snabba snäpp ska flytta 5 × 100 px
+  från BÅDA ändarna. Händelserna skickas som riktiga (trusted) hjulhändelser över CDP —
+  ett `new WheelEvent` skrollar ingenting — med en kort paus emellan, annars slår
+  Chromium ihop dem och testet mäter hopslagningen i stället för loopen. Fixturen har
+  därför tolv färgrader: en lista som får plats i rutan går inte att skrolla, och då
+  mäter kontrollen ingenting alls.
+
 Harnessen duger inte här: det som kan gå sönder finns bara i layouten, alltså i
 `getBoundingClientRect`. Panelen körs därför i headless Chrome mot en Tauri-stubb och
 drivs över CDP — `--dump-dom` räcker inte när mätningen måste klicka och vänta in
@@ -290,10 +308,38 @@ Skuggans räckvidd står som en tabell i testet (läst ur overlayernas CSS) och 
 KRAV registret ska uppfylla. En overlay som saknas i tabellen får testet att falla:
 en ny overlay ska inte kunna glida in utan att någon räknat på dess skuggrum.
 
-**Visa att det biter:** tre varianter är körda och föll — ta bort `--ui-scale` ur
+**Visa att panel-layout biter:** utöver de åtta äldre varianterna (se filens huvud) är
+fyra nya körda och samtliga föll — ta bort `masteroff`-klassen ur `paintMaster`
+(kontroll 11), strunta i paddingförskjutningen i `placeBox` (12), låt
+`stageFramesWanted` strunta i vilken flik som är framme (12), och lägg tillbaka den
+gamla skrollloopen som läser `scrollTop` som sanning (13, tappar 100–200 px).
+
+**Visa att overlay-window-fit biter:** tre varianter är körda och föll — ta bort `--ui-scale` ur
 både `tokens.css` och inputs-trace (de två kontrollerna utan INIT faller), lås
 inputs-traces `#ui` till fasta `top/left` (4 kontroller), sänk dess `baseHeight`
 till 222 (bottenkravet vid alla tre skalorna).
+
+## mock_toggle.py
+**Bevakar:** att mock-data går att stänga av och på i drift. Panelens reglage skriver
+`engine.config.json` (Rust), motorn pollar filen en gång i sekunden — motorn är en egen
+process och nås inte med ett Tauri-event. Testet startar motorn med `--source mock`, ger
+den en egen configfil och växlar flaggan fram och tillbaka.
+
+Tre saker det faktiskt mäter, och alla tre har gått sönder i något utkast:
+- att motorn läser flaggan **alls**,
+- att den läser om filen **när den ändras** (mtime-jämförelsen — filen skrivs med en
+  framflyttad tidsstämpel, annars kan två skrivningar inom samma klocktick se identiska
+  ut på Windows),
+- att bussen **lever vidare** med mock av. Ramen ska komma men vara tom
+  (`connected: false`, ingen telemetri); en tystnad hade sett ut som en krasch för
+  overlays, som skiljer på "ingen data" och "motorn borta" (CLAUDE.md §8.6e).
+
+Discriminatorn är `speedKph` och inte `connected`: mock-källan rapporterar med flit
+`connected: false` (den är inte ACC), så det enda som skiljer en mock-ram från en tom
+ram är att det finns telemetri i den.
+
+**Visa att det biter:** ta bort `use_mock` ur fallback-raden i `engine/acc_engine/
+__main__.py` (`frame = mock.read() if mock else ...`) — kontroll 2 faller. Körd.
 
 ## Att lägga till en overlay-test
 ```js

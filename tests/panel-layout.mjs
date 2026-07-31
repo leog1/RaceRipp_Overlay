@@ -30,7 +30,12 @@
  *   - låt layRemove anropa set_enabled           → kontroll 7 faller
  *   - snappa mot skärmen i st.f. den användbara  → 6 kontroller i 4 faller
  *     ytan (start=0, span=skärmen)
- * Alla åtta är körda och föll. Kontroll 2 är därför medvetet räknad ur BEHÅLLAREN
+ *   - ta bort masteroff-klassen i paintMaster    → kontroll 11 faller
+ *   - strunta i paddingen i placeBox (bara scale)  → 3 kontroller i 12 faller
+ *   - låt stageFramesWanted strunta i fliken       → kontroll 12 (rivet) faller
+ *   - lägg tillbaka den gamla skrollloopen (läs    → 2 kontroller i 13 faller
+ *     scrollTop som sanning, ge upp vid kanten)
+ * Alla tolv är körda och föll. Kontroll 2 är därför medvetet räknad ur BEHÅLLAREN
  * och inte ur panelens `stageK`: en kontroll som hämtar omräkningsfaktorn ur koden
  * den granskar stämmer alltid mot sig själv och kan inte falla.
  */
@@ -80,10 +85,17 @@ window.__PANEL_TEST__ = { calls: [] };
       base_width: 800, base_height: 274, content_width: 736, content_height: 200,
       pad_left: 36, pad_top: 20,
       x: 424, y: 40, scale: 1.0, opacity: 1, enabled: true, member: true,
+      /* Tio färgrader utöver de två första, och det är INTE utfyllnad: kontroll 13
+         mäter hjulet, och en lista som får plats i rutan går inte att skrolla — då
+         mäter testet ingenting alls. Fixturen måste alltså vara minst lika lång som
+         en riktig overlays (delta-baren har tolv färger). */
       option_defs: [
         { id: 'predicted', label: 'Predicted-kolumn', default: true },
         { id: 'col-green', type: 'color', label: 'Snabbare', default: '#0DE622' },
-      ], options: { predicted: true, 'col-green': '#0DE622' } },
+        ...Array.from({ length: 10 }, (_, i) => (
+          { id: 'col-x' + i, type: 'color', label: 'Färg ' + i, default: '#123456' })),
+      ], options: Object.assign({ predicted: true, 'col-green': '#0DE622' },
+        ...Array.from({ length: 10 }, (_, i) => ({ ['col-x' + i]: '#123456' }))) },
     { id: 'inputs-trace', title: 'Inputs Trace', desc: 'I', url: 'overlays/inputs-trace/index.html',
       base_width: 808, base_height: 264, content_width: 744, content_height: 200,
       pad_left: 32, pad_top: 22,
@@ -629,8 +641,134 @@ try {
   lika(skapad.aktiv, 'Natt', 'en ny layout blir aktiv');
   lika(skapad.skapaAnrop?.args, { name: 'Natt' }, 'create_layout ska ha fått namnet');
 
-  // 11. Inget fel kastades under hela mätningen.
-  console.log('11 inga fel kastades under körningen');
+  /* 11. Driftblocket. De tre reglagen hör inte till en flik — de avgör om något
+         syns på skärmen alls, och tills 0.5.5 låg grinden i overlay-listans fot,
+         alltså oåtkomlig från Layout-fliken. Det mätta: att blocket finns i BÅDA
+         flikarna, att huvudströmbrytaren går hela vägen till set_overlays_on, och
+         att skärmvyn säger ifrån när allt är släckt (annars ritar vyn fem overlays
+         på en tom skärm). */
+  console.log('11 driftblocket når båda flikarna');
+  const drift = await cdp.eval(`
+    const syns = (el) => !!(el && el.getClientRects().length);
+    const rad = (id) => document.getElementById(id);
+    const iLayout = { master: syns(rad('masterSwitch')), gate: syns(rad('gateSwitch')), mock: syns(rad('mockSwitch')) };
+    document.querySelector('.nav[data-sec="overlays"]').click();
+    await new Promise(r => setTimeout(r, 200));
+    const iOverlays = { master: syns(rad('masterSwitch')), gate: syns(rad('gateSwitch')), mock: syns(rad('mockSwitch')) };
+    document.querySelector('.nav[data-sec="installningar"]').click();
+    await new Promise(r => setTimeout(r, 120));
+    const iInst = syns(rad('masterSwitch'));
+    document.querySelector('.nav[data-sec="layout"]').click();
+    await new Promise(r => setTimeout(r, 250));
+    return { iLayout, iOverlays, iInst };
+  `);
+  lika(drift.iLayout, { master: true, gate: true, mock: true }, 'driftblocket i Layout-fliken');
+  lika(drift.iOverlays, { master: true, gate: true, mock: true }, 'driftblocket i Overlays-fliken');
+  sant(!drift.iInst, 'driftblocket ska INTE följa med till flikar utan overlay-lista');
+
+  const master = await cdp.eval(`
+    const inp = document.querySelector('#masterSwitch input');
+    inp.checked = false; inp.dispatchEvent(new Event('change'));
+    await new Promise(r => setTimeout(r, 200));
+    const av = { anrop: window.__PANEL_TEST__.calls.filter(c => c.cmd === 'set_overlays_on').pop(),
+                 tonad: document.getElementById('stScreen').classList.contains('masteroff'),
+                 kolumn: document.getElementById('midcol').dataset.master };
+    inp.checked = true; inp.dispatchEvent(new Event('change'));
+    await new Promise(r => setTimeout(r, 200));
+    return { av, pa: { anrop: window.__PANEL_TEST__.calls.filter(c => c.cmd === 'set_overlays_on').pop(),
+                       tonad: document.getElementById('stScreen').classList.contains('masteroff') } };
+  `);
+  lika(master.av.anrop?.args, { value: false }, 'huvudströmbrytaren av ska anropa set_overlays_on');
+  sant(master.av.tonad, 'skärmvyn ska visa att inget syns när strömbrytaren är av');
+  lika(master.av.kolumn, 'off', 'kolumnen ska tona de reglage som inte kan göra något');
+  lika(master.pa.anrop?.args, { value: true }, 'huvudströmbrytaren på ska anropa set_overlays_on');
+  sant(!master.pa.tonad, 'markeringen ska släppa när strömbrytaren slås på igen');
+
+  /* 12. Boxarnas innehåll. Boxen är fortfarande MÅTTET (kontroll 3 mäter det), men
+         den ritar numera overlayn själv. Två saker kan gå sönder osynligt: iframens
+         geometri (den ritar FÖNSTRET och boxen är innehållet, alltså ska den skjutas
+         upp/vänster med overlayns padding × skalan), och monteringen — lämnar man
+         fliken måste dokumentet RIVAS, inte bara döljas, annars lever dess WebSocket
+         vidare mitt i ett lopp (§8.5f). */
+  console.log('12 boxarna ritar overlayn, och rivs när fliken lämnas');
+  const inneh = await cdp.eval(`
+    const sc = document.getElementById('stScreen');
+    return [...sc.querySelectorAll('.st-ov')].map(b => {
+      const r = b.getBoundingClientRect();
+      const f = b.querySelector('.ovfrm');
+      const fr = f.getBoundingClientRect();
+      return { id: b.dataset.id, live: b.classList.contains('live'), src: (f.dataset.src || ''),
+               dx: fr.x - r.x, dy: fr.y - r.y, w: fr.width, h: fr.height,
+               matt: b.querySelector('.dim').textContent };
+    });
+  `);
+  const f0 = inneh.find(b => b.id === 'delta-bar');
+  sant(f0 && f0.live && f0.src.includes('delta-bar/index.html'),
+       'delta-barens box ska ha laddat overlayn');
+  nara(f0.w, 800 * 1.0 * k, 1.5, 'iframen ska ha FÖNSTRETS bredd × skala × vyns skala');
+  nara(f0.dx, -36 * 1.0 * k, 1.5, 'iframen ska skjutas vänster med overlayns padding');
+  nara(f0.dy, -20 * 1.0 * k, 1.5, 'iframen ska skjutas upp med overlayns padding');
+  lika(f0.matt, '736×200', 'måttchippen ska visa innehållets storlek i skärmpixlar');
+  const f1 = inneh.find(b => b.id === 'inputs-trace');
+  nara(f1.w, 808 * 0.8 * k, 1.5, 'skalan ska räknas in i innehållet också');
+  nara(f1.dx, -32 * 0.8 * k, 1.5, 'paddingen skalar med overlayn');
+  lika(f1.matt, '595×160', 'måttet följer skalan (744×200 vid 0,8)');
+
+  const rivet = await cdp.eval(`
+    document.querySelector('.nav[data-sec="overlays"]').click();
+    await new Promise(r => setTimeout(r, 250));
+    const efter = [...document.querySelectorAll('.st-ov .ovfrm')].map(f => f.dataset.src || '');
+    document.querySelector('.nav[data-sec="layout"]').click();
+    await new Promise(r => setTimeout(r, 300));
+    const igen = [...document.querySelectorAll('.st-ov .ovfrm')].map(f => (f.dataset.src || '').split('?')[0]);
+    return { efter, igen };
+  `);
+  lika(rivet.efter, ['', ''], 'iframen ska rivas när man lämnar Layout-fliken');
+  lika(rivet.igen, ['../overlays/delta-bar/index.html', '../overlays/inputs-trace/index.html'],
+       'och laddas om när man kommer tillbaka');
+
+  /* 13. Skrollen i inställningslistan. Hjulet mäts med RIKTIGA (trusted) events över
+         CDP — ett syntetiskt `new WheelEvent` skrollar ingenting och hade mätt
+         ingenting. Buggen som testet bevakar: loopen läste tillbaka `scrollTop` som
+         sanning, och eftersom värdet avrundas och webbläsaren klampar mot sin egen
+         kant tolkade den en frame utan synlig rörelse som "kanten är nådd" och gav
+         upp — nästa snäpp började då om från den avrundade positionen och den redan
+         beställda sträckan försvann. Mätt före fixen: fem snäpp uppåt från botten
+         flyttade 300 px i stället för 500. */
+  console.log('13 hjulet tappar ingen sträcka vid ändarna');
+  await cdp.eval(`
+    document.querySelector('.nav[data-sec="overlays"]').click();
+    await new Promise(r => setTimeout(r, 250));
+    document.querySelectorAll('#pane-overlays .grp.closed .ghead').forEach(h => h.click());
+    await new Promise(r => setTimeout(r, 250));
+  `);
+  const ruta = await cdp.eval(`
+    const b = document.querySelector('#pane-overlays .controls');
+    const r = b.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, max: b.scrollHeight - b.clientHeight };
+  `);
+  sant(ruta.max > 400, 'inställningslistan måste vara skrollbar för att mätningen ska betyda något ('
+       + Math.round(ruta.max) + ' px)');
+  const snurra = async (fran, dy) => {
+    await cdp.eval(`document.querySelector('#pane-overlays .controls').scrollTop = ${fran};`);
+    await new Promise(r => setTimeout(r, 300));
+    for (let i = 0; i < 5; i++){
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: ruta.x, y: ruta.y,
+                                                   deltaX: 0, deltaY: dy, pointerType: 'mouse' });
+      // Kort paus mellan snäppen: utan den slår Chromium ihop hjulhändelser som kommer
+      // i samma tick, och då mäter testet webbläsarens hopslagning i stället för vår
+      // loop. 40 ms är fortfarande snabbare än ett handled hinner snurra.
+      await new Promise(r => setTimeout(r, 40));
+    }
+    await new Promise(r => setTimeout(r, 900));
+    return cdp.eval(`return document.querySelector('#pane-overlays .controls').scrollTop;`);
+  };
+  const ned = Math.min(500, ruta.max);
+  nara(await snurra(0, 100), ned, 25, 'fem snäpp nedåt från toppen ska flytta 5 × 100 px');
+  nara(await snurra(ruta.max, -100), ruta.max - ned, 25, 'fem snäpp uppåt från botten ska flytta lika långt');
+
+  // 14. Inget fel kastades under hela mätningen.
+  console.log('14 inga fel kastades under körningen');
   lika(await cdp.eval(`return window.__PANEL_TEST__.errors;`), [], 'fel under körningen');
 
 } finally {

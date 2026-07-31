@@ -406,11 +406,16 @@ impl OverlayState {
     fn is_member(&self) -> bool {
         self.member.unwrap_or(self.enabled)
     }
-    // Ett fönster ska finnas när overlayn både ingår i layouten och är påslagen.
-    // Den här funktionen är enda stället som avgör det — annars glider de två
-    // begreppen isär på det ena stället någon glömmer.
-    fn visible(&self) -> bool {
-        self.enabled && self.is_member()
+    // Ett fönster ska finnas när HUVUDSTRÖMBRYTAREN är på och overlayn både ingår i
+    // layouten och är påslagen. Den här funktionen är enda stället som avgör det —
+    // annars glider de tre begreppen isär på det ena stället någon glömmer.
+    //
+    // `master` (Settings::overlays_on) är den tredje nivån och kommer utifrån, för
+    // den är GLOBAL: den hör inte till en overlay och får därför inte lagras i en.
+    // Den finns för att "visa/dölj allt" var omöjligt förut — man fick släcka varje
+    // overlay för sig, och då tappade man samtidigt vilka som var på.
+    fn visible(&self, master: bool) -> bool {
+        master && self.enabled && self.is_member()
     }
 }
 
@@ -459,6 +464,19 @@ struct Settings {
     // global: visa overlays först när motorn är synkad mot ACC (connected==true)
     #[serde(default)]
     hide_until_connected: bool,
+    // global: HUVUDSTRÖMBRYTAREN. Av = inget overlay-fönster finns, oavsett vad
+    // varje overlay säger om sig själv. Den är global och inte per overlay av
+    // samma skäl som grinden ovan: den beskriver om man kör med overlays alls, och
+    // att slå av den får inte kosta informationen om vilka som var på.
+    // Nedgraderingsvägen (§8.3b): en äldre build ignorerar fältet som okänt.
+    #[serde(default = "default_true")]
+    overlays_on: bool,
+    // global: får motorn skicka MOCK-telemetri när ACC inte kör? Standard på —
+    // utan den ser hela stacken död ut när spelet är stängt. Av betyder att en
+    // overlay som inte visar något också BEVISAR att den inte får data.
+    // Värdet skickas vidare till motorn via engine.config.json (write_engine_config).
+    #[serde(default = "default_true")]
+    mock_enabled: bool,
     // Filnamnet på förhandsvisningens bakgrund. Tom sträng = ingen bild, alltså den
     // gamla gråa rutan — men det är ett AKTIVT val och inte utgångsläget: saknas
     // fältet (ny installation, äldre settings.json) gäller default_preview_bg().
@@ -496,6 +514,11 @@ fn default_settings() -> Settings {
     // sättas här också — annars fick bara uppgraderande användare den.
     s.preview_background = default_preview_bg();
     s.hotkey = default_hotkey();
+    // Samma sak som raderna ovan: `Settings::default()` ger `false` för en bool,
+    // och en ny installation hade alltså startat med huvudströmbrytaren AV och
+    // mock-data avstängt — alltså en app som inte visar någonting.
+    s.overlays_on = true;
+    s.mock_enabled = true;
     for d in registry() {
         s.overlays.insert(d.id.clone(), default_state_for(d));
     }
@@ -628,7 +651,9 @@ fn create_overlay(
     def: &OverlayDef,
     st: &OverlayState,
     hide_until_connected: bool,
+    master: bool,
 ) -> tauri::Result<()> {
+    let show = st.visible(master);
     let w = def.base_width * st.scale;
     let h = def.base_height * st.scale;
     // Skala, opacitet, grinden, takten OCH alternativen injiceras FÖRE sidan parsas.
@@ -655,11 +680,11 @@ fn create_overlay(
             // Grinden måste veta om overlayn är AVSTÄNGD, annars "återställer" den
             // fönstret vid varje återanslutning och en avstängd overlay tänds igen
             // så fort man tabbar in i ACC (§8.5c).
-            "enabled": st.visible(),
+            "enabled": show,
             // Skalet har redan dolt fönstret om grinden är på. bus.js måste veta det,
             // annars vägrar den visa fönstret igen när ACC ansluter — den visar med
             // flit bara fönster den själv dolt (§8.5b).
-            "osHidden": hide_until_connected && st.visible(),
+            "osHidden": hide_until_connected && show,
             "hz": def.hz,
             "options": st.options,
         })
@@ -680,7 +705,7 @@ fn create_overlay(
         // innan hide() hinner köras. Samma sak när synk-grinden är på: overlayn ska
         // ändå döljas så fort sidan laddat, och att skapa den synlig gav ett tydligt
         // blink på cirka en sekund vid varje appstart.
-        .visible(st.visible() && !hide_until_connected)
+        .visible(show && !hide_until_connected)
         .build()?;
     win.set_ignore_cursor_events(CLICK_THROUGH.load(Ordering::Relaxed))?;
     Ok(())
@@ -897,7 +922,7 @@ fn set_enabled(app: AppHandle, state: State<Mutex<Settings>>, id: String, enable
     let show = {
         let mut s = state.lock().unwrap();
         if let Some(st) = s.overlays.get_mut(&id) { st.enabled = enabled; }
-        let show = s.overlays.get(&id).map(|st| st.visible()).unwrap_or(false);
+        let show = s.overlays.get(&id).map(|st| st.visible(s.overlays_on)).unwrap_or(false);
         save_settings(&app, &mut s);
         show
     };
@@ -912,7 +937,7 @@ fn set_member(app: AppHandle, state: State<Mutex<Settings>>, id: String, member:
     let show = {
         let mut s = state.lock().unwrap();
         if let Some(st) = s.overlays.get_mut(&id) { st.member = Some(member); }
-        let show = s.overlays.get(&id).map(|st| st.visible()).unwrap_or(false);
+        let show = s.overlays.get(&id).map(|st| st.visible(s.overlays_on)).unwrap_or(false);
         save_settings(&app, &mut s);
         show
     };
@@ -926,12 +951,12 @@ fn apply_visibility(app: &AppHandle, state: &State<Mutex<Settings>>, id: &str, s
     if let Some(win) = app.get_webview_window(id) {
         if show { let _ = win.show(); } else { let _ = win.hide(); }
     } else if show {
-        let (st, gate) = {
+        let (st, gate, master) = {
             let s = state.lock().unwrap();
-            (s.overlays.get(id).cloned(), s.hide_until_connected)
+            (s.overlays.get(id).cloned(), s.hide_until_connected, s.overlays_on)
         };
         if let (Some(def), Some(st)) = (def_of(id), st) {
-            let _ = create_overlay(app, def, &st, gate);
+            let _ = create_overlay(app, def, &st, gate, master);
         }
     }
 }
@@ -1243,6 +1268,7 @@ fn activate_layout(app: AppHandle, state: State<Mutex<Settings>>, id: String) ->
     // anrop i onödan.
     let plan: Vec<(&'static OverlayDef, OverlayState)>;
     let gate;
+    let master;
     {
         let mut s = state.lock().unwrap();
         // Spegla den gamla aktiva innan vi skriver över det gällande läget — annars
@@ -1274,6 +1300,7 @@ fn activate_layout(app: AppHandle, state: State<Mutex<Settings>>, id: String) ->
         s.active_layout = id.clone();
         save_settings(&app, &mut s);
         gate = s.hide_until_connected;
+        master = s.overlays_on;
         plan = registry()
             .iter()
             .map(|d| {
@@ -1286,7 +1313,7 @@ fn activate_layout(app: AppHandle, state: State<Mutex<Settings>>, id: String) ->
     for (def, st) in plan {
         // Eventet FÖRE show/hide, av samma skäl som i set_enabled: bus.js måste ha
         // släppt sitt anspråk på fönstret innan skalet rör det (§8.5c).
-        let show = st.visible();
+        let show = st.visible(master);
         let _ = app.emit("enabled", EnabledPayload { id: def.id.clone(), enabled: show });
         match app.get_webview_window(&def.id) {
             Some(win) => {
@@ -1303,7 +1330,7 @@ fn activate_layout(app: AppHandle, state: State<Mutex<Settings>>, id: String) ->
                 }
             }
             None if show => {
-                if let Err(e) = create_overlay(&app, def, &st, gate) {
+                if let Err(e) = create_overlay(&app, def, &st, gate, master) {
                     eprintln!("[shell] kunde ej skapa overlay {}: {e}", def.id);
                 }
             }
@@ -1597,19 +1624,25 @@ fn set_hotkey(app: AppHandle, state: State<Mutex<Settings>>, value: String) -> R
     Ok(text)
 }
 
-// Skriv referens-path till motorns config-fil (motorn pollar den och laddar .ld).
-#[tauri::command]
-fn set_reference(app: AppHandle, state: State<Mutex<Settings>>, path: String) {
-    {
-        let mut s = state.lock().unwrap();
-        s.reference_ld = path.clone();
-        save_settings(&app, &mut s);
-    }
+/* Motorns config-fil (den pollar den en gång i sekunden). ALLA fält skrivs varje
+   gång: filen är ett helt tillstånd och inte en ström av ändringar, så en skrivning
+   som bara nämnde sitt eget fält hade nollställt det andra. Det var precis vad som
+   hände när mock-flaggan tillkom och `set_reference` skrev vidare som förut. */
+fn write_engine_config(app: &AppHandle, s: &Settings) {
     if let Ok(dir) = app.path().app_config_dir() {
         let _ = std::fs::create_dir_all(&dir);
         let _ = std::fs::write(dir.join("engine.config.json"),
-            serde_json::json!({ "reference_ld": path }).to_string());
+            serde_json::json!({ "reference_ld": s.reference_ld, "mock": s.mock_enabled }).to_string());
     }
+}
+
+// Skriv referens-path till motorns config-fil (motorn pollar den och laddar .ld).
+#[tauri::command]
+fn set_reference(app: AppHandle, state: State<Mutex<Settings>>, path: String) {
+    let mut s = state.lock().unwrap();
+    s.reference_ld = path;
+    save_settings(&app, &mut s);
+    write_engine_config(&app, &s);
 }
 
 // Anropas av panelen strax innan updateraren installerar. Updateraren startar
@@ -1804,6 +1837,13 @@ struct GlobalsPayload {
     // härifrån — en hårdkodad text i HTML:en hade ljugit så fort någon bytt den.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     hotkey: String,
+    // Huvudströmbrytaren och mock-data. Option med flit: nyttolasten används BÅDE som
+    // svar på get_globals och som event, och ett event som gäller grinden ska inte
+    // påstå något om de här två. `None` = "inget besked", inte "av".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    overlays_on: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mock_enabled: Option<bool>,
 }
 
 #[tauri::command]
@@ -1814,6 +1854,8 @@ fn get_globals(state: State<Mutex<Settings>>) -> GlobalsPayload {
         reference_ld: s.reference_ld.clone(),
         preview_background: s.preview_background.clone(),
         hotkey: s.hotkey.clone(),
+        overlays_on: Some(s.overlays_on),
+        mock_enabled: Some(s.mock_enabled),
     }
 }
 
@@ -1842,7 +1884,71 @@ fn set_hide_until_connected(app: AppHandle, state: State<Mutex<Settings>>, value
         reference_ld: String::new(),
         preview_background: String::new(),
         hotkey: String::new(),
+        overlays_on: None,
+        mock_enabled: None,
     });
+}
+
+/* HUVUDSTRÖMBRYTAREN. Ett enda ställe som visar eller döljer HELA uppsättningen.
+   Den finns för att av/på fanns på tre ställen med olika räckvidd (ögonknappen per
+   overlay, medlemskapet i layouten, grinden mot ACC) och inget av dem svarade på
+   frågan "visa allt / visa inget nu". Att släcka varje overlay för sig gick, men då
+   var informationen om vilka som VAR på borta när man ville tillbaka.
+
+   Skriver aldrig till `enabled` eller `member`: den ligger ovanpå dem, så att slå på
+   den igen ger exakt den uppsättning man hade. Samma väg som set_enabled i övrigt —
+   eventet före show/hide (§8.5c). */
+#[tauri::command]
+fn set_overlays_on(app: AppHandle, state: State<Mutex<Settings>>, value: bool) {
+    let (plan, gate): (Vec<(&'static OverlayDef, OverlayState)>, bool) = {
+        let mut s = state.lock().unwrap();
+        s.overlays_on = value;
+        save_settings(&app, &mut s);
+        let plan = registry()
+            .iter()
+            .map(|d| {
+                let st = s.overlays.get(&d.id).cloned().unwrap_or_else(|| default_state_for(d));
+                (d, st)
+            })
+            .collect();
+        (plan, s.hide_until_connected)
+    };
+    let _ = app.emit("globals", GlobalsPayload {
+        hide_until_connected: gate,
+        reference_ld: String::new(),
+        preview_background: String::new(),
+        hotkey: String::new(),
+        overlays_on: Some(value),
+        mock_enabled: None,
+    });
+    for (def, st) in plan {
+        let show = st.visible(value);
+        let _ = app.emit("enabled", EnabledPayload { id: def.id.clone(), enabled: show });
+        match app.get_webview_window(&def.id) {
+            Some(win) => {
+                if show { let _ = win.show(); } else { let _ = win.hide(); }
+            }
+            // Fönstret kan saknas: en overlay som var avstängd vid appstart har inget.
+            None if show => {
+                if let Err(e) = create_overlay(&app, def, &st, gate, value) {
+                    eprintln!("[shell] kunde ej skapa overlay {}: {e}", def.id);
+                }
+            }
+            None => {}
+        }
+    }
+}
+
+/* Mock-data på/av. Motorn äger valet, panelen skriver bara ner det: värdet går till
+   engine.config.json, som motorn pollar en gång i sekunden (samma väg som
+   referensvarvet). Ett event hade inte hjälpt — motorn är en egen PROCESS och
+   lyssnar inte på Tauris eventbuss. */
+#[tauri::command]
+fn set_mock(app: AppHandle, state: State<Mutex<Settings>>, value: bool) {
+    let mut s = state.lock().unwrap();
+    s.mock_enabled = value;
+    save_settings(&app, &mut s);
+    write_engine_config(&app, &s);
 }
 
 // ── App-uppstart ────────────────────────────────────────────────────────────
@@ -1892,6 +1998,8 @@ pub fn run() {
             set_reference,
             get_globals,
             set_hide_until_connected,
+            set_overlays_on,
+            set_mock,
             prepare_update,
             list_backgrounds,
             get_background,
@@ -1932,15 +2040,22 @@ pub fn run() {
                 })
                 .collect();
             let gate = settings.hide_until_connected;
+            let master = settings.overlays_on;
             let hotkey = settings.hotkey.clone();
 
             app.manage(Mutex::new(settings));
+            // Motorns config skrivs INNAN motorn startar. Den bär mock-valet, och
+            // utan den här raden körde motorn med mock påslaget tills man råkade
+            // ändra något i panelen — valet gällde alltså inte över en omstart.
+            if let Some(st) = handle.try_state::<Mutex<Settings>>() {
+                if let Ok(s) = st.lock() { write_engine_config(&handle, &s); }
+            }
             size_control_window(&handle);
             start_engine(&handle);
             watch_foreground(handle.clone());
 
             for (def, st) in plan {
-                if let Err(e) = create_overlay(&handle, def, &st, gate) {
+                if let Err(e) = create_overlay(&handle, def, &st, gate, master) {
                     eprintln!("[shell] kunde ej skapa overlay {}: {e}", def.id);
                 }
             }
@@ -2557,6 +2672,32 @@ mod tests {
     // ett `active_layout` som pekar på en borttagen layout (då hade speglingen skrivit
     // ut i tomma intet vid varje sparning) och en slot vars `member` säger false (en
     // overlay som både ingår och inte ingår i samma layout).
+    /* Huvudströmbrytaren ligger OVANFÖR de två per-overlay-flaggorna, och alla tre
+       måste vara sanna för att ett fönster ska finnas. Testet finns för att det är
+       exakt en `&&` som skiljer "släck allt" från "släck ingenting", och felet syns
+       inte förrän man kör appen.
+       Sista raden är den som verkligen kan gå sönder tyst: `Settings::default()` ger
+       `false` för en bool, alltså hade en NY installation startat med allting
+       släckt och mock-data av — en app som inte visar någonting alls. */
+    #[test]
+    fn huvudstrombrytaren_ligger_ovanfor_bada() {
+        let mut st = OverlayState {
+            enabled: true, member: Some(true), x: 0, y: 0, scale: 1.0, opacity: 1.0,
+            always_on_top: true, options: HashMap::new(),
+        };
+        assert!(st.visible(true), "påslagen medlem med strömbrytaren på ska synas");
+        assert!(!st.visible(false), "strömbrytaren av ska släcka en påslagen medlem");
+        st.enabled = false;
+        assert!(!st.visible(true), "en avstängd overlay syns inte fast strömbrytaren är på");
+        st.enabled = true;
+        st.member = Some(false);
+        assert!(!st.visible(true), "en icke-medlem syns inte fast den är påslagen");
+
+        let d = default_settings();
+        assert!(d.overlays_on, "en ny installation måste starta med overlays PÅ");
+        assert!(d.mock_enabled, "en ny installation måste starta med mock-data PÅ");
+    }
+
     #[test]
     fn layouter_stadas_vid_inlasning() {
         let id = nagot_id();

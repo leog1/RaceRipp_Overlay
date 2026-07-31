@@ -193,6 +193,12 @@ async def run():
 
     cfg_path = Path(args.config) if args.config else None
     cfg_mtime = 0.0
+    # Mock-data på/av. Kontrollpanelen äger valet och skriver det i samma config-fil
+    # som referensvarvet; motorn pollar den. Standard PÅ — utan mock ser hela stacken
+    # död ut när spelet är stängt, vilket är fel utgångsläge för en ny installation.
+    # Av betyder att motorn skickar `connected: false` utan telemetri, alltså att en
+    # tom overlay BEVISAR att det inte finns någon data i stället för att ljuga.
+    use_mock = True
 
     try:
         server = await bus.start(args.host, args.ws_port)
@@ -235,6 +241,12 @@ async def run():
                     if m != cfg_mtime:
                         cfg_mtime = m
                         data = json.loads(cfg_path.read_text(encoding="utf-8"))
+                        # Mock-flaggan läses FÖRE referensen: den är den billiga av
+                        # de två och ska gälla även om .ld-inläsningen nedan kastar.
+                        want_mock = data.get("mock", True)
+                        if isinstance(want_mock, bool) and want_mock != use_mock:
+                            use_mock = want_mock
+                            print(f"[engine] mock-data {'på' if use_mock else 'av'}")
                         rp = data.get("reference_ld", "")
                         if rp and rp != ref.path:
                             _ref_notice.clear()   # ny fil → nya skäl får loggas igen
@@ -279,7 +291,7 @@ async def run():
                     if acc_errs == 1 or acc_errs % 400 == 0:   # ~var 10:e sekund
                         print(f"[engine] ACC-läsfel ({acc_errs}): {e} — kör mock tills det går igen")
             if frame is None:
-                frame = mock.read() if mock else Frame(connected=False)
+                frame = mock.read() if (mock and use_mock) else Frame(connected=False)
 
             # Broadcasting läggs PÅ ramen, den ersätter inget. Samma inkapsling som
             # ACC-läsningen: en bugg här får inte ta ner motorn (§8.6).

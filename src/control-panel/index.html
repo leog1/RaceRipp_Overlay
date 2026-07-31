@@ -236,11 +236,27 @@ body.maximized .tb-btn .ico-max{display:none;}
 .nav[aria-selected="true"] .tip{display:none;}
 .rail-spacer{flex:1 1 auto;}
 
-/* ── mittkolumn: overlay-lista ── */
-.list{flex:0 0 264px;border-right:1px solid var(--ui-edge-dk);
+/* ── mittkolumn: overlay-lista ──
+   Kolumnen är EN yta (kanten och vasken sitter på .midcol) med två utbytbara listor
+   och ett driftblock som står kvar i båda. Låg kanten kvar på .list fick blocket
+   under en egen kant och kolumnen läste som två staplade paneler. */
+.midcol{flex:0 0 264px;border-right:1px solid var(--ui-edge-dk);
   box-shadow:1px 0 0 rgba(255,255,255,0.028);
   display:flex;flex-direction:column;min-height:0;
   background:linear-gradient(180deg,rgba(255,255,255,0.014),transparent 180px);}
+.list{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;}
+/* Driftblocket. Samma radform som listans fot hade (titel + underrad + växlare), och
+   samma nedsänkta yta: det är kolumnens fot, bara med tre rader i stället för en.
+   Ingen egen kant åt sidorna — separationen mot listan är EN linje (§4b). */
+.drift{flex:0 0 auto;border-top:1px solid var(--ui-edge-dk);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.028);background:rgba(0,0,0,0.28);}
+.drift .list-head{padding:12px 16px 4px;}
+.drow{display:flex;align-items:center;gap:12px;padding:8px 16px 10px;}
+.drow + .drow{border-top:1px solid rgba(255,255,255,0.045);}
+/* Huvudströmbrytaren av: de två raderna under den kan inte göra något, och en
+   kontroll som inte gör något ska SE ut så i stället för att svara som vanligt.
+   Fortfarande klickbara — det är ett läge, inte ett fel. */
+.midcol[data-master="off"] .drow:not(:first-child){opacity:.45;}
 /* Avdelningsrubriker. Bara typografi: versaler, spärr och amber.
    Här satt tidigare ett litet guldstreck före texten. Det var en markör till på en
    rubrik som redan hade två (versaler OCH en egen färg), och när man väl har tre
@@ -256,9 +272,13 @@ body.maximized .tb-btn .ico-max{display:none;}
 .list-foot{flex:0 0 auto;display:flex;align-items:center;gap:12px;
   padding:12px 16px;border-top:1px solid var(--ui-edge-dk);
   box-shadow:inset 0 1px 0 rgba(255,255,255,0.028);background:rgba(0,0,0,0.28);}
-.list-foot .lf-text{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:3px;}
-.list-foot .lf-title{font-size:var(--ui-fs-md);font-weight:600;}
-.list-foot .lf-sub{font-size:var(--ui-fs-xs);color:var(--faint);line-height:1.4;}
+/* Texten i en fot- eller driftrad: titel över, förklaring under. Selektorn är
+   avsiktligt INTE bunden till .list-foot — driftblocket använder samma radform, och
+   en regel som bara gällde foten gav tre rader där titel och förklaring flöt ihop
+   till en enda mening. */
+.lf-text{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:3px;}
+.lf-title{font-size:var(--ui-fs-md);font-weight:600;}
+.lf-sub{font-size:var(--ui-fs-xs);color:var(--faint);line-height:1.4;}
 .lrow{width:100%;appearance:none;background:none;color:var(--ink);font:inherit;cursor:pointer;
   display:flex;align-items:center;gap:12px;padding:0 12px;min-height:44px;border-radius:var(--ui-r-md);
   border:1px solid transparent;text-align:left;
@@ -299,8 +319,13 @@ body.maximized .tb-btn .ico-max{display:none;}
 .app[data-section="layout"] #pane-layout{display:flex;flex-direction:column;overflow:hidden;}
 .app[data-section="installningar"] #pane-installningar{display:flex;flex-direction:column;overflow-y:auto;}
 /* Mittkolumnen finns i två varianter — overlay-listan och layoutlistan — och de
-   syns i var sin flik. Referens/Om/Inställningar har ingen lista alls. */
+   syns i var sin flik. Referens/Om/Inställningar har ingen lista alls, och då göms
+   hela kolumnen (driftblocket med): de tre reglagen hör till arbetet med overlays,
+   och en kolumn med bara en fot i hade sett ut som något som gick sönder. */
 .list{display:none;}
+.midcol{display:none;}
+.app[data-section="overlays"] .midcol,
+.app[data-section="layout"] .midcol{display:flex;}
 .app[data-section="overlays"] #listOverlays{display:flex;}
 .app[data-section="layout"] #listLayouts{display:flex;}
 
@@ -729,6 +754,38 @@ body.maximized .tb-btn .ico-max{display:none;}
 .st-ov.sel{border-color:rgba(251,191,36,0.65);color:var(--amber);}
 .st-ov.drag{cursor:grabbing;border-color:var(--amber);color:var(--amber);}
 .st-ov .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;}
+/* ── innehållet i boxen ──────────────────────────────────────────────────────
+   Boxen är fortfarande overlayns MÅTT — det är därför den finns — men den ritar
+   numera också overlayn själv, i en iframe precis som förhandsvisningen. Skälet är
+   att en layout handlar om hur skärmen ser ut, och fem grå rektanglar säger
+   ingenting om ifall delta-baren krockar med växelsiffran.
+
+   Fyra saker som hör ihop med det och inte får glida isär:
+   - `pointer-events:none` på iframen. Utan den äter den varje pointerdown och boxen
+     går inte att dra — dragningen ligger på .st-ov.
+   - Iframen sitter i FÖNSTRETS koordinater (base_*) och skjuts upp/vänster med
+     overlayns padding, för boxen är innehållets rektangel (§4). Skalningen är
+     `overlayns skala × vyns skala` och sätts i placeBox tillsammans med boxen, så
+     de två aldrig kan råka stå på olika tal.
+   - Ytan under blir GENOMSKINLIG när innehållet ritas: en overlay är halvtransparent
+     över spelet, och en ogenomskinlig platta bakom den hade ljugit om just det.
+   - Bilden är bara en bild. Boxens kant, markering och streckning ligger kvar. */
+.st-ov .ovfrm{position:absolute;left:0;top:0;border:0;background:none;
+  transform-origin:0 0;pointer-events:none;}
+.st-ov.live{background:rgba(11,13,12,0.10);align-items:flex-start;justify-content:flex-start;padding:0;}
+/* Måttchippen. Den ligger KVAR när innehållet ritas — det var hela poängen med
+   layout-fliken innan, och det som gör vyn till ett mätverktyg och inte en
+   skärmdump. Egen mörk platta, för den ska gå att läsa mot vilket innehåll som
+   helst. */
+.st-ov .cap{position:relative;z-index:2;display:flex;gap:6px;align-items:baseline;
+  max-width:100%;padding:2px 5px;border-bottom-right-radius:var(--ui-r-xs);
+  background:rgba(0,0,0,0.62);pointer-events:none;}
+.st-ov .cap .dim{color:var(--faint);font-weight:600;letter-spacing:.4px;
+  font-variant-numeric:tabular-nums;text-transform:none;flex:0 0 auto;}
+.st-ov.tiny .cap{display:none;}
+/* Huvudströmbrytaren av: inget av det här syns på skärmen just nu. Vyn säger det
+   genom att tona ner allt på en gång i stället för att låta varje box ljuga. */
+.st-screen.masteroff .st-ov{opacity:.32;}
 /* Medlem i layouten men DÖLJD just nu (ögonknappen i Overlays-fliken). Streckad
    kant och nedtonad: platsen är fortfarande reserverad — det är hela poängen med
    att dölja i stället för att ta bort — men rutan visar inget på skärmen. */
@@ -1268,34 +1325,62 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
       </button>
     </nav>
 
-    <!-- ── mittkolumn: overlay-lista ── -->
-    <section class="list" id="listOverlays">
-      <div class="list-head">Overlays</div>
-      <div id="list"><div class="empty">Laddar …</div></div>
-      <div class="list-foot">
-        <div class="lf-text">
-          <span class="lf-title">Endast när ACC kör</span>
-          <span class="lf-sub">Dölj tills bilen rullar, och när du tabbar ut</span>
-        </div>
-        <label class="sw" id="gateSwitch"><input type="checkbox"><span class="track"></span><span class="knob"></span></label>
-      </div>
-    </section>
+    <!-- ── mittkolumnen ──
+         Två listor som byter av varandra (overlays / layouter) OCH ett driftblock
+         som står kvar i båda. Blocket ligger utanför listorna med flit: det är de
+         tre reglagen som avgör om något syns på skärmen alls, och de gällde förut
+         lika mycket i Layout-fliken utan att gå att nå därifrån. Att lägga dem i
+         Inställningar hade varit ännu längre bort — det här är kontroller man rör
+         mitt i arbetet, inte en gång per installation. -->
+    <div class="midcol" id="midcol">
+      <section class="list" id="listOverlays">
+        <div class="list-head">Overlays</div>
+        <div id="list"><div class="empty">Laddar …</div></div>
+      </section>
 
-    <!-- ── mittkolumn: layoutlista ──
-         Samma kolumn och samma radform som overlay-listan, för det är samma sorts
-         val: vilket objekt arbetar jag med. Att klicka en rad AKTIVERAR layouten —
-         den aktiva är live-bunden mot de riktiga fönstren, så "välj" och "slå på"
-         är samma handling här. Inaktivera görs ur radens meny. -->
-    <section class="list" id="listLayouts">
-      <div class="list-head">Layouter</div>
-      <div id="layList"><div class="empty">Laddar …</div></div>
-      <div class="list-foot">
-        <button class="pb-btn" id="btnLayNew" title="Skapa en layout ur skärmens nuvarande läge">
-          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-          <span>Ny layout</span>
-        </button>
-      </div>
-    </section>
+      <!-- Samma kolumn och samma radform som overlay-listan, för det är samma sorts
+           val: vilket objekt arbetar jag med. Att klicka en rad AKTIVERAR layouten —
+           den aktiva är live-bunden mot de riktiga fönstren, så "välj" och "slå på"
+           är samma handling här. Inaktivera görs ur radens meny. -->
+      <section class="list" id="listLayouts">
+        <div class="list-head">Layouter</div>
+        <div id="layList"><div class="empty">Laddar …</div></div>
+        <div class="list-foot">
+          <button class="pb-btn" id="btnLayNew" title="Skapa en layout ur skärmens nuvarande läge">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            <span>Ny layout</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- DRIFT. Tre reglage i fallande räckvidd: hela uppsättningen, när den får
+           synas, och vad motorn skickar när ACC inte kör. Ordningen är avsiktlig —
+           det översta slår ut de två under sig. -->
+      <section class="drift" id="driftBar">
+        <div class="list-head">Drift</div>
+        <div class="drow">
+          <div class="lf-text">
+            <span class="lf-title">Overlays på skärmen</span>
+            <span class="lf-sub" id="masterSub">Släcker allt, minns lägena</span>
+          </div>
+          <label class="sw" id="masterSwitch"><input type="checkbox" aria-label="Overlays på skärmen"><span class="track"></span><span class="knob"></span></label>
+        </div>
+        <div class="drow">
+          <div class="lf-text">
+            <span class="lf-title">Endast när ACC kör</span>
+            <span class="lf-sub">Dölj när du tabbar ut ur ACC</span>
+          </div>
+          <label class="sw" id="gateSwitch"><input type="checkbox" aria-label="Endast när ACC kör"><span class="track"></span><span class="knob"></span></label>
+        </div>
+        <div class="drow">
+          <div class="lf-text">
+            <span class="lf-title">Mock-data</span>
+            <span class="lf-sub">Demodata när spelet är av</span>
+          </div>
+          <label class="sw" id="mockSwitch"><input type="checkbox" aria-label="Mock-data"><span class="track"></span><span class="knob"></span></label>
+        </div>
+      </section>
+    </div>
 
     <!-- ── höger detaljpanel ── -->
     <section class="detail">
@@ -1489,9 +1574,9 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
 
       <!-- ── LAYOUT ──
            Skärmvyn står still högst upp (samma uppdelning som Overlays-fliken,
-           §8.4f) och inställningarna under den skrollar. Boxarna i vyn är
-           proportionella och INTE riktiga overlays — se .st-ov i CSS:en för varför
-           det inte är en förenkling utan ett krav. -->
+           §8.4f) och inställningarna under den skrollar. Boxarna är overlayns MÅTT
+           och ritar dessutom overlayn själv — se mountStageFrames för de tre
+           reglerna som håller den kostnaden borta medan man kör. -->
       <div class="pane" id="pane-layout">
         <div id="stageBox">
           <div class="st-clip" id="stClip">
@@ -1512,6 +1597,9 @@ button.act:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;}
             </button>
             <button class="sbtn" id="btnGrid" title="Rutnätets täthet" aria-haspopup="true" aria-expanded="false">
               <svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="1"/><path d="M9.5 3.5v17M15 3.5v17M3.5 9.5h17M3.5 15h17"/></svg>
+            </button>
+            <button class="sbtn" id="btnLive" title="Visa overlayernas innehåll" aria-pressed="true">
+              <svg viewBox="0 0 24 24"><path d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>
             </button>
             <span class="sep"></span>
             <button class="sbtn primary" id="btnLayAdd" title="Lägg till en overlay i layouten" aria-haspopup="true" aria-expanded="false">
@@ -1836,6 +1924,10 @@ document.querySelectorAll('.nav').forEach(btn => {
     document.querySelectorAll('.nav').forEach(b => b.setAttribute('aria-selected', String(b === btn)));
     const sec = btn.dataset.sec;
     $('app').dataset.section = sec;
+    // Lämnar man Layout-fliken RIVS boxarnas iframes. De är riktiga overlays med
+    // egen WebSocket och egen renderloop; att bara låta dem ligga i en dold pane
+    // stoppar rAF men inte socketen (§8.5f).
+    mountStageFrames();
     if (sec === 'overlays'){
       await loadOverlays();
       requestAnimationFrame(fitPreview);
@@ -1938,49 +2030,71 @@ function countGroup(grp){
    mjuk av sig själv; att lägga utjämning ovanpå den gör den svampig. Därför tas bara
    riktiga hjulsnäpp (|deltaY| >= 40, deltaMode 0) över, och ctrl+hjul (zoom) lämnas
    helt i fred.
-   Basvärdet läses ur scrollTop varje gång animeringen står stilla, så att dragning i
-   skrollisten och tangentbordsskroll aldrig hamnar i osynk med målvärdet. */
+
+   LOOPEN ÄGER SIN EGEN POSITION (`pos`, ett flyttal) och läser INTE tillbaka
+   `scrollTop` som sanning varje frame. Det är hela skillnaden mot den förra
+   versionen, och den var mätbar: `scrollTop` snappar till heltal i den här
+   behållaren och webbläsaren klampar dessutom mot sitt eget maxvärde, så en frame
+   kunde skriva 0,9 px utan att `scrollTop` ändrades — loopen tolkade det som
+   "kanten är nådd", gav upp, och NÄSTA hjulsnäpp läste tillbaka den avrundade
+   positionen som ny bas. Sträckan som redan var beställd försvann då i tystnad.
+   Mätt (Chrome, trusted wheel-event över CDP): fem snabba snäpp uppåt från botten
+   flyttade 300 px i stället för 500. Det är det som känns som att listan är trög
+   i ändarna och "inte gör något förrän man skrollar mycket".
+
+   Kanten hanteras därför på ETT ställe: skrev vi en position och webbläsaren la oss
+   någon annanstans är det den verkliga kanten, och då snappar vi dit och slutar. Utan
+   den kontrollen kan `pos` glida vidare mot ett mål webbläsaren aldrig låter oss nå,
+   och loopen dör aldrig (§8.4k). */
 function smoothWheel(box){
-  let target = 0, anim = 0, last = 0;
   const TAU = 0.07;
+  let pos = box.scrollTop;      // vår egen position, i bråkdelar av en pixel
+  let target = pos;
+  let anim = 0, last = 0;
+  let wrote = pos;              // det värde webbläsaren HADE när vi skrev sist
+  const maxOf = () => Math.max(0, box.scrollHeight - box.clientHeight);
+  // Någon annan har skrollat (skrollisten, tangentbord, ett fokushopp): då är vår
+  // position inte längre sann och loopen ska ta över därifrån i stället för att dra
+  // tillbaka. Tröskeln är 2 px, alltså mer än den avrundning vi själva orsakar.
+  const stolen = () => Math.abs(box.scrollTop - wrote) > 2;
   const step = (now) => {
-    const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    const cur = box.scrollTop;
-    /* Målvärdet klampas mot den VERKLIGA maxskrollen varje frame, och loopen ger upp
-       om en frame inte flyttade något. Utan båda spinner rAF för evigt när målet
-       ligger utanför vad rutan kan skrolla — scrollHeight-clientHeight är inte exakt
-       samma tal som webbläsarens maxskroll (subpixel), så `target` kunde stanna ett
-       par pixlar bortom kanten och skillnaden aldrig bli mindre än 0,5. Symptomet var
-       inte synligt skrollande utan en loop som ALDRIG dog: den fortsatte dra
-       scrollTop tillbaka mot sitt mål efteråt (så listan hoppade tillbaka när man
-       drog i skrollisten) och dess scroll-event stängde varje meny man öppnade. */
-    const max = box.scrollHeight - box.clientHeight;
-    target = Math.max(0, Math.min(max, target));
-    const diff = target - cur;
-    if (Math.abs(diff) < 1){ box.scrollTop = target; anim = 0; return; }
-    let want = cur + diff * (1 - Math.exp(-dt / TAU));
-    /* MINST EN PIXEL PER FRAME. scrollTop snappar till heltal i den här behållaren
-       (mätt), så de sista pixlarna av en exponentiell utjämning avrundas bort: steget
-       blir 0,4 px, scrollTop står kvar, och nästa frame räknar samma sak igen. Loopen
-       levde då vidare för evigt de sista två pixlarna — osynligt, men den drog
-       scrollTop tillbaka mot sitt mål när man drog i skrollisten och dess scroll-event
-       stängde varje meny man öppnade. */
-    if (Math.abs(want - cur) < 1) want = cur + Math.sign(diff);
-    box.scrollTop = want;
-    // Ingen rörelse trots att vi bad om minst en pixel: kanten är nådd (den verkliga
-    // maxskrollen är inte exakt scrollHeight - clientHeight).
-    if (box.scrollTop === cur){ anim = 0; return; }
+    /* dt KLAMPAS NEDÅT MOT NOLL, och det är inte en formalitet. rAF:s tidsstämpel är
+       FRAMENS starttid, som kan ligga före den `performance.now()` hjulhändelsen just
+       satte — första framet fick alltså ett NEGATIVT dt. Då blir
+       `1 - Math.exp(-dt/TAU)` negativt, positionen tar ett kliv BAKÅT förbi kanten,
+       webbläsaren klampar, och kant-kontrollen nedan läser det som "här går den
+       verkliga kanten" och avbryter med målet nollställt. Symptomet var att ett av
+       fem hjulsnäpp ibland försvann — mätt, och bara i ändarna, eftersom det är där
+       klampningen finns att snubbla på. */
+    const dt = Math.min(0.05, Math.max(0, (now - last) / 1000)); last = now;
+    if (stolen()) pos = box.scrollTop;
+    target = Math.max(0, Math.min(maxOf(), target));
+    const diff = target - pos;
+    if (Math.abs(diff) < 0.5){
+      pos = target; box.scrollTop = pos; wrote = box.scrollTop; anim = 0; return;
+    }
+    pos += diff * (1 - Math.exp(-dt / TAU));
+    box.scrollTop = pos;
+    const real = box.scrollTop;
+    // Webbläsarens verkliga kant ligger inte alltid på scrollHeight - clientHeight
+    // (subpixlar, avrundning). Kom vi inte dit vi bad om är det HÄR den går.
+    if (Math.abs(real - pos) > 2){ pos = real; target = real; wrote = real; anim = 0; return; }
+    wrote = real;
     anim = requestAnimationFrame(step);
   };
   box.addEventListener('wheel', (e) => {
     if (e.ctrlKey || e.deltaMode !== 0 || Math.abs(e.deltaY) < 40) return;
-    const max = box.scrollHeight - box.clientHeight;
+    const max = maxOf();
     if (max <= 0) return;
-    if (!anim) target = box.scrollTop;
+    // Bas: vår egen position medan vi animerar (så snäpp nummer två lägger till
+    // sträcka i stället för att kasta bort den som pågår), annars den verkliga.
+    // `wrote` följer med i resynken: annars ser NÄSTA frame den yttre skrollen som
+    // stulen en gång till och nollställer positionen mitt i rörelsen.
+    if (!anim || stolen()){ pos = box.scrollTop; target = pos; wrote = pos; }
     const next = Math.max(0, Math.min(max, target + e.deltaY));
-    // Redan i botten/toppen: låt eventet gå vidare som vanligt i stället för att
-    // svälja det, annars känns listan låst.
-    if (next === target && (target === 0 || target === max)) return;
+    // Redan i kanten åt det håll man drar: låt eventet gå vidare som vanligt i
+    // stället för att svälja det, annars känns listan låst.
+    if (next === target) return;
     target = next;
     e.preventDefault();
     if (!anim){ last = performance.now(); anim = requestAnimationFrame(step); }
@@ -2213,6 +2327,10 @@ function toPreview(msg){
   const pv = $('pv');
   try { pv && pv.contentWindow && pv.contentWindow.postMessage({ __simmatrix: true, ...msg }, '*'); }
   catch {}
+  // Layout-flikens boxar ritar samma overlays och behöver samma besked. De ligger i
+  // en annan flik, så EN av dem är alltid monterad och den andra tom — men vilken
+  // som är vilken hör inte hit: toStage hoppar över de tomma själv.
+  toStage(msg);
 }
 
 /* ── Strypning av IPC medan man DRAR ett reglage ──────────────────────────────
@@ -2968,12 +3086,15 @@ const statusSocket = (function statusLoop(){
       pv.src = 'about:blank'; pv.dataset.src = '';
       if (pvObs){ pvObs.disconnect(); pvObs = null; }
       statusSocket.stop();
+      // Skärmvyns boxar är samma sorts dokument som previewn och rivs av samma skäl.
+      mountStageFrames();
     } else {
       // Utanför selectedId-grenen: statusraden hör till fönstret och inte till en
       // vald overlay, och hade annars aldrig kommit tillbaka innan man valt en.
       statusSocket.start();
       // Storleken räknas om av ResizeObserver inne i overlayn när den syns igen.
       if (selectedId){ const o = ov(selectedId); if (o) setPreview(o); }
+      mountStageFrames();
     }
   };
   addEventListener('blur',  () => setPaused(true));
@@ -2998,18 +3119,56 @@ if (T && T.event) T.event.listen('edit-mode', async e => {
 /* ── version ── */
 try { T?.app?.getVersion?.().then(v => { if (v) $('omVer').textContent = 'v' + v; }).catch(() => {}); } catch {}
 
-/* ── global: visa overlays endast när ACC kör ── */
+/* ── driftblocket: de tre globala reglagen ──────────────────────────────────
+   De hör inte till en overlay och därför inte till en flik heller. Blocket står
+   kvar i både Overlays och Layout, och det är hela poängen: förut ägde Overlays-
+   fliken av/på ensam, så en layout man byggt gick inte att TÄNDA från den flik man
+   byggde den i. Räckvidden faller uppifrån och ner — huvudströmbrytaren slår ut de
+   två under sig, och panelen visar det genom att tona dem. */
+let masterOn = true;
+function paintMaster(){
+  $('midcol').dataset.master = masterOn ? 'on' : 'off';
+  $('masterSwitch').querySelector('input').checked = masterOn;
+  // Undertexten byter roll med läget: när allt är släckt är det viktigaste
+  // panelen kan säga att det inte är overlayns eget fel att den inte syns.
+  $('masterSub').textContent = masterOn
+    ? 'Släcker allt, minns lägena'
+    : 'Allt släckt — lägena finns kvar';
+  // Skärmvyn ritar medlemmarna nedtonade när ingenting kan synas — annars säger
+  // vyn att fem overlays ligger på skärmen medan skärmen är tom.
+  const sc = $('stScreen'); if (sc) sc.classList.toggle('masteroff', !masterOn);
+}
+$('masterSwitch').querySelector('input').addEventListener('change', async e => {
+  masterOn = e.target.checked;
+  paintMaster();
+  try { await invoke('set_overlays_on', { value: masterOn }); }
+  catch(err){ toast('Kunde inte slå av/på overlays: ' + errMsg(err), true); }
+});
 $('gateSwitch').querySelector('input').addEventListener('change', async e => {
   try { await invoke('set_hide_until_connected', { value: e.target.checked }); }
   catch(err){ toast('Kunde inte spara inställningen: ' + errMsg(err), true); }
+});
+/* Mock-data. Reglaget hör hit och inte i Inställningar av samma skäl som de två
+   ovan: det avgör vad man SER just nu (demotelemetri eller tomma overlays), alltså
+   något man växlar mitt i arbetet. Motorn är en egen process och lyssnar inte på
+   Tauris eventbuss — Rust skriver valet till engine.config.json, som motorn pollar. */
+$('mockSwitch').querySelector('input').addEventListener('change', async e => {
+  try { await invoke('set_mock', { value: e.target.checked }); }
+  catch(err){ toast('Kunde inte ändra mock-data: ' + errMsg(err), true); }
 });
 async function loadGlobals(){
   try {
     const g = await invoke('get_globals');
     $('gateSwitch').querySelector('input').checked = !!(g && g.hide_until_connected);
+    // `?? true` och inte `!!`: ett äldre skal (eller testets stubb) svarar utan
+    // fälten, och då är rätt antagande att allt är PÅ — annars ser panelen ut att
+    // ha släckt allt av sig själv.
+    masterOn = (g && g.overlays_on) ?? true;
+    $('mockSwitch').querySelector('input').checked = (g && g.mock_enabled) ?? true;
     bgCurrent = (g && g.preview_background) || '';
     if (g && g.hotkey) hotkey = g.hotkey;
   } catch {}
+  paintMaster();
   showHotkey();
   // Läs katalogen FÖRE vi försöker visa bilden: har användaren tagit bort filen ska
   // det bli ett tyst nollställt val, inte ett felmeddelande vid varje appstart.
@@ -3027,9 +3186,11 @@ async function loadGlobals(){
 
    TRE REGLER SOM HÄNGER IHOP, och som är lätta att bryta var för sig:
 
-   1. MEDLEMSKAP ÄR DETSAMMA SOM PÅSLAGEN. "Lägg till i layouten" och "ta bort"
-      är `set_enabled` — samma väg som ögonknappen i Overlays-fliken. Två sätt att
-      slå på samma overlay hade oundvikligen glidit isär.
+   1. MEDLEMSKAP OCH SYNLIGHET ÄR TVÅ SAKER. `set_member` (+ och × här) avgör om
+      overlayn INGÅR i layouten, `set_enabled` (ögonknappen, som finns i båda
+      flikarna) om den VISAS just nu. Ovanför båda ligger huvudströmbrytaren i
+      driftblocket. Att lägga till något är dock att vilja se det, så layAdd tänder
+      det som var dolt — motsatsen (dölja → ta bort) finns inte som väg.
 
    2. DEN AKTIVA LAYOUTEN ÄR LIVE-BUNDEN. Rust speglar det gällande läget in i den
       vid varje sparning (sync_active_layout), så det finns inget spara-steg och
@@ -3041,8 +3202,10 @@ async function loadGlobals(){
       krävt en andra redigeringsväg som inte syns någonstans medan man använder
       den, och en skärmvy som visar något annat än skärmen är värdelös.
 
-   Skärmvyn ritar proportionella boxar och inte riktiga overlays — se .st-ov i
-   CSS:en för varför det är ett krav och inte en förenkling. */
+   Skärmvyns boxar är exakta MÅTT (innehållets rektangel × skala) och ritar samtidigt
+   de riktiga overlayerna i iframes. Se mountStageFrames: det är monteringen — bara i
+   den här fliken, bara när panelen syns — som gör att fem renderloopar inte tickar
+   medan man kör. */
 let layouts = [];
 let screenSize = { width: 0, height: 0 };
 let stagePicked = null;                    // id på den box man senast rörde
@@ -3068,6 +3231,9 @@ const MARGIN_MAX = 120;
 const MONITOR_MAX = 3;
 const RES_MIN = { w: 640, h: 480 }, RES_MAX = { w: 15360, h: 8640 };
 let snapOn = true, gridCols = 12, edgeMargin = 8, monitors = 1;
+// Ritar boxarna de riktiga overlayerna? Se mountStageFrames för varför det är
+// monteringen och inte flaggan som håller CPU-kostnaden borta.
+let stageLive = true;
 // Egen upplösning: null = använd skärmen appen ligger på. En egen är till för den
 // som ställer in för en ANNAN skärm än den panelen står på (triple, TV:n i vardags-
 // rummet, en rigg man bygger layouten till innan man sitter i den).
@@ -3079,6 +3245,7 @@ let customRes = null;
     if (GRID_COLS.includes(v.cols)) gridCols = v.cols;
     if (Number.isFinite(v.margin)) edgeMargin = Math.min(MARGIN_MAX, Math.max(0, Math.round(v.margin)));
     if (Number.isFinite(v.monitors)) monitors = Math.min(MONITOR_MAX, Math.max(1, Math.round(v.monitors)));
+    if (typeof v.live === 'boolean') stageLive = v.live;
     if (v.res && Number.isFinite(v.res.width) && Number.isFinite(v.res.height))
       customRes = { width: clampRes(v.res.width, 'w'), height: clampRes(v.res.height, 'h') };
   } catch {}
@@ -3090,7 +3257,7 @@ function clampRes(v, axis){
 function writeLayoutPrefs(){
   try {
     localStorage.setItem(LAY_KEY, JSON.stringify({
-      snap: snapOn, cols: gridCols, margin: edgeMargin, monitors, res: customRes,
+      snap: snapOn, cols: gridCols, margin: edgeMargin, monitors, res: customRes, live: stageLive,
     }));
   } catch {}
 }
@@ -3207,31 +3374,119 @@ function placeBox(el){
   el.style.width = w + 'px';
   el.style.height = h + 'px';
   el.classList.toggle('tiny', w < 74 || h < 18);
+  /* Innehållet skalas med SAMMA två tal som boxen (overlayns skala och vyns), och
+     skjuts upp/vänster med overlayns padding: iframen ritar hela FÖNSTRET medan
+     boxen är innehållets rektangel. Räknas det på något annat ställe glider bilden
+     ur sin egen ram så fort man drar i skalreglaget. */
+  const frm = el.querySelector('.ovfrm');
+  if (frm){
+    const k = o.scale * stageK;
+    frm.style.width  = o.base_width + 'px';
+    frm.style.height = o.base_height + 'px';
+    frm.style.transform = `translate(${-(o.pad_left || 0) * k}px, ${-(o.pad_top || 0) * k}px) scale(${k})`;
+  }
+  const dim = el.querySelector('.dim');
+  if (dim) dim.textContent = Math.round(ovW(o)) + '×' + Math.round(ovH(o));
 }
 
+/* Boxarna ÅTERANVÄNDS per id i stället för att byggas om. Det var likgiltigt så
+   länge de var tomma rektanglar, men nu bär var och en en iframe: en ombyggnad hade
+   laddat om varje overlay varje gång man dolde en av dem, ändrade marginalen eller
+   bytte flik — alltså ett vitt blink i alla boxar för att en av dem ändrades. */
 function renderStage(){
   const sc = $('stScreen');
   if (!sc) return;
-  for (const el of sc.querySelectorAll('.st-ov')) el.remove();
   const members = layMembers();
   $('stEmpty').hidden = members.length > 0;
+  const kvar = new Set(members.map(o => o.id));
+  for (const el of sc.querySelectorAll('.st-ov')) if (!kvar.has(el.dataset.id)) el.remove();
   for (const o of members){
-    const el = document.createElement('button');
-    el.type = 'button';
-    el.className = 'st-ov' + (o.id === stagePicked ? ' sel' : '') + (o.enabled ? '' : ' off');
-    el.dataset.id = o.id;
+    let el = sc.querySelector(`.st-ov[data-id="${CSS.escape(o.id)}"]`);
+    if (!el){
+      el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'st-ov';
+      el.dataset.id = o.id;
+      /* Namnet OCH måttet, i en chip uppe till vänster i stället för centrerat i
+         rutan: mitten är numera upptagen av overlayn själv. Måttet är innehållets, i
+         skärmpixlar vid nuvarande skala — alltså precis det tal man behöver för att
+         veta om två overlays får plats bredvid varandra. */
+      el.innerHTML = '<iframe class="ovfrm" title="" tabindex="-1" scrolling="no"></iframe>' +
+                     '<span class="cap"><span class="nm"></span><span class="dim"></span></span>';
+      el.querySelector('.nm').textContent = o.title;
+      el.querySelector('.ovfrm').title = o.title;
+      wireBoxDrag(el);
+      sc.appendChild(el);
+    }
+    el.classList.toggle('sel', o.id === stagePicked);
+    el.classList.toggle('off', !o.enabled);
     el.title = o.title + (o.enabled ? '' : ' (dold)') +
                ' — dra för att flytta, piltangenter för att finjustera, högerklick för fler val';
-    el.innerHTML = '<span class="nm"></span>';
-    el.querySelector('.nm').textContent = o.title;
-    wireBoxDrag(el);
-    sc.appendChild(el);
   }
   fitStage();
+  mountStageFrames();
 }
 // Måtten finns först när panen är synlig och layouten räknad; dubbel rAF av samma
 // skäl som previewns refitSoon().
 function stageSoon(){ requestAnimationFrame(() => requestAnimationFrame(fitStage)); }
+
+/* ── live-innehåll i skärmvyns boxar ─────────────────────────────────────────
+   Boxarna ritar de riktiga overlayerna, i iframes precis som förhandsvisningen. Det
+   var ett medvetet NEJ till 0.5.4 och skälet var CPU: varje iframe är ett eget
+   dokument med egen renderloop och egen WebSocket, och fem sådana som tickar medan
+   man kör är precis det previewn en gång fick rivas ur för (§8.5f).
+
+   Skälet står kvar — det är MONTERINGEN som gör det ofarligt, och de tre reglerna
+   nedan är hela lösningen. Bryts någon av dem är CPU-kostnaden tillbaka:
+   1. De finns bara medan LAYOUT-FLIKEN är framme. Byter man flik rivs de.
+   2. De finns bara medan panelen är synlig och i fokus (previewPaused, samma
+      signal som previewn använder). Man ställer in layouten när man inte kör.
+   3. `about:blank` och inte `display:none`. Att dölja ett dokument stoppar dess
+      rAF men INTE dess WebSocket — det var precis den skillnaden som gjorde att
+      previewn visade live-data mitt i ett lopp (§8.5f).
+   Reglaget i verktygsraden finns för den som ändå vill ha rena rutor; läget bor i
+   samma localStorage som resten av vyns inställningar. */
+function stageFramesWanted(){
+  return stageLive && !previewPaused && $('app').dataset.section === 'layout';
+}
+function mountStageFrames(){
+  const sc = $('stScreen'); if (!sc) return;
+  const want = stageFramesWanted();
+  for (const el of sc.querySelectorAll('.st-ov')){
+    const o = ov(el.dataset.id);
+    const frm = el.querySelector('.ovfrm');
+    if (!o || !frm) continue;
+    const src = want ? '../' + o.url + '?id=' + encodeURIComponent(o.id) : '';
+    if (frm.dataset.src === src) continue;
+    frm.dataset.src = src;
+    if (src){
+      frm.onload = () => pushStageState(o);
+      frm.src = src;
+    } else {
+      frm.onload = null;
+      frm.src = 'about:blank';
+    }
+    el.classList.toggle('live', !!src);
+  }
+}
+// Samma paket som previewn får (pushPreviewState) och av samma skäl: overlayn i en
+// iframe hämtar annars sitt läge själv med get_config, och den vägen drar in
+// FÖNSTRETS skala i en ruta som redan skalas av vyn (§8.4d).
+function pushStageState(o){
+  const msgs = [{ kind: 'config', id: o.id, opacity: o.opacity }];
+  for (const [k, v] of Object.entries(o.options || {}))
+    msgs.push({ kind: 'option', id: o.id, option: k, value: v });
+  for (const m of msgs) toStage(m);
+}
+/* Ett meddelande till ALLA boxar. De filtrerar på id i bus.js, så en overlay som
+   inte berörs ignorerar det — samma kontrakt som `emit` till alla fönster (§8.4). */
+function toStage(msg){
+  const sc = $('stScreen'); if (!sc) return;
+  for (const frm of sc.querySelectorAll('.ovfrm')){
+    if (!frm.dataset.src) continue;
+    try { frm.contentWindow.postMessage({ __simmatrix: 1, ...msg }, '*'); } catch {}
+  }
+}
 
 /* ── snappning ───────────────────────────────────────────────────────────────
    Kandidaterna är boxens VÄNSTERKANT, MITT och HÖGERKANT — inte bara hörnet. Det
@@ -3624,6 +3879,11 @@ async function layAdd(id){
   try { await invoke('set_member', { id, member: true }); }
   catch(err){ toast('Kunde inte lägga till overlayn: ' + errMsg(err), true); return; }
   const o = ov(id); if (o) o.member = true;
+  /* Att lägga till en overlay i layouten är att vilja SE den. Var den dold sedan
+     tidigare tändes den inte av medlemskapet ensamt, och resultatet var en box i
+     vyn som inte motsvarade något på skärmen — den vanligaste förvirringen i
+     fliken. Ögonknappen finns kvar för att dölja den igen utan att ta bort den. */
+  if (o && !o.enabled){ await setVisible(id, true); return; }
   renderList(); renderLayoutTab(); loadLayouts();
 }
 async function layRemove(id){
@@ -3645,6 +3905,10 @@ async function setVisible(id, on){
     await layAdd(id);
     toast('Overlayn lades till i layouten.');
   }
+  /* Huvudströmbrytaren ligger ovanför både medlemskap och av/på, så att tända något
+     medan den är av ser ut att inte göra någonting. Säg det i stället — reglaget står
+     i kolumnen bredvid och går att slå på direkt. */
+  if (on && !masterOn) toast('Overlays är avstängda med huvudströmbrytaren i kolumnen till vänster.');
   if (o) o.enabled = on;
   renderList(); renderLayoutTab();
   try { await invoke('set_enabled', { id, enabled: on }); }
@@ -3972,6 +4236,16 @@ function paintSnapBtn(){
 $('btnSnap').addEventListener('click', () => {
   snapOn = !snapOn; writeLayoutPrefs(); paintSnapBtn(); fitStage();
 });
+function paintLiveBtn(){
+  const b = $('btnLive');
+  b.classList.toggle('active', stageLive);
+  b.setAttribute('aria-pressed', String(stageLive));
+  b.title = stageLive ? 'Innehåll visas — klicka för rena mätrutor'
+                      : 'Rena mätrutor — klicka för att visa innehållet';
+}
+$('btnLive').addEventListener('click', () => {
+  stageLive = !stageLive; writeLayoutPrefs(); paintLiveBtn(); mountStageFrames();
+});
 $('btnGrid').addEventListener('click', e => {
   e.stopPropagation();
   popMenu($('btnGrid'), {
@@ -3995,6 +4269,7 @@ addEventListener('resize', () => { if ($('app').dataset.section === 'layout') fi
 async function initLayoutTab(){
   await loadScreen();
   paintSnapBtn();
+  paintLiveBtn();
   await loadLayouts();
   renderLayoutTab();
 }
