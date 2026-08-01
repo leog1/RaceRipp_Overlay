@@ -613,6 +613,15 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
 **Nästa naturliga bygge:** en overlay i taget, helt klar (funktion+look+animation) innan nästa.
 Mät referensbilder pixel-exakt FÖRST; bekräfta struktur i EN avstämning innan kod.
 
+**Kvar är overlay 2, och den ska inte tas förrän FÄLTSKÖRDEN är gjord.** Minisektorer
+kräver `current_sector_index`/`last_sector_time`, och hörnkartan är banberoende
+live-rendering — det svåraste i hela projektet. Skörden är beslutad men medvetet
+uppskjuten av användaren till ett eget tillfälle: ~25 fält som motorn REDAN läser ur
+`read_graphics_map` (108,7 µs/ram) och slänger — sessionstyp, tid kvar, placering,
+flaggor, pitfönster, bränsle, sektorer, banstatus, regn — plus mock-paritet för dem
+alla. Marginalkostnaden är ~0; utan mock går de nya overlaysen inte att designa utan
+spelet. Samma skörd fyller på varvtidsloggens sektorkolumner (§5c).
+
 ### 5d. Dashens tre regler
 - **Shift-lights räknas mot `maxRpm`, och `maxRpm = 0` betyder VET INTE.** 7000 varv
   är växlingsläge i en GT3 och halvvarv i en formelbil, så ett fast tak är fel i alla
@@ -832,6 +841,14 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   står kvar när MoTeC-KÄLLAN inte gäller varvet. Kört mot 0.5.8 — fem kontroller föll.
 
 ### Kvar att verifiera — läs detta först om du tar över
+> **LISTAN ÄR FÖR LÅNG: användaren har bekräftat att i stort sett alla tidigare
+> RAPPORTERADE buggar är borta i drift** (grinden, layoutväxlaren, blinket, hacken,
+> FPS-tappen). Posterna om dem står kvar här för att ingen gått igenom listan post
+> för post. **Planera alltså inte ett verifieringspass utifrån den här listan utan
+> att först fråga vilka poster som är avklarade** — det är precis det misstaget den
+> nuvarande formuleringen inbjuder till. Kvar på riktigt är det som aldrig var en
+> bugg utan bara oprövad funktion: referensbiblioteket mot riktiga `.ld`,
+> updater-kedjan, DPI på skalad skärm, flera skärmar, och de nya overlaysen mot ACC.
 - **Dashen mot riktig ACC.** Tre saker som mock inte kan bevisa: att `max_rpm` ur
   STATIC-blocket faktiskt kommer fram och stämmer för bilen (annars tänds lamporna på
   fel varvtal), att `steer` täcker fullt rattutslag åt båda håll, och att växeln visar
@@ -2218,6 +2235,27 @@ Handlern tar **ett** argument (`ws`), inte `(ws, path)`.
 - `dist/` och `build/` (PyInstaller-output, ~140 MB) låg committade i historiken och är
   nu avspårade + gitignorerade. Blobbarna finns kvar i äldre
   commits; en `git filter-repo` + force-push krävs för att verkligen ta bort dem.
+- **Användaren har OSPECIFICERADE småändringar på varvtidsloggen** — reglagen och
+  några detaljer i utseendet. De är inte beskrivna någonstans, så fråga efter dem
+  innan nästa overlay blir klar; de skulle tas i en egen commit tillsammans med
+  eventuella dash-justeringar.
+- **Vad som är billigt att ändra SENARE på en släppt overlay, och vad som inte är det.**
+  Frågan kommer igen varje gång en overlay är "klar så när som på detaljer".
+  Billigt: storlekar, avstånd, färger, typografi, etiketttexter, vilka reglage som
+  finns — allt ligger i en fil.
+  Dyrt, och båda kostar användardata:
+  **(1) `contentWidth`/`contentHeight`** sitter i registret, i `SKUGGA`-tabellen i
+  `overlay-window-fit.mjs` och styr boxen i Layout-vyn — ändras de flyttar sig en
+  overlay som användaren redan placerat.
+  **(2) Att döpa om ett options-`id`.** `sanitize_options` städar bort okända nycklar
+  ur `settings.json` (§8.3b), så ett sparat värde försvinner TYST vid en omdöpning.
+  Etiketten går att ändra fritt; det är `id` som är låst så fort en utgåva är
+  publicerad.
+- **`engine_smoke.py` mäter fel motor om appen kör.** Testets egen motor kan inte
+  binda port 8777, och testet ansluter då till den installerade appens motor utan att
+  märka det (0.5.10: 34 fält i stället för 35, plus ett `broadcast`-fält som såg ut
+  som en bugg i vår kod). Stäng appen före körning — och testet borde egentligen
+  kontrollera att det pratar med SIN subprocess.
 
 ## 9. Så verifierar du utan att gissa
 Testerna ligger i `tests/` — **`tests/README.md` är sanningskällan** för vad varje test
