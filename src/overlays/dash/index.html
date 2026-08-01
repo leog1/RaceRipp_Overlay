@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dash</title>
+<link rel="stylesheet" href="../../shared/tokens.css">
+<style>
+/* Overlay-specifik geometri (palett kommer från tokens.css).
+
+   HÖJDEN ÄR STANDARDEN (--overlay-h = 200 vid skala 1,0):
+
+     shift-lights   14   (+18 över, 16 under)
+     huvudrad      132   ratt | växel | fart
+     fot            20
+                   ----
+                    200
+
+   BREDDEN ÄR RÄKNAD FÖR DET BREDASTE VÄRDET, inte för det som råkar stå där.
+   Fartspalten är fast och högerställd: "99" och "238" ska sluta på samma lodräta
+   linje, annars vandrar siffran i sidled vid varje passage förbi 100 (§8.4g). */
+:root{
+  --ui-scale:1;
+  --w:420px; --h:200px; --pad:20px;
+  --wheel-d:116px; --speed-w:120px;
+  --led-h:14px; --leds:15;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{width:100%;height:100%;overflow:hidden;background:transparent;}
+body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased;}
+
+/* Marginalen till fönsterkanten skalar med overlayn; talen kommer ur registry.json
+   via __OVERLAY_INIT__. `--ui-scale` MÅSTE ha ett värde i CSS, annars är hela
+   calc() ogiltig och innehållet hamnar i fönstrets hörn (§8.4m). */
+#ui{position:absolute;top:calc(var(--pad-t,12px) * var(--ui-scale));
+  left:calc(var(--pad-l,20px) * var(--ui-scale));
+  transform:scale(var(--ui-scale));transform-origin:top left;
+  opacity:0;transition:opacity .3s ease;will-change:transform,opacity;}
+#ui.ready{opacity:var(--ui-opacity,1);}
+
+.dash{width:var(--w);height:var(--h);display:flex;flex-direction:column;
+  padding:18px var(--pad) 20px;
+  background:var(--bar);border-radius:14px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.04),
+             0 2px 6px var(--shadow-soft),0 14px 30px var(--shadow-mid);
+  backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;}
+
+/* ---- SHIFT-LIGHTS ----
+   En VÅGRÄT ljusrad och inte en båge: det här är det enda i overlayn som ska
+   uppfattas utan att man tittar på den, och perifert seende läser en rad som tänds
+   från vänster långt bättre än en båge som fylls. */
+.leds{flex:0 0 auto;height:var(--led-h);display:grid;
+  grid-template-columns:repeat(var(--leds),1fr);gap:4px;}
+.led{border-radius:2px;background:var(--track);
+  /* Ingen transition: en tändning ska vara omedelbar. En övergång hade gjort
+     raden till ett svep som ligger efter varvtalet, alltså sen information. */
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.05);}
+.led.on{background:var(--green);}
+.led.on.mid{background:var(--amber);}
+.led.on.hi{background:var(--red);}
+/* Rödvarv: hela raden blinkar. Blinket drivs av KLOCKAN och inte av frames, så
+   takten är densamma på 60 och 144 Hz (§8.5). */
+.leds.flash .led{background:var(--red);}
+.leds.flash.off .led{background:var(--track);}
+
+/* ---- HUVUDRAD ---- */
+.main{flex:1 1 auto;display:grid;
+  grid-template-columns:var(--wheel-d) 1fr var(--speed-w);
+  align-items:center;}
+
+/* Ratten. EGET KOMPOSITORLAGER — den roterar varje frame, och utan lagergräns
+   ritas panelytan, kanten, radien och slagskuggan om under den 30 ggr/s (§8.5g).
+   translateZ och INTE will-change:transform: det senare låser rasterskalan, och en
+   detaljerad SVG som användaren skalar upp hade då blivit suddig. Pedalstapelns
+   fyllning i inputs-trace är motsatt fall — en solid rektangel utan detaljer. */
+.wheel{width:var(--wheel-d);height:var(--wheel-d);transform:translateZ(0);}
+.wheel[hidden]{display:none;}
+.rim{fill:none;stroke:var(--rim);stroke-width:9;}
+.spoke{stroke:var(--rim);stroke-width:7;stroke-linecap:round;}
+.hub{fill:var(--bar);stroke:var(--rim);stroke-width:5;}
+/* MITTMÄRKET är det som gör vinkeln läsbar. En slät ring är rotationssymmetrisk —
+   den kan snurra hur mycket som helst utan att se annorlunda ut. */
+.mark{fill:none;stroke:var(--amber);stroke-width:9;stroke-linecap:butt;}
+
+/* Växeln. Amber är rätt här enligt §4, som listar växelsiffran bland ambernas
+   användningar tillsammans med guldstreck och tabellrubriker. */
+.gear{justify-self:center;font-size:86px;font-weight:700;line-height:1;
+  letter-spacing:-2px;color:var(--amber);transform:translateZ(0);}
+
+.speed{justify-self:end;text-align:right;transform:translateZ(0);}
+.kph{font-size:44px;font-weight:600;line-height:1;letter-spacing:-0.5px;color:var(--ink);}
+.unit{margin-top:4px;font-size:10px;font-weight:700;letter-spacing:1.6px;
+  text-transform:uppercase;color:var(--dim);}
+
+.faint{color:var(--faint)!important;}
+
+/* edit-läge */
+.edit-mode #ui{outline:2px dashed var(--amber);outline-offset:10px;border-radius:8px;cursor:move;}
+.edit-badge{position:fixed;top:10px;left:10px;display:none;gap:8px;padding:7px 12px;border-radius:8px;
+  background:var(--bar);color:var(--amber);font:700 12px/1 var(--font);letter-spacing:1.5px;
+  text-transform:uppercase;z-index:99;}
+.edit-mode .edit-badge{display:flex;}
+@media (prefers-reduced-motion:reduce){.leds.flash.off .led{background:var(--red);}}
+</style>
+</head>
+<body>
+  <div class="edit-badge">● Edit mode</div>
+  <div id="ui">
+    <div class="dash">
+      <!-- 15 lampor, statiska i märkspråket av samma skäl som varvtidsloggens rader:
+           antalet är ett designbeslut, inte data. -->
+      <div class="leds" id="leds">
+        <i class="led" id="l0"></i><i class="led" id="l1"></i><i class="led" id="l2"></i>
+        <i class="led" id="l3"></i><i class="led" id="l4"></i><i class="led" id="l5"></i>
+        <i class="led" id="l6"></i><i class="led" id="l7"></i><i class="led" id="l8"></i>
+        <i class="led" id="l9"></i><i class="led" id="l10"></i><i class="led" id="l11"></i>
+        <i class="led" id="l12"></i><i class="led" id="l13"></i><i class="led" id="l14"></i>
+      </div>
+      <div class="main">
+        <svg class="wheel" id="wheel" viewBox="0 0 100 100" aria-hidden="true">
+          <g id="wrot">
+            <circle class="rim" cx="50" cy="50" r="43"></circle>
+            <!-- Mittmärket: en kort båge på fälgen vid klockan tolv. -->
+            <path class="mark" d="M 41.1 8.1 A 43 43 0 0 1 58.9 8.1"></path>
+            <line class="spoke" x1="14" y1="50" x2="86" y2="50"></line>
+            <line class="spoke" x1="50" y1="50" x2="50" y2="86"></line>
+            <!-- Navet MÅSTE ligga i rotationscentrum (50,50). Låg det 2 px under
+                 wobblade hela ratten när den vreds — synligt vid stora utslag. -->
+            <circle class="hub" cx="50" cy="50" r="10"></circle>
+          </g>
+        </svg>
+        <div class="gear" id="gear">N</div>
+        <div class="speed">
+          <div class="kph" id="kph">0</div>
+          <div class="unit" id="unit">km/h</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script type="module">
+import { WsBus, wireShell, fontsReady, startLoop } from '../../shared/bus.js';
+
+const LEDS = 15;
+/* Latch: motorn skickar enstaka ramar utan telemetri (ACC:s sentinelvärden,
+   mållinjen). Utan hållning växlar overlayn till platshållare ett par frames och
+   tillbaka = flicker (§8.5). */
+const HOLD_MS = 700;
+/* Blinkperiod vid rödvarv. Driven av klockan, inte av frames — annars blinkar den
+   2,4× snabbare på en 144 Hz-skärm än på 60 Hz. */
+const FLASH_MS = 110;
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const $ = id => document.getElementById(id);
+const el = { leds: $('leds'), gear: $('gear'), kph: $('kph'), unit: $('unit'),
+             wheel: $('wheel'), wrot: $('wrot') };
+const leds = [];
+for (let i = 0; i < LEDS; i++) leds.push({ e: $('l' + i), on: null, band: null });
+
+/* ---- tillstånd ---- */
+const state = { gear: null, rpm: 0, maxRpm: 0, speed: 0, steer: 0,
+                shownSpeed: 0, shownSteer: 0, at: -Infinity };
+
+/* Reglage. `lock` är hur många grader GRAFIKEN vrids vid fullt rattutslag — ACC:s
+   `steer` är redan normaliserad −1..1, så det här är ett utseendeval och inte en
+   bilinställning. `start` är var lamporna börjar tändas, i procent av varvtalstaket. */
+let showWheel = true, lock = 180, startPct = 80, flashOn = true, mph = false;
+
+/* `typeof v === 'number'` RÄCKER INTE: NaN klarar den kontrollen, och ett NaN som
+   kommer in i en utjämning stannar där för alltid — varje efterföljande lerp ger NaN
+   igen, och siffran läker aldrig ens när riktiga värden kommer tillbaka. Overlays
+   måste tåla skräpvärden själva: i OBS och i en webbläsare finns ingen validering
+   framför dem (§8.3b). */
+const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+
+const bus = new WsBus();
+bus.subscribe(f => {
+  const now = performance.now();
+  const g = num(f.gear), r = num(f.rpm), mx = num(f.maxRpm),
+        sp = num(f.speedKph), st = num(f.steer);
+  if (g !== null){ state.gear = g; state.at = now; }
+  if (r !== null) state.rpm = r;
+  if (mx !== null) state.maxRpm = mx;
+  if (sp !== null) state.speed = sp;
+  if (st !== null) state.steer = st;
+});
+
+function gearText(g){
+  if (g == null) return '–';
+  if (g < 0) return 'R';
+  if (g === 0) return 'N';
+  return String(g);
+}
+
+/* Hur många lampor som ska lysa. `maxRpm` är 0 den första sekunden efter start
+   (STATIC-blocket är inte läst än) och när ACC inte kör — då lyser INGEN, i stället
+   för att raden gissar mot ett påhittat tak och blinkar när det riktiga kommer. */
+function litCount(rpm, maxRpm){
+  if (!maxRpm || maxRpm <= 0) return 0;
+  const from = maxRpm * (startPct / 100);
+  if (rpm <= from) return 0;
+  const span = maxRpm - from;
+  if (span <= 0) return LEDS;
+  return Math.min(LEDS, Math.ceil(((rpm - from) / span) * LEDS));
+}
+
+let lastGear = null, lastKph = null, lastUnit = null, lastRot = null,
+    lastFlash = null, lastFlashOff = null, lastFaint = null;
+
+function render(now){
+  const live = (now - state.at) < HOLD_MS;
+
+  // ── Växel ──
+  const g = live ? gearText(state.gear) : '–';
+  if (g !== lastGear){ el.gear.textContent = g; lastGear = g; }
+  if (lastFaint !== !live){ lastFaint = !live; el.gear.classList.toggle('faint', !live); }
+
+  // ── Fart ──
+  const v = Math.max(0, Math.round(state.shownSpeed * (mph ? 0.621371 : 1)));
+  const kph = live ? String(v) : '–';
+  if (kph !== lastKph){ el.kph.textContent = kph; lastKph = kph; }
+  const u = mph ? 'mph' : 'km/h';
+  if (u !== lastUnit){ el.unit.textContent = u; lastUnit = u; }
+
+  // ── Ratt ──
+  if (showWheel){
+    // En tiondels grad räcker som upplösning; utan avrundning skrivs attributet om
+    // varje frame även när ratten står still.
+    const deg = Math.round(state.shownSteer * lock * 10) / 10;
+    if (deg !== lastRot){
+      el.wrot.setAttribute('transform', `rotate(${deg} 50 50)`);
+      lastRot = deg;
+    }
+  }
+
+  // ── Shift-lights ──
+  const lit = live ? litCount(state.rpm, state.maxRpm) : 0;
+  for (let i = 0; i < LEDS; i++){
+    const on = i < lit;
+    // Banden: grönt → amber → rött. Gränserna är andelar av raden och inte fasta
+    // index, så en ändring av LEDS inte tyst flyttar färgskiftena.
+    const band = i < LEDS * 0.6 ? '' : i < LEDS * 0.85 ? 'mid' : 'hi';
+    const c = leds[i];
+    if (c.on !== on){ c.e.classList.toggle('on', on); c.on = on; }
+    if (c.band !== band){
+      c.e.classList.toggle('mid', band === 'mid');
+      c.e.classList.toggle('hi', band === 'hi');
+      c.band = band;
+    }
+  }
+  // Rödvarv: hela raden blinkar. Klockdriven, så takten är oberoende av skärmens.
+  const atLimit = flashOn && !REDUCED && lit >= LEDS;
+  if (atLimit !== lastFlash){ el.leds.classList.toggle('flash', atLimit); lastFlash = atLimit; }
+  const off = atLimit && (Math.floor(now / FLASH_MS) % 2 === 1);
+  if (off !== lastFlashOff){ el.leds.classList.toggle('off', off); lastFlashOff = off; }
+}
+
+/* Utjämning är TIDSBASERAD: en per-frame-lerp går 2,4× snabbare på 144 Hz än på
+   60 Hz (§8.5). Ratten och farten glider; växeln är diskret och hoppar direkt. */
+function frame(dt, now){
+  const tau = REDUCED ? 0.0001 : 0.055;
+  const k = 1 - Math.exp(-dt / tau);
+  state.shownSteer += (state.steer - state.shownSteer) * k;
+  // Farten får en aning trögare utjämning: den avrundas till heltal, och utan det
+  // vippar sista siffran fram och tillbaka när man ligger på konstant fart.
+  state.shownSpeed += (state.speed - state.shownSpeed) * (1 - Math.exp(-dt / (REDUCED ? 0.0001 : 0.09)));
+  render(now);
+}
+
+wireShell(({scale, opacity}) => {
+  if (typeof scale === 'number') document.documentElement.style.setProperty('--ui-scale', String(scale));
+  if (typeof opacity === 'number') document.documentElement.style.setProperty('--ui-opacity', String(opacity));
+}, (opt, val) => {
+  if (opt === 'wheel'){ showWheel = val !== false; el.wheel.hidden = !showWheel; }
+  if (opt === 'wheel-lock' && typeof val === 'number' && isFinite(val)){ lock = val; lastRot = null; }
+  if (opt === 'shift-start' && typeof val === 'number' && isFinite(val)) startPct = val;
+  if (opt === 'shift-flash') flashOn = val !== false;
+  if (opt === 'unit') mph = val === 'mph';
+});
+
+fontsReady().then(() => {
+  render(performance.now());
+  document.getElementById('ui').classList.add('ready');
+  startLoop(frame, {dtCap:0.05});
+});
+</script>
+</body>
+</html>

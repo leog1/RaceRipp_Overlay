@@ -15,6 +15,12 @@ class Frame:
     gear: int = 0
     speedKph: float = 0.0
     rpm: int = 0
+    # Motorns varvtalstak för den bil som körs. Kommer ur ACC:s STATIC-block, som
+    # ändå läses (var STATIC_S, se acc.py) — kostnaden är alltså noll. Shift-lights
+    # är meningslösa utan det: 7000 varv är växlingsläge i en GT3 och halvvarv i en
+    # formelbil. 0 = okänt, och en overlay måste tåla det utan att blinka (§8.5) —
+    # det är läget under den första sekunden efter start.
+    maxRpm: int = 0
     steer: float = 0.0               # -1..1
     delta: Optional[float] = None    # sekunder mot referens (None = ingen referens)
     sessionBestMs: Optional[int] = None

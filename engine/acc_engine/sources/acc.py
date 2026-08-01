@@ -165,6 +165,7 @@ class AccSource(Source):
             gear=int(getattr(p, "gear", 1)) - 1,          # ACC: 0=R, 1=N, 2=1a → -1
             speedKph=speed,
             rpm=int(getattr(p, "rpm", 0)),
+            maxRpm=int(getattr(s, "max_rpm", 0) or 0),
             steer=float(getattr(p, "steer_angle", 0.0)),
             sessionBestMs=best,
             lastLapMs=_ms(getattr(g, "last_time", None)),

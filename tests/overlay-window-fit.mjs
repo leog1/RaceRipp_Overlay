@@ -60,6 +60,7 @@ const SKUGGA = {
   // Skuggan är `0 2px 6px` + `0 14px 30px`: en blur på 30 når 15 px åt varje håll,
   // och offseten 14 flyttar räckvidden nedåt (14+15 ned, 15−14 upp).
   'laptime-log':  { l: 15.0, t:  3.0, r: 15.0, b: 29.0 },
+  'dash':         { l: 15.0, t:  3.0, r: 15.0, b: 29.0 },   // samma skuggrecept
 };
 const SKALOR = [0.6, 1.0, 1.6];
 
@@ -179,7 +180,10 @@ const reg = JSON.parse(readFileSync(join(ROOT, 'src/overlays/registry.json'), 'u
    sidan hinner vänta längre än så på fonten. */
 const MATNINGSRAM = {
   connected: true, motecMs: 136250, sessionBestMs: 138120, curLapMs: 45000,
-  position: 0.5, throttle: 1, brake: 0, gear: 4, speedKph: 180, rpm: 7000,
+  /* Fart och växel i sitt BREDASTE läge: tre siffror i fartspalten är det som en
+     gång gjorde pedalsiffran i inputs-trace bredare än sin stapel (§8.4g). */
+  position: 0.5, throttle: 1, brake: 0, gear: 4, speedKph: 288, rpm: 7000,
+  maxRpm: 7600, steer: -0.6,
   refs: { best:  { delta: -0.5, totalMs: 138120, throttle: 1, brake: 0, src: 'lap' },
           motec: { delta: 0.25, totalMs: 136250, throttle: 1, brake: 0, src: 'motec' } },
   /* Varvtidsloggen mäts FULL: sex rader plus den löpande. Ett tresiffrigt varvnummer

@@ -259,6 +259,135 @@
       ]
     },
     {
+      "id": "dash",
+      "title": "Dash",
+      "desc": "Växel, fart och rattvinkel med shift-lights. Ljusraden tänds från vänster mot varvtalstaket och blinkar vid rödvarv.",
+      "url": "overlays/dash/index.html",
+      "baseWidth": 460,
+      "baseHeight": 246,
+      "contentWidth": 420,
+      "contentHeight": 200,
+      "padLeft": 20,
+      "padTop": 12,
+      "defaultX": 750,
+      "defaultY": 640,
+      "defaultScale": 1.0,
+      "hz": 30,
+      "channels": [
+        "gear",
+        "speedKph",
+        "rpm",
+        "maxRpm",
+        "steer"
+      ],
+      "options": [
+        {
+          "id": "wheel",
+          "label": "Rattvinkel",
+          "default": true
+        },
+        {
+          "id": "unit",
+          "type": "enum",
+          "label": "Fartenhet",
+          "default": "kph",
+          "values": [
+            { "value": "kph", "label": "km/h" },
+            { "value": "mph", "label": "mph" }
+          ]
+        },
+        {
+          "id": "wheel-lock",
+          "type": "int",
+          "label": "Rattutslag",
+          "unit": "°",
+          "default": 180,
+          "min": 90,
+          "max": 360,
+          "step": 15
+        },
+        {
+          "id": "shift-start",
+          "type": "int",
+          "label": "Lamporna börjar vid",
+          "unit": " %",
+          "default": 80,
+          "min": 50,
+          "max": 95,
+          "step": 5
+        },
+        {
+          "id": "shift-flash",
+          "label": "Blink vid rödvarv",
+          "default": true
+        },
+        {
+          "id": "col-green",
+          "type": "color",
+          "label": "Lampor, första bandet",
+          "default": "#0DE622"
+        },
+        {
+          "id": "col-amber",
+          "type": "color",
+          "label": "Lampor, andra bandet & växel",
+          "default": "#FBBF24"
+        },
+        {
+          "id": "col-red",
+          "type": "color",
+          "label": "Lampor, rödvarv",
+          "default": "#FF3B3B"
+        },
+        {
+          "id": "col-bar",
+          "type": "color",
+          "label": "Panelyta",
+          "default": "#060708e6",
+          "alpha": true,
+          "gradient": true
+        },
+        {
+          "id": "col-track",
+          "type": "color",
+          "label": "Släckta lampor",
+          "default": "#20262b",
+          "alpha": true
+        },
+        {
+          "id": "col-rim",
+          "type": "color",
+          "label": "Ratt",
+          "default": "#454e55",
+          "alpha": true
+        },
+        {
+          "id": "col-shadow",
+          "type": "color",
+          "label": "Skugga",
+          "default": "#0000008c",
+          "alpha": true
+        }
+      ],
+      "presets": [
+        {
+          "id": "slot-1",
+          "label": "Preset 1",
+          "options": {}
+        },
+        {
+          "id": "slot-2",
+          "label": "Preset 2",
+          "options": {}
+        },
+        {
+          "id": "slot-3",
+          "label": "Preset 3",
+          "options": {}
+        }
+      ]
+    },
+    {
       "id": "laptime-log",
       "title": "Laptime Log",
       "desc": "De sex senaste varvtiderna med löpande varv. Guldstreck på sessionens bästa, depåvarv nedtonade.",

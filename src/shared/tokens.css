@@ -88,6 +88,10 @@
   --bar:       rgba(6,7,8,0.90);         /* djupsvart bar                         */
   --band:      #050705;                  /* mörkast: läsband i cirkeln            */
   --track:     rgba(0,0,0,0.45);         /* mätarspår/skåra                       */
+  /* Rattens fälg och ekrar i dash-overlayn. EGEN token och inte --track: en
+     släckt lampa eller en skåra ska vara mörk, en ratt ska SYNAS. Med samma
+     värde blev ratten ett hål i panelen. */
+  --rim:       #454e55;
   --divider:   rgba(255,255,255,0.07);   /* avdelare mellan kolumner              */
   --slot-edge: rgba(255,255,255,0.035);  /* svagare kant runt pedalstaplar        */
   --grid:      rgba(255,255,255,0.05);   /* svaga gridlinjer i grafer             */

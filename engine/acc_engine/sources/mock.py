@@ -89,7 +89,14 @@ class MockSource(Source):
         if tc: throttle = _clamp01(throttle - 0.040*(int(now*13) % 2))
         # mjuk sinus-delta (samma karaktär som overlay-previewn)
         delta = max(-1.1, min(1.1, 0.62*math.sin(now*0.21) + 0.30*math.sin(now*0.53+1.1) + 0.16*math.sin(now*1.03+0.4)))
-        gear = 1 + int(throttle*5)
+        # Växel + varvtal som en SÅGTAND: varvet stiger inom växeln och faller vid
+        # uppväxling. Förut följde rpm bara gasen rakt av, alltså steg de två
+        # tillsammans och shift-lights kunde aldrig demonstreras — och det är precis
+        # vad man vill se i previewn när man ställer in dem.
+        _g = throttle * 5.0
+        _gi = int(min(4.999, _g))          # 0..4, taket så toppväxeln når rödvarv
+        gear = _gi + 2                     # 2..6
+        rpm = int(2600 + min(1.0, _g - _gi) * 5000)   # 2600..7600
         # Spökspår: samma kurva som du kör, fasförskjuten ett par tiondelar. Ger ett
         # trovärdigt "referensvarv" så att funktionen går att SE i panelens preview
         # och i OBS utan att ACC körs — precis samma skäl som mocken finns för alls.
@@ -117,7 +124,8 @@ class MockSource(Source):
         in_pit = _mock_pit(cur_n) and frac < 0.08
 
         return Frame(connected=False, throttle=throttle, brake=brake, clutch=clutch, abs=abs_, tc=tc,
-                     gear=gear, speedKph=80+throttle*180, rpm=int(3000+throttle*4500), steer=0.35*math.sin(now*0.6),
+                     gear=gear, speedKph=80+throttle*180, rpm=rpm, maxRpm=7600,
+                     steer=0.35*math.sin(now*0.6),
                      delta=delta,
                      sessionBestMs=self._best if self._best is not None else MOCK_BASE_MS,
                      lastLapMs=_mock_lap_ms(done) if done >= 1 else None,

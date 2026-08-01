@@ -9,6 +9,9 @@
 //   gear       int
 //   speedKph   number
 //   rpm        int
+//   maxRpm     int       motorns varvtalstak för bilen (0 = okänt än). Shift-lights
+//                        måste räknas mot det — 7000 varv betyder olika saker i en
+//                        GT3 och en formelbil.
 //   steer      -1..1     normaliserad rattvinkel
 //   delta      number|null   sekunder mot referensen (negativ = snabbare)
 //   deltaSource 'motec'|'acc'|null   VILKEN referens delta kommer från:

@@ -15,7 +15,7 @@
 > X" i §7).
 ## 1. Vad projektet är
 Modulärt overlay-paket för **Assetto Corsa Competizione (ACC)**.
-Version 0.5.10.
+Version 0.5.11.
 - **Funktionellt** som **Race Element**: lätt, rensat, praktiskt, ingen FPS-förlust.
 - **Visuellt** som **RaceLab**: mörkt, polerat, animerat, premium.
 - Kvalitetsribban är hög och användaren är detaljpetig ner till pixelnivå.
@@ -606,12 +606,34 @@ därifrån — prefixet finns för att ett `col-<token>` i registret skriver rak
 |---|---------|--------|-----|
 | 1 | **Delta + varvtidsrad** | KLAR (look+funktion+animation), kopplad på bussen | cirkel: 0=topp, grön medurs=snabbare, full båge 180°=1.0 s; tre spalter (§5b) |
 | 2 | Delta-graf + minisektorer + hörnkarta | **ej byggd** | hörnkarta/kurvnummer/graf är **banberoende, ritas live** — hårdkoda ALDRIG kurvform |
-| 3 | Inputs-HUD (växel/fart/ratt/pedaler) | delvis (inputs-trace KLAR & kopplad) | ratt-vinkel + växel/fart-modul återstår |
+| 3 | **Dash** (växel/fart/ratt) | KLAR, kopplad på bussen | shift-lights räknade mot `maxRpm`, ritad ratt med mittmärke (§5d); pedalerna bor i overlay 4 |
 | 4 | Inputs-trace (gas/broms + staplar) | KLAR, kopplad på bussen | ABS=gult trace, TC=blått; Canvas rullande; tidsfönster 2–10 s valbart; spökspår mot VALD delta-källa (§8.8f) |
 | 5 | **Laptime log** | KLAR (rader+historik), kopplad på bussen | 6 varv + löpande, guldstreck på bästa, depåvarv nedtonade; sektorer väntar på fältskörden (§5c) |
 
 **Nästa naturliga bygge:** en overlay i taget, helt klar (funktion+look+animation) innan nästa.
 Mät referensbilder pixel-exakt FÖRST; bekräfta struktur i EN avstämning innan kod.
+
+### 5d. Dashens tre regler
+- **Shift-lights räknas mot `maxRpm`, och `maxRpm = 0` betyder VET INTE.** 7000 varv
+  är växlingsläge i en GT3 och halvvarv i en formelbil, så ett fast tak är fel i alla
+  bilar utom en. Taket kommer ur ACC:s STATIC-block, som läses var `STATIC_S` — alltså
+  är det 0 den första sekunden efter start och när ACC inte kör. Då lyser INGEN lampa.
+  Gissar overlayn ett tak tänds lampor på fel varvtal och slocknar när det riktiga
+  anländer, alltså en blinkning vid varje sessionsstart.
+- **Ljusraden är VÅGRÄT, inte en båge.** Den är det enda i paketet som ska uppfattas
+  utan att man tittar på den, och perifert seende läser en rad som tänds från vänster
+  långt bättre än en båge som fylls. Blinket vid rödvarv drivs av KLOCKAN (`FLASH_MS`)
+  och inte av frames — annars blinkar den 2,4× snabbare på 144 Hz (§8.5).
+- **Ratten behöver ett MITTMÄRKE.** En slät ring är rotationssymmetrisk: den kan snurra
+  hur mycket som helst utan att se annorlunda ut, alltså visar den ingen vinkel. Märket
+  vid klockan tolv plus ekrarna är det man läser utslaget ur, precis som på en riktig
+  ratt. Navet måste dessutom ligga i rotationscentrum — låg det 2 px fel wobblade hela
+  ratten vid stora utslag.
+  Rattens kulör är en EGEN token (`col-rim`) och delas inte med de släckta lamporna
+  (`col-track`). En släckt lampa ska vara släckt, en ratt ska synas; med samma värde
+  blev ratten ett hål i panelen.
+  Storleksvariabeln heter `--wheel-d` och inte `--wheel` med flit: ett `col-wheel` i
+  registret hade skrivit rakt på `--wheel` (§4) och gjort ratten 0 px bred.
 
 ### 5c. Varvtidsloggens radantal är FAST
 Sex varvrader plus en löpande, räknade ur standardhöjden (§4). Det ser ut som en
@@ -677,6 +699,7 @@ tests/panel-layout.mjs     layout-flikens geometri + driftblocket + hjulskrollen
                            mätt i headless Chrome över CDP
 tests/session_state.py     varvhistoriken: None=oförändrad mot []=tömd (§8.8h)
 tests/overlay-laptime-log.mjs  varvlistan i overlayn, mot trasiga HTML-kopior
+tests/overlay-dash.mjs     växel/fart/ratt: maxRpm=0, klockdrivet blink (§5d)
 tests/mock_toggle.py       mock-data av/på i drift, via engine.config.json
 tests/overlay-window-fit.mjs  ryms overlayn + sin skugga i fönstret? (Chrome, HTTP)
 tests/                     regressionstester — läs tests/README.md FÖRST, den
@@ -737,6 +760,14 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   skroll. Att panelen inte kastar något fel under uppstart ingår i mätningen — den låg
   tidigare tyst nog att ett kastat undantag i titelraden inte syntes.
 
+- **Dashen (växel/fart/ratt), 34 kontroller i `tests/overlay-dash.mjs`.** Fem medvetet
+  trasiga varianter är körda och samtliga föll: fast varvtalstak, framedrivet blink
+  (20 mot 48 växlingar per sekund i 60 och 144 Hz), rotation utan avrundning,
+  per-frame-lerp, och `typeof v === 'number'` utan `isFinite`. **Den sista hittade en
+  riktig bugg vid första körningen** — `NaN` klarar `typeof`-kontrollen, och ett NaN
+  som kommit in i utjämningen stannar där för alltid. Geometrin är mätt av
+  `overlay-window-fit` (420×200 i ett fönster på 460×246) och utseendet renderat och
+  granskat i Chrome i tre lägen.
 - **Varvhistoriken och varvtidsloggen, i tre lager.** `tests/session_state.py`
   (35 kontroller) mäter kontraktet, vad som inte får in i listan och de delade
   varvgränsreglerna; fyra medvetet trasiga varianter är körda och samtliga föll.
@@ -801,6 +832,11 @@ tests/                     regressionstester — läs tests/README.md FÖRST, de
   står kvar när MoTeC-KÄLLAN inte gäller varvet. Kört mot 0.5.8 — fem kontroller föll.
 
 ### Kvar att verifiera — läs detta först om du tar över
+- **Dashen mot riktig ACC.** Tre saker som mock inte kan bevisa: att `max_rpm` ur
+  STATIC-blocket faktiskt kommer fram och stämmer för bilen (annars tänds lamporna på
+  fel varvtal), att `steer` täcker fullt rattutslag åt båda håll, och att växeln visar
+  R/N rätt när man backar ur boxen. Kontrollera också att lamporna är SLÄCKTA den
+  första sekunden efter start i stället för att blinka till.
 - **Varvtidsloggen mot riktig ACC.** Allt är mätt mot syntetiska ramar och mock.
   Fyra saker: att varv faktiskt bokförs när du passerar mållinjen (loggen ska fyllas
   varv för varv), att ut- och in-varv märks som depåvarv, att listan TÖMS när du byter
@@ -2185,7 +2221,7 @@ Handlern tar **ett** argument (`ws`), inte `(ws, path)`.
 
 ## 9. Så verifierar du utan att gissa
 Testerna ligger i `tests/` — **`tests/README.md` är sanningskällan** för vad varje test
-bevakar och hur man visar att det biter. `pnpm test` kör de sju
+bevakar och hur man visar att det biter. `pnpm test` kör de åtta
 overlay-testerna; de sju Python-testerna körs var för sig från repo-roten.
 `pnpm test:panel` kör de två testerna med ett yttre beroende (Chrome): panelens
 layouttest och `overlay-window-fit`. De bor i ett eget CI-JOBB som inte gatar releasen — bygget behöver ingen

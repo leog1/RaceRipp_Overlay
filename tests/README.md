@@ -9,6 +9,7 @@ här står vad testet mäter och hur man visar att det biter.
 node tests/overlay-delta-bar.mjs      # flicker i delta-baren (kärnan)
 node tests/overlay-inputs-trace.mjs   # canvas-traces: Hz-tak, tidsbaserad utjämning
 node tests/overlay-laptime-log.mjs    # varvlistan: null=oförändrad mot []=tömd
+node tests/overlay-dash.mjs           # växel/fart/ratt: maxRpm=0, klockdrivet blink
 node tests/overlay-loop.mjs           # renderloopens takt under jitter
 node tests/overlay-gate.mjs           # synk-grinden: blinkar overlayn?
 node tests/overlay-options.mjs        # typade alternativ, före första paint
@@ -24,7 +25,7 @@ python tests/motec_reference.py       # MoTeC-delta mot en riktig .ld
 python tests/broadcast_protocol.py    # Broadcasting-UDP mot en falsk ACC-server
 python tests/mock_toggle.py           # mock-data av/på i drift (engine.config.json)
 ```
-`pnpm test` kör de sju overlay-testerna. `pnpm test:panel` kör de två som behöver en
+`pnpm test` kör de åtta overlay-testerna. `pnpm test:panel` kör de två som behöver en
 webbläsare (panel-layout och overlay-window-fit). Python-testerna körs **från
 repo-roten**.
 
@@ -151,6 +152,28 @@ elementet och alltså inte loggades — kontrollen mätte ingenting. `makeEl` lo
 textskrivningar (`type: 'text'`, utan `key` så attributfilter inte råkar matcha). Det
 är exakt den slappa stubb som beskrivs högst upp, och den hade legat kvar om testet
 inte körts mot en trasig variant.
+
+## overlay-dash.mjs
+Växel, fart, rattvinkel och shift-lights. Fyra saker som inte syns på skärmen:
+
+- **`maxRpm = 0` betyder "vet inte", inte "noll varv".** Läget råder den första
+  sekunden efter start (STATIC-blocket är inte läst än) och när ACC inte kör. Gissar
+  overlayn ett tak tänds lampor på fel varvtal och slocknar när det riktiga kommer —
+  alltså en blinkning vid varje sessionsstart. Att samma varvtal mot ett HÖGRE tak
+  ger färre lampor mäts också; utan den kan overlayn ignorera `maxRpm` helt och ändå
+  se rimlig ut.
+- **Blinket vid rödvarv måste följa klockan.** Testet driver samma väggsekund i 60 och
+  144 Hz och jämför antalet växlingar. En frame-räknare ger 2,4× fler på 144 Hz.
+- **Utjämningen är tidsbaserad.** Samma väggtid ska ge samma rattvinkel oavsett takt.
+- **En stillastående ratt ska inte skriva något.** Rotationen är overlayns enda
+  per-frame-skrivning, så den behöver både avrundning och ändringskontroll.
+
+Argumentet får vara en revision eller en HTML-fil, som i `overlay-laptime-log.mjs`.
+Fem trasiga varianter är körda och samtliga föll: fast varvtalstak, framedrivet blink,
+rotation utan avrundning, per-frame-lerp, och `typeof v === 'number'` utan
+`isFinite`. **Den sista hittade en riktig bugg vid första körningen:** `NaN` passerar
+`typeof`-kontrollen, och ett NaN som kommit in i en utjämning stannar där för alltid —
+siffran läker inte ens när riktiga värden kommer tillbaka.
 
 ## overlay-loop.mjs
 Bevakar `bus.js:startLoop` — den delade renderloopen (§8.5). Detta test bevakar en
